@@ -1,0 +1,81 @@
+# Visual Studio files and folder
+.vs/
+**.sln
+**.vcxproj
+**.vcxproj.filters
+**.vcxproj.user
+**.csproj
+**.nsight-gfxproj
+**.DotSettings
+**.user
+
+.idea/
+Makefile
+*.make
+*.a
+
+PreisachModel/vendor/boost
+
+# Binaries
+**/bin/
+!vendor/bin/premake/
+intermediate/
+obj/
+**/cache/**
+**/Cache/**
+__pycache__
+
+# LFS Folders
+lfs/
+hooks/
+
+# Meta Files
+**.meta
+
+# Log files
+**.log
+
+# Auto saves
+*.auto
+
+# Dumps
+*.nvdbg
+*.nv-gpudmp
+*gpudmp.json
+
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+!premake5.exe
+*.out
+*.app
+
+# Output files
+**/preisach_*.txt
