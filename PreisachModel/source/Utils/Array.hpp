@@ -1,7 +1,12 @@
 ﻿#pragma once
+
 #include <vector>
 #include <optional>
-#include <enumerate.hpp>
+#include <algorithm>
+#include <vector>
+#include <utility>
+
+#include "MUTCpp/Functions.hpp"
 
 inline std::optional<size_t> FindFirstGreater(const std::vector<double>& vec, double x)
 {
@@ -55,6 +60,31 @@ std::vector<std::pair<size_t, T>> Enumerate(const std::vector<T>& vec)
     return result;
 }
 
+inline std::vector<double> GenerateSequenceByCount(double first, unsigned int n, int count)
+{
+    std::vector<double> result;
+
+    result.emplace_back(first);
+    for (int i = 1; i < count; i++)
+    {
+        first /= n;
+        result.emplace_back(first);
+    }
+
+    return result;
+}
+
+inline std::vector<double> GenerateSequenceByDelta(double first, double last, double delta)
+{
+    auto steps = static_cast<uint32_t>((last - first) / delta);
+    std::vector<double> res(steps);
+    for (uint32_t i = 0; i < steps; ++i)
+    {
+        res[i] = first + i * delta;
+    }
+    return res;
+}
+
 // struct Bound
 // {
 //     double value = NAN;
@@ -66,18 +96,18 @@ std::vector<std::pair<size_t, T>> Enumerate(const std::vector<T>& vec)
 // inline std::vector<std::pair<size_t, size_t>> FindBoundsIndices(const std::vector<double>& vec, double x)
 // {
 //     auto sortedVec = vec;
-//     std::erase_if(sortedVec, [](const double elem) { return nc::isnan(elem); });
+//     std::erase_if(sortedVec, [](const double elem) { return mc::isnan(elem); });
 //     std::ranges::sort(sortedVec);
 //
 //     auto lower = std::ranges::lower_bound(sortedVec, x);
 //     if (lower == sortedVec.begin())
 //     {
-//         return {{nc::constants::nan, sortedVec.front()}};
+//         return {{mc::constants::nan, sortedVec.front()}};
 //     }
 //
 //     if (lower == sortedVec.end())
 //     {
-//         return {{sortedVec.back(), nc::constants::nan}};
+//         return {{sortedVec.back(), mc::constants::nan}};
 //     }
 //
 //     double leftBound = *(lower - 1);
@@ -92,7 +122,7 @@ std::vector<std::pair<size_t, T>> Enumerate(const std::vector<T>& vec)
 inline std::pair<int32_t, int32_t> FindBoundsIndices(const std::vector<double>& vec, double x)
 {
     auto sortedVec = vec;
-    std::erase_if(sortedVec, [](const double elem) { return nc::isnan(elem); });
+    std::erase_if(sortedVec, [](const double elem) { return mc::isnan(elem); });
     std::ranges::sort(sortedVec);
 
     auto lower = std::ranges::lower_bound(sortedVec, x);
@@ -109,8 +139,8 @@ inline std::pair<int32_t, int32_t> FindBoundsIndices(const std::vector<double>& 
     double leftBound = *(lower - 1);
     double rightBound = *lower;
 
-    int32_t leftIndex = std::distance(vec.begin(), std::ranges::find(vec, leftBound));
-    int32_t rightIndex = std::distance(vec.begin(), std::ranges::find(vec, rightBound));
+    int32_t leftIndex = static_cast<int32_t>(std::distance(vec.begin(), std::ranges::find(vec, leftBound)));
+    int32_t rightIndex = static_cast<int32_t>(std::distance(vec.begin(), std::ranges::find(vec, rightBound)));
     
     return {leftIndex, rightIndex};
 }

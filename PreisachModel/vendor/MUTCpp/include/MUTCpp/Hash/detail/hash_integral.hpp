@@ -1,0 +1,119 @@
+// @file
+// @author Vlayd Detect <gingema62@gmail.com>
+// [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
+// License
+// Copyright (c) 2024 Vlayd Detect.All rights reserved.
+#pragma once
+
+#include "hash_mix.hpp"
+#include <type_traits>
+#include <cstddef>
+#include <climits>
+
+namespace mc
+{
+    namespace hash_detail
+    {
+        template <class T>
+        struct is_integral : public std::is_integral<T>
+        {
+        };
+
+        template <class T>
+        struct is_unsigned : public std::is_unsigned<T>
+        {
+        };
+
+        template <class T>
+        struct make_unsigned : public std::make_unsigned<T>
+        {
+        };
+
+        template <class T,
+                  bool bigger_than_size_t = (sizeof(T) > sizeof(std::size_t)),
+                  bool is_unsigned = is_unsigned<T>::value,
+                  std::size_t size_t_bits = sizeof(std::size_t) * CHAR_BIT,
+                  std::size_t type_bits = sizeof(T) * CHAR_BIT>
+        struct hash_integral_impl;
+
+        template <class T, bool is_unsigned, std::size_t size_t_bits, std::size_t type_bits>
+        struct hash_integral_impl<T, false, is_unsigned, size_t_bits, type_bits>
+        {
+            static std::size_t fn(T v)
+            {
+                return static_cast<std::size_t>(v);
+            }
+        };
+
+        template <class T, std::size_t size_t_bits, std::size_t type_bits>
+        struct hash_integral_impl<T, true, false, size_t_bits, type_bits>
+        {
+            static std::size_t fn(T v)
+            {
+                typedef typename make_unsigned<T>::type U;
+
+                if (v >= 0)
+                {
+                    return hash_integral_impl<U>::fn(static_cast<U>(v));
+                }
+                else
+                {
+                    return ~hash_integral_impl<U>::fn(static_cast<U>(~static_cast<U>(v)));
+                }
+            }
+        };
+
+        template <class T>
+        struct hash_integral_impl<T, true, true, 32, 64>
+        {
+            static std::size_t fn(T v)
+            {
+                std::size_t seed = 0;
+
+                seed = static_cast<std::size_t>(v >> 32) + hash_detail::hash_mix(seed);
+                seed = static_cast<std::size_t>(v & 0xFFFFFFFF) + hash_detail::hash_mix(seed);
+
+                return seed;
+            }
+        };
+
+        template <class T>
+        struct hash_integral_impl<T, true, true, 32, 128>
+        {
+            static std::size_t fn(T v)
+            {
+                std::size_t seed = 0;
+
+                seed = static_cast<std::size_t>(v >> 96) + hash_detail::hash_mix(seed);
+                seed = static_cast<std::size_t>(v >> 64) + hash_detail::hash_mix(seed);
+                seed = static_cast<std::size_t>(v >> 32) + hash_detail::hash_mix(seed);
+                seed = static_cast<std::size_t>(v) + hash_detail::hash_mix(seed);
+
+                return seed;
+            }
+        };
+
+        template <class T>
+        struct hash_integral_impl<T, true, true, 64, 128>
+        {
+            static std::size_t fn(T v)
+            {
+                std::size_t seed = 0;
+
+                seed = static_cast<std::size_t>(v >> 64) + hash_detail::hash_mix(seed);
+                seed = static_cast<std::size_t>(v) + hash_detail::hash_mix(seed);
+
+                return seed;
+            }
+        };
+
+    }
+
+    template <typename T>
+    std::enable_if_t<hash_detail::is_integral<T>::value, std::size_t>
+    hash_value(T v)
+    {
+        return hash_detail::hash_integral_impl<T>::fn(v);
+    }
+
+}

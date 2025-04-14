@@ -2,19 +2,15 @@ include "Dependencies.lua"
 
 workspace "PreisachModel"
 	configurations { "Debug", "Release" }
-	targetdir "build"
 	startproject "PreisachModel"
 	conformancemode "On"
 
 	language "C++"
-	cppdialect "C++20"
+    --toolset "msc-clangcl"
+    --llvmversion "19"
+    --llvmdir "D:/Programming/SDKs/LLVM"
+    cppdialect "C++23"
 	staticruntime "Off"
-
-	configurations
-	{ 
-		"Debug", 
-		"Release",
-	}
 
 	flags
 	{
@@ -26,11 +22,16 @@ workspace "PreisachModel"
 		"_CRT_SECURE_NO_WARNINGS",
 		"NOMINMAX",
 		"_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING",
+		--"MUTCPP_USE_MULTITHREAD",
+		
 		"TRACY_ENABLE",
-		"TRACY_ON_DEMAND",
-		"TRACY_CALLSTACK=10",
-		"NUMCPP_NO_USE_BOOST",
+        "TRACY_ON_DEMAND",
+        "TRACY_CALLSTACK=10",
 	}
+	
+	filter "action:vs*"
+        linkoptions {"/ignore:4099"} -- NOTE(Peter): Disable no PDB found warning
+        disablewarnings {"4068"} -- Disable "Unknown #pragma mark warning"
 
     filter "language:C++ or language:C"
         architecture "x86_64"
@@ -53,3 +54,4 @@ workspace "PreisachModel"
 outputdir = "%{cfg.buildcfg}-%{cfg.system}-%{cfg.architecture}"
 
 include "PreisachModel"
+include "PreisachModel/vendor/tracy"
