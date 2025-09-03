@@ -26,6 +26,9 @@ project "PreisachModel"
 		"vendor/MUTCpp/include/",
 		"vendor/MUTCpp/include/MUTCpp",
 		"vendor/hep-mc/include/",
+		
+		"vendor/eigen/",
+		"vendor/eigen/unsupported"
 	}
 	
 	IncludeDependencies()
@@ -34,11 +37,16 @@ project "PreisachModel"
         "_HAS_CXX17",
         "_HAS_CXX20",
         "_HAS_CXX23",
+        
+        "EIGEN_MPL2_ONLY"
     }
 
     links {
         "Ws2_32"
     }
+
+    filter "system:windows"
+        files { "vendor/eigen/debug/msvc/eigen.natvis" }
 
 	filter "configurations:Debug"
 		symbols "On"

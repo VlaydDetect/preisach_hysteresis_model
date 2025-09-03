@@ -40,13 +40,13 @@ namespace mc
                 {
                     finalShape = ndarray.shape();
                 }
-                else if (ndarray.shape().rows != finalShape.m_Rows)
+                else if (ndarray.shape().m_Rows != finalShape.m_Rows)
                 {
                     THROW_INVALID_ARGUMENT_ERROR("input arrays must have the same number of rows.");
                 }
                 else
                 {
-                    finalShape.m_Cols += ndarray.shape().cols;
+                    finalShape.m_Cols += ndarray.shape().m_Cols;
                 }
             }
 

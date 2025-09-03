@@ -12,5 +12,6 @@
 #include "Utils/essentiallyEqual.hpp"
 #include "Utils/essentiallyEqualComplex.hpp"
 #include "Utils/interp.hpp"
+#include "Utils/gauss_area.hpp"
 #include "Utils/mathOperations.hpp"
 #include "Utils/nestedLoop.hpp"

@@ -12,11 +12,11 @@
 
 namespace mc
 {
-    class DiscretePreisachModel : public PreisachModelBase
+    class DiscretePreisachModel : public SinglePreisachModel
     {
     public:
         DiscretePreisachModel(const double L, const double h, bool keepDerivative = false, bool keepAnimation = false) :
-            PreisachModelBase(L, keepDerivative, keepAnimation), m_H(h), m_Count(static_cast<int>(2.0 * L / h))
+            SinglePreisachModel(L, keepDerivative, keepAnimation), m_H(h), m_Count(static_cast<int>(2.0 * L / h))
         {
             Init();
         }
@@ -44,9 +44,9 @@ namespace mc
 
             auto c = std::ranges::count_if(m_R, [&](const double& elem) { return utils::essentiallyEqual(elem, m_Down); });
 
-            std::print("Input: {:.3f};   Output: {:.5f};    DownCount: {}/{}\n", u, p, c, m_Count * m_Count);
+            // std::print("Input: {:.3f};   Output: {:.5f};    DownCount: {}/{}\n", u, p, c, m_Count * m_Count);
             
-            return p;
+            return 2. * p;
         }
         
         void Init()

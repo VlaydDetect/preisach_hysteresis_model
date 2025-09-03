@@ -41,6 +41,18 @@ namespace mc
                 m_Doc["header"] = header;
             }
 
+            JsonDocument(std::set<std::string> header) :
+                m_Header(header)
+            {
+                m_Doc["header"] = header;
+            }
+
+            JsonDocument(std::vector<std::string> header) :
+                m_Header(std::set(header.begin(), header.end()))
+            {
+                m_Doc["header"] = header;
+            }
+
             void ExtendHeader(std::string field)
             {
                 m_Header.emplace(field);
@@ -77,6 +89,12 @@ namespace mc
                 {
                     m_Doc[name] = mc::toVector(data);
                 }
+            }
+
+            void AddField(const std::string &name, const std::vector<std::unordered_map<std::string, double>> &data)
+            {
+                assert(m_Header.contains(name));
+                m_Doc[name] = data;
             }
 
             template <typename dtype>
@@ -174,9 +192,9 @@ namespace mc
                 {
                     std::unordered_map<T, std::vector<std::vector<std::vector<dtype>>>> vecs;
                     algo::for_each(data.begin(), data.end(), [&vecs, toVec](const iterType &elem)
-                     {
-                         vecs.insert({elem.first, toVec(elem.second)});
-                     });
+                    {
+                        vecs.insert({elem.first, toVec(elem.second)});
+                    });
                     m_Doc[name] = vecs;
                 }
                 else
@@ -273,7 +291,8 @@ namespace mc
 
             template <typename T, typename dtype>
             // void AddSubField(const std::string &field, const std::string &name, std::unordered_map<T, std::vector<Matrix<dtype>>> data)
-            void AddSubField(const std::initializer_list<std::string> &fields, std::unordered_map<T, std::vector<Matrix<dtype>>> data)
+            void AddSubField(const std::initializer_list<std::string> &fields,
+                             std::unordered_map<T, std::vector<Matrix<dtype>>> data)
             {
                 // assert(m_Header.contains(name));
 
@@ -336,9 +355,9 @@ namespace mc
                 {
                     std::unordered_map<T, std::vector<std::vector<std::vector<dtype>>>> vecs;
                     algo::for_each(data.begin(), data.end(), [&vecs, toVec](const iterType &elem)
-                     {
-                         vecs.insert({elem.first, toVec(elem.second)});
-                     });
+                    {
+                        vecs.insert({elem.first, toVec(elem.second)});
+                    });
                     // m_Doc[field][name] = vecs;
                     ASSIGN_FIELDS(fields, vecs);
                 }
@@ -381,7 +400,7 @@ namespace mc
                 return m_Doc.dump();
             }
 
-            nlohmann::json& GetDoc()
+            nlohmann::json &GetDoc()
             {
                 return m_Doc;
             }

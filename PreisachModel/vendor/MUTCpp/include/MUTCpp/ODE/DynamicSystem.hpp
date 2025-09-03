@@ -8,10 +8,10 @@
 
 #include <functional>
 #include <utility>
-#include <variant>
 
 #include "Matrix.hpp"
 #include "Functions/dot.hpp"
+#include "Functions/zeros.hpp"
 
 #include "DSArgs.hpp"
 
@@ -19,6 +19,20 @@ namespace mc
 {
     namespace ode
     {
+        namespace detail
+        {
+            inline Matrix<double> rk4(
+                const std::function<Matrix<double>(const Matrix<double> &, double, DSArgs &)> &fn,
+                const Matrix<double> &x, double t, double dt, DSArgs &args)
+            {
+                auto k1 = fn(x, t, args);
+                auto k2 = fn(x + k1 * dt / 2., t + dt / 2., args);
+                auto k3 = fn(x + k2 * dt / 2., t + dt / 2., args);
+                auto k4 = fn(x + k3 * dt, t + dt, args);
+                return x + dt / 6. * (k1 + 2. * k2 + 2. * k3 + k4);
+            }
+        }
+
         class DynamicalSystem : public RefCounted
         {
         public:
@@ -44,7 +58,9 @@ namespace mc
             {
             }
 
-            virtual ~DynamicalSystem() = default;
+            virtual ~DynamicalSystem() override = default;
+
+            virtual void ShiftNext(Matrix<double>& x, double& t);
 
             /// Compute the state of the system after one time step.
             virtual void Next() = 0;
@@ -57,17 +73,32 @@ namespace mc
             virtual Matrix<double> NextLTM(Matrix<double> w) = 0;
 
             /**
-         * Compute the state of the given system after one time step.
-         * @param w Array of system vectors.
-         * @param x0 Initial point
-         * @return Array of system vectors at next time step.
-         */
+             * Compute the state of the given system after one time step.
+             * @param w Array of system vectors.
+             * @param x0 Initial point
+             * @return Array of system vectors at next time step.
+             */
             virtual Matrix<double> NextTM(Matrix<double> w) = 0;
 
+            Matrix<double> Shift(const Matrix<double> &x0, double period)
+            {
+                AL_PROFILE_FUNC("DynamicalSystem::Shift");
+                const int numSteps = static_cast<int>(period / m_DeltaTime);
+
+                auto x = x0;
+                double t = 0.0;
+                for (int i = 1; i < numSteps + 1; ++i)
+                {
+                    ShiftNext(x, t);
+                }
+
+                return x;
+            }
+            
             /**
              * Forward the system for numSteps.
              * @param time Time of simulation to take.
-             * @return Trajectory of the system of dimension (numSteps + 1, m_Dimension) if keepTraj.
+             * @return Trajectory of the system of dimension (numSteps + 1, m_Dimension).
              */
             // template<typename dtype, std::enable_if_t<std::is_floating_point_v<dtype>, int> = 0>
             Matrix<double> Forward(double time)
@@ -103,7 +134,10 @@ namespace mc
                 m_X = m_X0;
                 m_T = m_T0;
 
-                m_ResetFn(m_Args, m_NextArgs);
+                if (m_ResetFn.has_value())
+                {
+                    m_ResetFn.value()(m_Args, m_NextArgs);
+                }
             }
 
             void SetX0(const Matrix<double> &x0)
@@ -114,6 +148,14 @@ namespace mc
             void SetResetFn(const ResetFn &fn)
             {
                 m_ResetFn = fn;
+            }
+
+            void CallResetFn()
+            {
+                if (m_ResetFn.has_value())
+                {
+                    m_ResetFn.value()(m_Args, m_NextArgs);
+                }
             }
 
             void ResetSystemTime()
@@ -128,7 +170,10 @@ namespace mc
                 m_X = m_X0;
                 m_T = m_T0;
 
-                m_ResetFn(m_Args, m_NextArgs);
+                if (m_ResetFn.has_value())
+                {
+                    m_ResetFn.value()(m_Args, m_NextArgs);
+                }
             }
 
             void AddAndSetArg(const std::string &name, const Vote &arg)
@@ -174,7 +219,7 @@ namespace mc
             int m_Dimension = 1;
             DSFunc m_Function;
             DSFunc m_Jacobian;
-            ResetFn m_ResetFn;
+            std::optional<ResetFn> m_ResetFn;
             double m_DeltaTime;
             DSArgs m_Args, m_NextArgs;
 
@@ -195,15 +240,25 @@ namespace mc
             {
             }
 
+            virtual void ShiftNext(Matrix<double>& x, double& t) override
+            {
+                AL_PROFILE_FUNC("ContinuousDS::ShiftNext");
+                x = detail::rk4(m_Function, x, t, m_DeltaTime, m_Args);
+                t += m_DeltaTime;
+            }
+
             /// Compute the state of the system after one time step with RK4 method.
             virtual void Next() override
             {
                 AL_PROFILE_FUNC("ContinuousDS::Next");
-                auto k1 = m_Function(m_X, m_T, m_Args);
-                auto k2 = m_Function(m_X + (m_DeltaTime / 2.0) * k1, m_T + (m_DeltaTime / 2.0), m_Args);
-                auto k3 = m_Function(m_X + (m_DeltaTime / 2.0) * k2, m_T + (m_DeltaTime / 2.0), m_Args);
-                auto k4 = m_Function(m_X + m_DeltaTime * k3, m_T + m_DeltaTime, m_Args);
-                m_X += (m_DeltaTime / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4);
+                // auto k1 = m_Function(m_X, m_T, m_Args);
+                // auto k2 = m_Function(m_X + (m_DeltaTime / 2.0) * k1, m_T + (m_DeltaTime / 2.0), m_Args);
+                // auto k3 = m_Function(m_X + (m_DeltaTime / 2.0) * k2, m_T + (m_DeltaTime / 2.0), m_Args);
+                // auto k4 = m_Function(m_X + m_DeltaTime * k3, m_T + m_DeltaTime, m_Args);
+                // m_X += (m_DeltaTime / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4);
+                // m_T += m_DeltaTime;
+
+                m_X = detail::rk4(m_Function, m_X, m_T, m_DeltaTime, m_Args);
                 m_T += m_DeltaTime;
             }
 
@@ -233,6 +288,7 @@ namespace mc
                 auto k4 = m_Function(w + m_DeltaTime * k3, m_T + m_DeltaTime, m_NextArgs);
                 auto res = w + (m_DeltaTime / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4);
                 return res;
+                // return detail::rk4(m_Function, w, m_T, m_DeltaTime, m_NextArgs);
             }
         };
     }

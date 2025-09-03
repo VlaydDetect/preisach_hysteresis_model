@@ -15,9 +15,13 @@ Makefile
 *.a
 
 PreisachModel/vendor/boost
+!PreisachModel/vendor/tracy
+!PreisachModel/vendor/tracy/premake5.lua
+!PreisachModel/vendor/tracy/tracy
 
 # Binaries
-**/bin/
+vendor/**/bin/
+vendor/**/bin-int/
 !vendor/bin/premake/
 intermediate/
 obj/

@@ -24,7 +24,8 @@ namespace mc
     {
         namespace detail
         {
-            inline std::array<double, 2> divergenceDegree(Ref<DynamicalSystem> system, double timeForward, double e, Matrix<double> v,
+            inline std::array<double, 2> divergenceDegree(Ref<DynamicalSystem> system, double timeForward, double e,
+                                                          Matrix<double> v,
                                                           double T, int M, std::vector<Matrix<double>> &traj1,
                                                           std::vector<Matrix<double>> &traj2,
                                                           bool linearize = false)
@@ -36,16 +37,14 @@ namespace mc
                 system->Forward(timeForward);
                 traj1.push_back(system->GetX());
                 
-                double n = 0.0;
+                v = normalize(v) * e;
+                v = system->GetX() + v;
+                traj2.push_back(v);
 
-                std::vector<double> logs = {};
+                double n = 0.0;
 
                 for (int i = 1; i < M + 1; ++i)
                 {
-                    v = normalize(v) * e;
-                    v = system->GetX() + v;
-                    traj2.push_back(v);
-
                     auto count = static_cast<uint32>(T / system->GetDeltaTime());
                     while (count--)
                     {
@@ -59,6 +58,10 @@ namespace mc
 
                     auto norm_v = norm(v) / e;
                     n += mc::log(norm_v)[0];
+
+                    v = normalize(v) * e;
+                    v = system->GetX() + v;
+                    traj2[traj2.size() - 1] = v;
                 }
 
                 return {n / M, mc::log(T)};
@@ -69,10 +72,10 @@ namespace mc
          * Compute maximal 1-LCE.
          * @param system Dynamical system for which we want to compute the mLCE.
          * @param numForward Number of steps before starting the mLCE computation.
-         * @param numCompute Number of steps to compute the mLCE, can be adjusted using keep_evolution.
+         * @param numCompute The number of steps to compute the mLCE, can be adjusted using keep_evolution.
          * @return Pair of Maximum 1-LCE and Evolution history of mLCE during the computation.
          */
-        inline std::pair<double, Matrix<double>> mLCE(DynamicalSystem *system, int numForward, int numCompute)
+        inline std::pair<double, Matrix<double>> mLCE(Ref<DynamicalSystem> system, int numForward, int numCompute)
         {
             AL_PROFILE_FUNC("mLCE");
             system->Forward(numForward);
@@ -139,7 +142,8 @@ namespace mc
         }
 
         /// Implements Benettin's mLCE computation algorithm
-        inline std::pair<double, Matrix<double>> Benettin_mLCE(DynamicalSystem *system, double timeForward, double e,
+        inline std::pair<double, Matrix<double>> Benettin_mLCE(Ref<DynamicalSystem> system, double timeForward,
+                                                               double e,
                                                                double T = 8.0,
                                                                int M = 30, bool linearize = true)
         {
@@ -150,11 +154,13 @@ namespace mc
             Matrix<double> history = zeros<double>(1, M);
 
             auto v = mc::random::rand<double>(Shape(1, system->GetDimension()));
+            // auto v = mc::random::rand<double>(linearize ? Shape(system->GetDimension()) : Shape(1, system->GetDimension()));
+            // auto v = mc::random::rand<double>(Shape(system->GetDimension(), 1));
 
             for (int i = 1; i < M + 1; ++i)
             {
                 v = normalize(v) * e;
-                v = system->m_X + v;
+                v = system->GetX() + v;
 
                 auto count = static_cast<uint32>(T / system->GetDeltaTime());
                 while (count--)
@@ -162,7 +168,7 @@ namespace mc
                     v = linearize ? system->NextLTM(v) : system->NextTM(v);
                     system->Forward(1);
                 }
-                v -= system->m_X;
+                v -= system->GetX();
 
                 mLCE += log(norm(v) / e)[0];
                 history[i - 1] = mLCE / (i * T);
@@ -309,6 +315,9 @@ namespace mc
                         secondTraj.push_back(w.toFlattenVector());
                     }
 
+                    // TODO:
+                    // auto [in1, out1] = system->GetArgs().at("model").toPreisachModel()->HysteresisLoop();
+                    // auto [in2, out2] = system->GetNextArgs().at("model").toPreisachModel()->HysteresisLoop();
                     auto [in1, out1] = system->GetArgs().at("model").toPreisachModel()->HysteresisLoop();
                     auto [in2, out2] = system->GetNextArgs().at("model").toPreisachModel()->HysteresisLoop();
 
@@ -328,8 +337,42 @@ namespace mc
         }
 
         //#region ------------------------------------------ Find Best Params ------------------------------------------
-        using SolutionFn = std::function<Matrix<double>(Ref<DynamicalSystem> system, const std::unordered_map<DSArgs::key_type, Vote>& args)>;
-        using SolutionsMetricFn = std::function<double(const Matrix<double> &)>;
+
+        /**
+         * A result of metric function.
+         * m_MetricValue -- value of metric.
+         * m_Start -- the start of the segment where the metric is calculated (std::nullopt if the metric is considered for the entire solution)
+         * m_End -- the end of the segment where the metric is calculated (std::nullopt if the metric is considered for the entire solution)
+         */
+        struct MetricResult
+        {
+            MetricResult()
+            {
+                m_MetricValue = consts::nan;
+                m_Start = std::nullopt;
+                m_End = std::nullopt;
+            }
+
+            MetricResult(double value) :
+                m_MetricValue(value)
+            {
+                m_Start = std::nullopt;
+                m_End = std::nullopt;
+            }
+
+            MetricResult(double value, uint32_t start, uint32_t end) :
+                m_MetricValue(value), m_Start(start), m_End(end)
+            {
+            }
+
+            double m_MetricValue = consts::nan;
+            std::optional<uint32_t> m_Start = std::nullopt;
+            std::optional<uint32_t> m_End = std::nullopt;
+        };
+
+        using SolutionFn = std::function<Matrix<double>(Ref<DynamicalSystem> system,
+                                                        const std::unordered_map<DSArgs::key_type, Vote> &args)>;
+        using SolutionsMetricFn = std::function<MetricResult(const Matrix<double> &)>;
         using MetricsCompareFn = std::function<bool(double, double)>;
 
         /**
@@ -337,16 +380,16 @@ namespace mc
          * @param ts: time series
          * @return slope (i.e., growth divided by growth interval length) or consts::nan if no growth segment is found
          */
-        static double GrowthMetric(const Matrix<double> &ts)
+        static MetricResult GrowthMetric(const Matrix<double> &ts)
         {
             if (!ts.isflat())
             {
                 THROW_INVALID_ARGUMENT_ERROR("Matrix must be 1-dim");
             }
 
-            uint32_t n = ts.size();
+            const uint32_t n = ts.size();
             if (n < 2)
-                return consts::nan;
+                return MetricResult();
 
             int32_t start = -1;
             for (uint32_t i = 0; i < n - 1; i++)
@@ -358,7 +401,7 @@ namespace mc
                 }
             }
             if (start == -1)
-                return consts::nan;
+                return MetricResult();
 
             uint32_t end = static_cast<uint32_t>(start) + 1;
             while (end < n && ts[end] > ts[end - 1])
@@ -368,11 +411,11 @@ namespace mc
             end--;
 
             if (end == start)
-                return consts::nan;
+                return MetricResult();
 
             double growth = ts[end] - ts[start];
             uint32_t length = end - start;
-            return growth / length;
+            return MetricResult(growth / length, start, end);
         }
 
         static bool MaxCompare(double new_metric, double best_metric)
@@ -386,21 +429,23 @@ namespace mc
         struct CandidateParams
         {
             using CandidateFn = std::function<std::vector<Vote>()>;
-            
-            CandidateParams(std::vector<Vote> coarse_range, std::optional<double> fine_step/*, std::optional<double> threshold*/)
+
+            CandidateParams(std::vector<Vote> coarse_range,
+                            std::optional<double> fine_step/*, std::optional<double> threshold*/)
             {
                 this->coarse_range = coarse_range;
                 this->fine_step = fine_step;
                 // this->threshold_ratio = threshold;
             }
 
-            CandidateParams(CandidateFn coarse_range, std::optional<double> fine_step/*, std::optional<double> threshold*/)
+            CandidateParams(CandidateFn coarse_range,
+                            std::optional<double> fine_step/*, std::optional<double> threshold*/)
             {
                 this->coarse_range = coarse_range;
                 this->fine_step = fine_step;
                 // this->threshold_ratio = threshold;
             }
-            
+
             std::variant<std::vector<Vote>, CandidateFn> coarse_range;
             std::optional<double> fine_step;
             // std::optional<double> threshold_ratio;
@@ -408,16 +453,16 @@ namespace mc
 
         struct ParamsSearchResult
         {
-            ParamsSearchResult(const std::unordered_map<DSArgs::key_type, Vote> &params, double metric_value,
+            ParamsSearchResult(const std::unordered_map<DSArgs::key_type, Vote> &params, MetricResult metric,
                                const Matrix<double> &solution)
             {
                 this->params = params;
-                this->metric_value = metric_value;
+                this->metric = metric;
                 this->solution = solution;
             }
 
             std::unordered_map<DSArgs::key_type, Vote> params;
-            double metric_value;
+            MetricResult metric;
             Matrix<double> solution;
         };
 
@@ -431,12 +476,13 @@ namespace mc
          * @returns vector of CoarseSearchResult
          */
         inline std::vector<ParamsSearchResult> FindBestParams(Ref<DynamicalSystem> system, const SolutionFn &solve,
-                                   const std::unordered_map<DSArgs::key_type, CandidateParams> &candidates,
-                                   const SolutionsMetricFn &metric = GrowthMetric,
-                                   const MetricsCompareFn &comparator = MaxCompare)
+                                                              const std::unordered_map<
+                                                                  DSArgs::key_type, CandidateParams> &candidates,
+                                                              const SolutionsMetricFn &metric = GrowthMetric,
+                                                              const MetricsCompareFn &comparator = MaxCompare)
         {
             auto keys = candidates | std::views::keys;
-            std::vector<std::string> params_names{ keys.begin(), keys.end() };
+            std::vector<std::string> params_names{keys.begin(), keys.end()};
             std::ranges::sort(params_names);
 
             std::unordered_map<DSArgs::key_type, std::vector<Vote>> coarse_grid;
@@ -459,10 +505,10 @@ namespace mc
 
             std::vector<ParamsSearchResult> coarse_results = {};
 
-            for (const auto &candidate : utils::getNestedCombinations(coarse_grid))
+            for (const auto &candidate : mc::utils::getNestedCombinations(coarse_grid))
             {
                 system->Reset();
-                
+
                 for (const auto &[param_name, param_value] : candidate)
                 {
                     system->SetArg(param_name, param_value);
@@ -478,18 +524,18 @@ namespace mc
             std::vector<ParamsSearchResult> coarse_bests;
             {
                 std::vector<ParamsSearchResult> best_elements;
-                std::optional<double> best_metric;
+                std::optional<MetricResult> best_metric;
 
                 for (const auto &coarse_result : coarse_results)
                 {
-                    if (!isnan(coarse_result.metric_value))
+                    if (!isnan(coarse_result.metric.m_MetricValue))
                     {
-                        if (!best_metric.has_value() || comparator(coarse_result.metric_value, best_metric.value()))
+                        if (!best_metric.has_value() || comparator(coarse_result.metric.m_MetricValue, best_metric.value().m_MetricValue))
                         {
-                            best_metric = coarse_result.metric_value;
+                            best_metric = coarse_result.metric;
                             best_elements = {coarse_result};
                         }
-                        else if (utils::essentiallyEqual(best_metric.value(), coarse_result.metric_value))
+                        else if (mc::utils::essentiallyEqual(best_metric.value().m_MetricValue, coarse_result.metric.m_MetricValue))
                         {
                             best_elements.push_back(coarse_result);
                         }
@@ -499,17 +545,19 @@ namespace mc
                 coarse_bests = best_elements;
             }
 
-           // if (coarse_bests.size() > 1)
-           // {
-           //     std::println("Coarse search revealed more than one best solution. Fine search will be ignored.");
-           //     return coarse_bests;
-           // }
+            // if (coarse_bests.size() > 1)
+            // {
+            //     std::println("Coarse search revealed more than one best solution. Fine search will be ignored.");
+            //     return coarse_bests;
+            // }
 
             return coarse_bests;
         }
+
         //#endregion ------------------------------------------ Find Best Params ------------------------------------------
 
-        inline double FindDivergenceDegree(DynamicalSystem *system, double timeForward, double e, Matrix<double> v,
+        inline double FindDivergenceDegree(const Ref<DynamicalSystem> &system, double timeForward, double e,
+                                           const Matrix<double> &v,
                                            double T, int M, std::vector<Matrix<double>> &traj1,
                                            std::vector<Matrix<double>> &traj2, bool linearize = false)
         {
@@ -520,15 +568,41 @@ namespace mc
             return lnN / lnT;
         }
 
-        inline std::array<double, 2> DivergenceDegreeRegressionData(const Ref<DynamicalSystem> &system, double timeForward,
-                                                                    double e, Matrix<double> v,
-                                                                    double T, int M, std::vector<Matrix<double>> &traj1,
-                                                                    std::vector<Matrix<double>> &traj2,
-                                                                    bool linearize = false)
+        inline mc::json::JsonDocument DivergenceDegreeRegressionData(const Ref<DynamicalSystem> &system,
+                                                                    double timeForward,
+                                                                    double e, const Matrix<double> &v,
+                                                                    mc::Matrix<double> Ts, int M,
+                                                                    std::unordered_map<std::string, std::vector<mc::Matrix<double>>> &trajs1,
+                                                                    std::unordered_map<std::string, std::vector<mc::Matrix<double>>> &trajs2,
+                                                                    std::vector<double>& ns)
         {
             AL_PROFILE_FUNC("FindDivergenceDegree");
 
-            return detail::divergenceDegree(system, timeForward, e, v, T, M, traj1, traj2, linearize);
+            for (const auto &T : Ts)
+            {
+                std::vector<mc::Matrix<double>> traj1, traj2;
+                const auto [n, t] = detail::divergenceDegree(system, timeForward, e, v, T, M, traj1, traj2, false);
+
+                const auto strT = mc::doubleToString(T, 2);
+
+                trajs1.insert({strT, traj1});
+                trajs2.insert({strT, traj2});
+                std::println("n: {}", n);
+                ns.push_back(n);
+            }
+
+            mc::json::JsonDocument message({"name", "method", "dt", "e", "M", "Ts", "ns", "trajs1", "trajs2"});
+            message.AddField("name", "RodosLCEs");
+            message.AddField("method", "plot");
+            message.AddField("dt", system->GetDeltaTime());
+            message.AddField("e", e);
+            message.AddField("M", M);
+            message.AddField("Ts", mc::log(Ts));
+            message.AddField("ns", ns);
+            message.AddField("trajs1", trajs1);
+            message.AddField("trajs2", trajs2);
+
+            return message;
         }
     }
 }

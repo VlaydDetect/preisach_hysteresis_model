@@ -7,4 +7,5 @@
 #pragma once
 
 #include "Integrate/gaussian.hpp"
-#include "Integrate/monteCarlo.hpp"
+#include "Integrate/monteCarloBoost.hpp"
+#include "Integrate/monteCarloHep.hpp"

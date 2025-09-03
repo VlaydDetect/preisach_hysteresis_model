@@ -4122,6 +4122,19 @@ namespace mc
             return returnArray;
         }
 
+        std::vector<self_type> flatRows() const
+        {
+            std::vector<self_type> returnArray(shape_.m_Rows);
+            const auto cSlice = this->cSlice();
+
+            for (size_type i = 0; i < shape_.m_Rows; ++i)
+            {
+                returnArray[i] = this->operator()(i, cSlice);
+            }
+
+            return returnArray;
+        }
+
 
         /// Return the shape of the array
         ///
@@ -4364,7 +4377,7 @@ namespace mc
         }
 
 
-        /// Converts the slice object to an Matrix of indices for this array
+        /// Converts the slice object to a Matrix of indices for this array
         ///
         /// @param inSlice: the slice object
         /// @param inAxis: the array axis

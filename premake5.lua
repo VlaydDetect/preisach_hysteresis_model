@@ -14,7 +14,7 @@ workspace "PreisachModel"
 
 	flags
 	{
-		"MultiProcessorCompile"
+		"MultiProcessorCompile",
 	}
 
 	-- NOTE(Peter): Don't remove this. Please never use Annex K functions ("secure", e.g _s) functions.
@@ -32,6 +32,7 @@ workspace "PreisachModel"
 	filter "action:vs*"
         linkoptions {"/ignore:4099"} -- NOTE(Peter): Disable no PDB found warning
         disablewarnings {"4068"} -- Disable "Unknown #pragma mark warning"
+        buildoptions { "/bigobj" }
 
     filter "language:C++ or language:C"
         architecture "x86_64"

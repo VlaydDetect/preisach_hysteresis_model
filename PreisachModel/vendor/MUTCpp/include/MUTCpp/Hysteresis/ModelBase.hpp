@@ -6,45 +6,36 @@
 
 #pragma once
 
+#include <Eigen/src/Core/Matrix.h>
+
 #include "Functions/isnan.hpp"
 #include "Functions/append.hpp"
 #include "Core/Constants.hpp"
 #include "Debug/Profile.hpp"
+#include "Functions/all_comprasions.hpp"
+#include "Functions/asarray.hpp"
 #include "Functions/empty.hpp"
 #include "Ref/Ref.hpp"
+
+#include <Eigen/Dense>
 
 namespace mc
 {
     class PreisachModelBase : public RefCounted
     {
     public:
-        PreisachModelBase(double L, bool keepDerivative = false, bool keepAnimation = false) :
-            m_L(L), m_KeepDerivative(keepDerivative), m_KeepAnimation(keepAnimation)
+        PreisachModelBase(double L) :
+            m_L(L)
         {
-            AL_PROFILE_FUNC("PreisachModelBase::Constructor");
-            m_HistoryInterfaceMin = {};
-            m_HistoryInterfaceMax = {};
             m_HistoryU = {};
             m_HistoryOutput = {};
-
-            CleanupState();
-
-            // For animation
-            m_PointsX = asarray<double>({-L});
-            m_PointsY = asarray<double>({-L});
-            m_InterfaceX = asarray<double>({-L, -L});
-            m_InterfaceY = asarray<double>({-L, -L});
+            m_HistoryDerivative = {};
         }
 
-        PreisachModelBase(const PreisachModelBase&) = delete;
-        PreisachModelBase& operator=(const PreisachModelBase&) = delete;
+        PreisachModelBase(const PreisachModelBase &) = delete;
+        PreisachModelBase &operator=(const PreisachModelBase &) = delete;
 
-        virtual ~PreisachModelBase() override = default;
-
-        double GetL() const
-        {
-            return m_L;
-        }
+        // virtual ~PreisachModelBase() override = default;
 
         // std::array<Matrix<double>, 2> HysteresisLoop() const
         std::array<std::vector<double>, 2> HysteresisLoop() const
@@ -58,13 +49,61 @@ namespace mc
             return {m_HistoryU, m_HistoryDerivative};
         }
 
+        double GetL() const
+        {
+            return m_L;
+        }
+
+        virtual double GetMaxArea() const = 0;
+
+        virtual double P(double u, int i = -1) = 0;
+
+        virtual double DerivativeOperator(double t, double dt) = 0;
+
+    protected:
+        double m_L;
+
+        std::vector<double> m_HistoryU{}, m_HistoryOutput{}, m_HistoryDerivative{};
+    };
+
+    class SinglePreisachModel : public PreisachModelBase
+    {
+    public:
+        SinglePreisachModel(double L, bool keepDerivative = false, bool keepAnimation = false) :
+            PreisachModelBase(L), m_KeepDerivative(keepDerivative), m_KeepAnimation(keepAnimation)
+        {
+            AL_PROFILE_FUNC("PreisachModelBase::Constructor");
+
+            m_HistoryInterfaceMin = {};
+            m_HistoryInterfaceMax = {};
+
+            CleanupState();
+
+            // For animation
+            m_PointsX = asarray<double>({-L});
+            m_PointsY = asarray<double>({-L});
+            m_InterfaceX = asarray<double>({-L, -L});
+            m_InterfaceY = asarray<double>({-L, -L});
+        }
+
+        void SetD(double d)
+        {
+            m_D = d;
+            m_Bounds = {-m_L + m_D, m_L + m_D};
+        }
+
         // std::array<Matrix<double>, 4> GetAnimationData() const
         std::tuple<std::vector<double>, Matrix<double>, Matrix<double>, std::vector<double>> GetAnimationData() const
         {
             return {m_HistoryU, m_HistoryInterfaceX, m_HistoryInterfaceY, m_HistoryOutput};
         }
 
-        double P(double u, int i = -1)
+        virtual double GetMaxArea() const override
+        {
+            return 2 * utils::power(m_L, 2);
+        }
+
+        virtual double P(const double u, const int i = -1) override
         {
             AL_PROFILE_FUNC("PreisachModelBase::P");
             if (i == m_PrevIndex)
@@ -74,23 +113,7 @@ namespace mc
             }
             m_PrevIndex = i;
 
-            // constexpr double d = 1.;
-            // if (u >= 1.)
-            // {
-            //     u -= d;
-            // }
-            // else if (u <= -1.)
-            // {
-            //     u += d;
-            // }
-            // else if (u > -1. || u < 1.)
-            // {
-            //     m_PreviousOutput = u;
-            //     return u;
-            // }
-            
             // The first input is x0
-            // if (m_HistoryU.isempty())
             if (m_HistoryU.empty())
             {
                 // m_InterfaceMax = append(m_InterfaceMax, {u});
@@ -107,15 +130,14 @@ namespace mc
             // m_HistoryU = append(m_HistoryU, {u});
             m_HistoryU.push_back(u);
 
-            if (u < -m_L || utils::essentiallyEqual(u, -m_L))
+            if (u < m_Bounds[0] || utils::essentiallyEqual(u, m_Bounds[0]))
             {
                 AL_PROFILE_SCOPE("PreisachModelBase::P::LowerBound");
-                KeepMinOnly(-m_L);
+                KeepMinOnly(m_Bounds[0]);
 
-                m_PreviousInput = -m_L;
+                m_PreviousInput = m_Bounds[0];
                 m_PrevElemType = m_LastElemType;
-                // m_HistoryOutput = append(m_HistoryOutput, {-m_L});
-                m_HistoryOutput.push_back(-m_L);
+                // m_HistoryOutput = append(m_HistoryOutput, {m_Bounds[0]});
 
                 if (m_KeepDerivative)
                 {
@@ -123,18 +145,19 @@ namespace mc
                     m_HistoryDerivative.push_back(DerivativeOperator(i));
                 }
 
-                m_PreviousOutput = -m_L;
-                return -m_L;
+                const double p = -GetMaxArea();
+                m_HistoryOutput.push_back(p);
+                m_PreviousOutput = p;
+                return p;
             }
-            if (u > m_L || utils::essentiallyEqual(u, m_L))
+            if (u > m_Bounds[1] || utils::essentiallyEqual(u, m_Bounds[1]))
             {
                 AL_PROFILE_SCOPE("PreisachModelBase::P::UpperBound");
-                KeepMaxOnly(m_L);
-                
-                m_PreviousInput = m_L;
+                KeepMaxOnly(m_Bounds[1]);
+
+                m_PreviousInput = m_Bounds[1];
                 m_PrevElemType = m_LastElemType;
-                // m_HistoryOutput = append(m_HistoryOutput, {m_L});
-                m_HistoryOutput.push_back(m_L);
+                // m_HistoryOutput = append(m_HistoryOutput, {m_Bounds[1]});
 
                 if (m_KeepDerivative)
                 {
@@ -142,8 +165,10 @@ namespace mc
                     m_HistoryDerivative.push_back(DerivativeOperator(i));
                 }
 
-                m_PreviousOutput = m_L;
-                return m_L;
+                const double p = GetMaxArea();
+                m_HistoryOutput.push_back(p);
+                m_PreviousOutput = p;
+                return p;
             }
 
             // ----------- Simplest cleanup -----------
@@ -210,7 +235,7 @@ namespace mc
             return p;
         }
 
-        double DerivativeOperator(double t, double dt)
+        virtual double DerivativeOperator(double t, double dt) override
         {
             auto i = static_cast<uint32_t>(t / dt);
 
@@ -218,8 +243,8 @@ namespace mc
             {
                 return m_HistoryDerivative.back();
             }
-            m_PrevIndex = i;
-            
+            // m_PrevIndex = i;
+
             if (m_KeepDerivative)
             {
                 return m_HistoryDerivative[i];
@@ -243,6 +268,7 @@ namespace mc
     protected:
         virtual double P_Impl(double u) = 0;
 
+        // TODO: need bounds?
         virtual double DerivativeOperator_Impl(uint32_t i)
         {
             double x_i = m_HistoryU[i];
@@ -338,11 +364,12 @@ namespace mc
                 // m_InterfaceMax = m_InterfaceMax[Slice(0, pos + 1)];
                 // m_InterfaceMin = m_InterfaceMin[Slice(0, pos)];
 
-                const auto pos = std::distance(m_InterfaceMax.begin(), std::ranges::lower_bound(m_InterfaceMax, u, std::greater<double>()));
+                const auto pos = std::distance(m_InterfaceMax.begin(),
+                                               std::ranges::lower_bound(m_InterfaceMax, u, std::greater<double>()));
                 m_InterfaceMax.insert(m_InterfaceMax.begin() + pos, u);
                 m_InterfaceMax.erase(m_InterfaceMax.begin() + pos + 1, m_InterfaceMax.end());
                 m_InterfaceMin.erase(m_InterfaceMin.begin() + pos, m_InterfaceMin.end());
-                
+
                 break;
             }
             case ElementType::Min:
@@ -352,11 +379,12 @@ namespace mc
                 // m_InterfaceMax = m_InterfaceMax[Slice(0, pos + 1)];
                 // m_InterfaceMin = m_InterfaceMin[Slice(0, pos + 1)];
 
-                const auto pos = std::distance(m_InterfaceMax.begin(), std::ranges::lower_bound(m_InterfaceMax, u, std::greater<double>()));
+                const auto pos = std::distance(m_InterfaceMax.begin(),
+                                               std::ranges::lower_bound(m_InterfaceMax, u, std::greater<double>()));
                 m_InterfaceMax.insert(m_InterfaceMax.begin() + pos, u);
                 m_InterfaceMax.erase(m_InterfaceMax.begin() + pos + 1, m_InterfaceMax.end());
                 m_InterfaceMin.erase(m_InterfaceMin.begin() + pos + 1, m_InterfaceMin.end());
-                
+
                 break;
             }
             }
@@ -373,7 +401,7 @@ namespace mc
                 // m_InterfaceMin = insert(m_InterfaceMin, pos, u);
                 // m_InterfaceMax = m_InterfaceMax[Slice(0, pos + 1)];
                 // m_InterfaceMin = m_InterfaceMin[Slice(0, pos + 1)];
-                
+
                 const auto pos = std::distance(m_InterfaceMin.begin(), std::ranges::lower_bound(m_InterfaceMin, u));
                 m_InterfaceMin.insert(m_InterfaceMin.begin() + pos, u);
                 m_InterfaceMax.erase(m_InterfaceMax.begin() + pos + 1, m_InterfaceMax.end());
@@ -392,7 +420,7 @@ namespace mc
                 m_InterfaceMin.insert(m_InterfaceMin.begin() + pos, u);
                 m_InterfaceMax.erase(m_InterfaceMax.begin() + pos, m_InterfaceMax.end());
                 m_InterfaceMin.erase(m_InterfaceMin.begin() + pos + 1, m_InterfaceMin.end());
-                
+
                 break;
             }
             }
@@ -429,17 +457,18 @@ namespace mc
         }
 
     protected:
-        double m_L;
+        double m_D = 0.0;
+        std::array<double, 2> m_Bounds = {-m_L + m_D, m_L + m_D};
         double m_PreviousInput = consts::nan;
         double m_PreviousOutput = consts::nan;
         std::vector<double> m_InterfaceMax{}, m_InterfaceMin{};
         bool m_KeepDerivative = false, m_KeepAnimation = false;
         uint32 m_PrevIndex = -1;
-        
+
+        std::vector<double> m_HistoryInterfaceMin{}, m_HistoryInterfaceMax{};
+
         // Matrix<double> m_HistoryInterfaceMin{}, m_HistoryInterfaceMax{}, m_HistoryU{}, m_HistoryOutput{},
         //                m_HistoryDerivative{};
-        std::vector<double> m_HistoryInterfaceMin{}, m_HistoryInterfaceMax{}, m_HistoryU{}, m_HistoryOutput{},
-                       m_HistoryDerivative{};
 
         // ---- For Animation ----
         Matrix<double> m_InterfaceX{}, m_InterfaceY{}, m_PointsX{}, m_PointsY{};
@@ -455,5 +484,76 @@ namespace mc
         ElementType m_FirstElemType = ElementType::Max;
         ElementType m_PrevElemType = ElementType::Max;
         ElementType m_LastElemType = ElementType::Max;
+    };
+
+    class DoublePreisachModel : public PreisachModelBase
+    {
+    public:
+        DoublePreisachModel(double L, double d) :
+            PreisachModelBase(L), m_D({d, -d})
+        {
+            assert(d >= 0);
+
+            m_HistoryU = {};
+            m_HistoryOutput = {};
+
+            // m_UpperModel = Ref<SinglePreisachModel>::Create(m_L + m_D[0], false, false);
+            // m_LowerModel = Ref<SinglePreisachModel>::Create(m_L - m_D[1], false, false);
+        }
+
+        DoublePreisachModel(double L, const std::array<double, 2> &d) :
+            PreisachModelBase(L), m_D({d[0], -d[1]})
+        {
+            assert(d[0] >= 0 && d[1] >= 0);
+
+            m_HistoryU = {};
+            m_HistoryOutput = {};
+
+            // m_UpperModel = Ref<SinglePreisachModel>::Create(m_L + m_D[0], false, false);
+            // m_LowerModel = Ref<SinglePreisachModel>::Create(m_L - m_D[1], false, false);
+        }
+
+        virtual double P(double u, int i = -1) override
+        {
+            if (i == m_PrevIndex)
+            {
+                // return m_HistoryOutput.back();
+                return m_PreviousOutput;
+            }
+            m_PrevIndex = i;
+
+            m_HistoryU.push_back(u);
+            double p = consts::nan;
+            /// TODO: если d == 1, то петли не соприкасаются из-за добавки +-d/2
+            if (u >= -m_L + m_D[0])
+            {
+                double p1 = m_UpperModel->P(u, i);
+                double p2 = m_LowerModel->P(u, i);
+                p = p1 + p2 /*+ m_D[0] / 2.*/;
+            }
+            // m_D[1] is negative
+            else if (u <= m_L + m_D[1])
+            {
+                double p1 = m_UpperModel->P(u, i);
+                double p2 = m_LowerModel->P(u, i);
+                p = p1 + p2 /*+ m_D[1] / 2.*/;
+            }
+            else
+            {
+                p = u;
+            }
+            m_HistoryOutput.push_back(p);
+            m_PreviousOutput = p;
+            return p;
+        }
+
+    protected:
+        Ref<SinglePreisachModel> m_UpperModel;
+        Ref<SinglePreisachModel> m_LowerModel;
+
+        std::array<double, 2> m_D;
+
+        uint32 m_PrevIndex = -1;
+        double m_PreviousOutput = consts::nan;
     };
 }

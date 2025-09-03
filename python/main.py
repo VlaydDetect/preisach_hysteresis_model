@@ -2,6 +2,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import glob
 
+from scipy.signal import argrelextrema
+from scipy.stats import linregress
+
 from plotting import *
 from utils import gen_steps_sequence, select_best_growth
 import server
@@ -184,8 +187,11 @@ def areal_model_test():
         # plt.plot(x, v)
         # plt.show()
 
-        # plt.plot(t, derivatives)
-        # plt.show()
+        plt.plot(t, x)
+        plt.plot(t, derivatives)
+        plt.legend(["x", "derivatives"])
+        plt.grid(True)
+        plt.show()
 
         plt.plot(x, loop)
         plt.show()
@@ -201,22 +207,23 @@ def just_solve_rodos():
 
         # h = data["h"]
         E = data["E"]
-        x = data["results"]["x"]
-        v = data["results"]["v"]
+        x = np.asarray(data["results"]["x"])
+        v = np.asarray(data["results"]["v"])
         # derivatives = data["results"]["derivatives"]
         inputs = data["loop"]["inputs"]
         loop = data["loop"]["outputs"]
         # ax = data["anim"]["x"]
         # ay = data["anim"]["y"]
         # aout = data["anim"]["out"]
+        plot_fourier_transform(x, dt=0.01, )
 
         # fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(12, 8))
 
-        plot_x(x, t)
+        plot_x(x[0:15000], t[0:15000])
         plot_v(v, t)
         plot_phase_portrait(x, v)
         plot_hysteresis_loop(inputs, loop)
-        
+
         print(loop[:10])
         # plot_preisach_derivative(t, inputs, derivatives)
         # sim = animate_preisach_plane(inputs, ax, ay, aout, 1.)
@@ -228,55 +235,58 @@ def just_solve_rodos():
 
 
 def plot_lce():
-    # with open(f"../PreisachModel/RodosLCEs.json") as f:
-    #     data = json.load(f)
-    #     dt = data["dt"]
-    #     E = data["E"]
-    #     time = data["time"]
-    #     # mLCE = data["results"]["mLCE"]
-    #     b_mLCE = data["results"]["Benettin_mLCE"]
-    #     # hist = data["results"]["mLCE_history"]
-    #     b_hist = data["results"]["Benettin_mLCE_history"]
-    #     
-    #     t = np.arange(0.0, time, dt)
-    #     
-    #     # print(f"mLCE = {mLCE}")
-    #     # plt.plot(hist, 'r')
-    #     # plt.show()
-    #     print(f"Benettin mLCE = {b_mLCE}")
-    #     plt.plot(b_hist, 'b')
-    #     plt.show()
-
-    # with open(f"../PreisachModel/RodosLCEs_TwoTrajs.json") as f:
-    with open(f"../PreisachModel/RodosLCEs_Regression.json") as f:
+    with open(f"../PreisachModel/RodosLCEs.json") as f:
         data = json.load(f)
-        dt = data["dt"]
+        # dt = data["dt"]
+        # E = data["E"]
         # time = data["time"]
-        traj1 = np.asarray(data["traj1"])
-        traj2 = np.asarray(data["traj2"])
+        mLCE = data["mLCE"]
+        # b_mLCE = data["results"]["Benettin_mLCE"]
+        hist = data["hist"]
+        # b_hist = data["results"]["Benettin_mLCE_history"]
+
         # t = np.arange(0.0, time, dt)
 
-        x1, y1 = [i[0] for i in traj1], [i[1] for i in traj1]
-        x2, y2 = [i[0] for i in traj2], [i[1] for i in traj2]
-
-        x11 = np.asarray(x1[:4000])
-        x22 = np.asarray(x2[:4000])
-        y11 = np.asarray(y1[:4000])
-        y22 = np.asarray(y2[:4000])
-
-        k = int(0.5 / dt)
-        # for i in range(0, k * 10, k):
-        #     plt.vlines(i, -2, 1, colors='k', linestyles='dashed')
-        # x1i = x1[i]
-        # x2i = x2[i]
-        # plt.plot(x1i, x2i, 'k')
-
-        plt.plot(x11, y11, 'b')
-        plt.plot(x22, y22, 'r')
+        print(f"mLCE = {mLCE}")
+        plt.plot(hist, 'g')
+        plt.plot(np.full_like(hist, mLCE), 'r--')
+        plt.legend(["mLCE history", "mLCE"])
+        plt.grid(True)
         plt.show()
+        # print(f"Benettin mLCE = {b_mLCE}")
+        # plt.plot(b_hist, 'b')
+        # plt.show()
 
-        plt.plot(np.sqrt(np.square(x11 - x22) + np.square(y11 - y22)))
-        plt.show()
+    # with open(f"../PreisachModel/RodosLCEs_TwoTrajs.json") as f:
+    # with open(f"../PreisachModel/RodosLCEs_Regression.json") as f:
+    #     data = json.load(f)
+    #     dt = data["dt"]
+    #     # time = data["time"]
+    #     traj1 = np.asarray(data["traj1"])
+    #     traj2 = np.asarray(data["traj2"])
+    #     # t = np.arange(0.0, time, dt)
+    # 
+    #     x1, y1 = [i[0] for i in traj1], [i[1] for i in traj1]
+    #     x2, y2 = [i[0] for i in traj2], [i[1] for i in traj2]
+    # 
+    #     x11 = np.asarray(x1[:4000])
+    #     x22 = np.asarray(x2[:4000])
+    #     y11 = np.asarray(y1[:4000])
+    #     y22 = np.asarray(y2[:4000])
+    # 
+    #     k = int(0.5 / dt)
+    #     # for i in range(0, k * 10, k):
+    #     #     plt.vlines(i, -2, 1, colors='k', linestyles='dashed')
+    #     # x1i = x1[i]
+    #     # x2i = x2[i]
+    #     # plt.plot(x1i, x2i, 'k')
+    # 
+    #     plt.plot(x11, y11, 'b')
+    #     plt.plot(x22, y22, 'r')
+    #     plt.show()
+    # 
+    #     plt.plot(np.sqrt(np.square(x11 - x22) + np.square(y11 - y22)))
+    #     plt.show()
 
 
 def n_regression():
@@ -291,19 +301,27 @@ def n_regression():
         # ------------regression--------------
         plt.scatter(Ts, ns)
 
-        model = np.polyfit(Ts, ns, 1)
-        print(model)
+        slope, intercept, r_value, _, _ = linregress(Ts, ns)
 
-        predict = np.poly1d(model)
-        y_pred = predict(Ts)
+        print(ns / Ts)
 
-        ss_total = np.sum((ns - np.mean(ns)) ** 2)
-        ss_res = np.sum((ns - y_pred) ** 2)
-        r_square = 1 - (ss_res / ss_total)
-        print(r_square)
+        # model = np.polyfit(Ts, ns, 1)
+        # print(model)
+        # 
+        # predict = np.poly1d(model)
+        # y_pred = predict(Ts)
+        # 
+        # ss_total = np.sum((ns - np.mean(ns)) ** 2)
+        # ss_res = np.sum((ns - y_pred) ** 2)
+        # r_square = 1 - (ss_res / ss_total)
+        # print(f"r_square = {r_square}")
+        print(f"r_square = {r_value ** 2}")
 
-        plt.plot(Ts, y_pred, 'r')
-        plt.title(f"Slope (k): {model[0]:.4f}, Intercept (b): {model[1]:.4f}.\n M = {M}, e = {e:.2f}")
+        # plt.plot(Ts, y_pred, 'r')
+        # plt.title(f"Slope (k): {model[0]:.4f}, Intercept (b): {model[1]:.4f}.\n M = {M}, e = {e:.2f}")
+        # plt.show()
+        plt.plot(Ts, slope * Ts + intercept, 'r')
+        plt.title(f"Slope (k): {slope:.4f}, Intercept (b): {intercept:.4f}.\n M = {M}, e = {e:.2f}")
         plt.show()
         # ------------------------------------
 
@@ -311,15 +329,29 @@ def n_regression():
         trajs1 = data["trajs1"]
         trajs2 = data["trajs2"]
 
-        traj1 = np.asarray(trajs1["3.00"])
-        traj2 = np.asarray(trajs2["3.00"])
+        print(trajs1.keys())
+
+        timeKey = list(trajs1.keys())[-1]
+
+        # traj1 = np.asarray(trajs1["3.00"])
+        # traj2 = np.asarray(trajs2["3.00"])
+        traj1 = np.asarray(trajs1[timeKey])
+        traj2 = np.asarray(trajs2[timeKey])
+        # traj1 = np.asarray(trajs1["0.08"])
+        # traj2 = np.asarray(trajs2["0.08"])
         x1, y1 = [i[0] for i in traj1], [i[1] for i in traj1]
         x2, y2 = [i[0] for i in traj2], [i[1] for i in traj2]
 
-        x11 = np.asarray(x1[:10000])
-        x22 = np.asarray(x2[:10000])
-        y11 = np.asarray(y1[:10000])
-        y22 = np.asarray(y2[:10000])
+        n = -1
+        x11 = np.asarray(x1[:n])
+        x22 = np.asarray(x2[:n])
+        y11 = np.asarray(y1[:n])
+        y22 = np.asarray(y2[:n])
+
+        # x11 = np.asarray(x1[:300])
+        # x22 = np.asarray(x2[:300])
+        # y11 = np.asarray(y1[:300])
+        # y22 = np.asarray(y2[:300])
 
         plt.plot(x11, y11, 'b')
         plt.plot(x22, y22, 'r')
@@ -382,8 +414,8 @@ def test_trajs_circle():
         k = 2
         n = len(coords) // k
         for l, e in enumerate(es):
-            trajs = data["trajs"][e]
-            loops = data["loops"][e]
+            trajs = data["trajs"]
+            loops = data["loops"]
             div_fig, div_ax = plt.subplots(nrows=k, ncols=n, figsize=(35, 15))
             # phase_fig, phase_ax = plt.subplots(nrows=k, ncols=n, figsize=(35, 15))
             # x_fig, x_ax = plt.subplots(nrows=k, ncols=n, figsize=(35, 15))
@@ -433,7 +465,166 @@ def test_trajs_circle():
             print("Подходящих временных рядов не найдено.")
 
 
+def TwoTrajsOnCircle():
+    with open(f"../PreisachModel/TwoTrajsOnCircle.json") as f:
+        data = json.load(f)
+
+        coords = np.asarray(data["coords"])
+
+        series_list = []
+
+        k = 2
+        n = len(coords) // k
+        trajs = data["trajs"]
+        loops = data["loops"]
+        div_fig, div_ax = plt.subplots(nrows=k, ncols=n, figsize=(35, 15))
+        # phase_fig, phase_ax = plt.subplots(nrows=k, ncols=n, figsize=(35, 15))
+        x_fig, x_ax = plt.subplots(nrows=k, ncols=n, figsize=(35, 15))
+        loop_fig, loop_ax = plt.subplots(nrows=k, ncols=n, figsize=(35, 15))
+        for i in range(len(coords)):
+            m = i // n
+            j = i % n
+
+            v = coords[i]
+            traj = trajs[v]
+
+            loop = loops[v]
+            in1, out1 = np.asarray(loop[0]), np.asarray(loop[1])
+            in2, out2 = np.asarray(loop[2]), np.asarray(loop[3])
+
+            main = np.asarray(traj[0])
+            x1, y1 = np.asarray([i[0] for i in main]), np.asarray([i[1] for i in main])
+            other = np.asarray(traj[1])
+            x2, y2 = np.asarray([i[0] for i in other]), np.asarray([i[1] for i in other])
+
+            div = np.sqrt(np.square(x1 - x2) + np.square(y1 - y2))[:700] * 100
+            series_list.append(div)
+
+            div_ax[m, j].plot(div)
+            div_ax[m, j].set_title(f"v={v}")
+
+            # phase_ax[m, j].plot(x1, y1, 'b')
+            # phase_ax[m, j].plot(x2, y2, 'r')
+
+            x_ax[m, j].plot(x1, 'b')
+            x_ax[m, j].plot(x2, 'r')
+
+            loop_ax[m, j].plot(in1, out1, 'b')
+            loop_ax[m, j].plot(in2, out2, 'r')
+
+        # div_fig.legend()
+        plt.show()
+        # plt.savefig(f"./test_trajs_circle/test_trajs_circle_{l}.png")
+
+        best_idx, best_segment, best_start_val, best_end_val, best_growth = select_best_growth(series_list)
+        if best_idx is not None:
+            print("Выбран временной ряд с индексом:", best_idx)
+            print(
+                f"Отрезок роста (start, end, slope, start_val, end_val, growth): ({best_segment}, {best_start_val}, {best_end_val}, {best_growth})")
+        else:
+            print("Подходящих временных рядов не найдено.")
+
+
+def PoincareMapping():
+    with open(f"../PreisachModel/PoincareMapping.json") as f:
+        data = json.load(f)
+        pm = data["RadonsPoincareMapping"]
+        x, v = np.asarray([i[0] for i in pm]), np.asarray([i[1] for i in pm])
+        pm = np.vstack((x, v)).T
+
+        min_x, min_y = pm.min(axis=0)
+        max_x, max_y = pm.max(axis=0)
+        range_x = max_x - min_x
+        range_y = max_y - min_y
+        pm_norm = (pm - [min_x, min_y]) / [range_x, range_y]
+
+        x_norm, v_norm = np.asarray([i[0] for i in pm_norm]), np.asarray([i[1] for i in pm_norm])
+
+        from scipy.spatial import KDTree
+        tree = KDTree(pm_norm)
+        dist, _ = tree.query(pm_norm, k=2)
+        nearest_dist = dist[:, 1]
+
+        r_obs = nearest_dist.mean()
+        area = 1
+        lam = len(pm_norm) / area
+        r_exp = 1 / (2 * np.sqrt(lam))
+        R = r_obs / r_exp
+        print(R)
+
+        # plt.scatter(x, v)
+        # plt.show()
+
+        plt.scatter(x_norm, v_norm)
+        plt.show()
+
+
+def BifurcationDiagram():
+    with open(f"../PreisachModel/BifurcationDiagram.json") as f:
+        data = json.load(f)
+        trajs = data["trajs"]
+        params = data["A"]
+
+        bifurcation_param = []
+        bifurcation_x = []
+        
+        for i in range(len(params)):
+            p = params[i]
+            research = trajs[i]
+                x = np.asarray([point[0] for point in research])
+
+            maxima = argrelextrema(x, np.greater)
+            minima = argrelextrema(x, np.less)
+            extremas_idx = np.concatenate([maxima, minima], axis=None)
+            x_peaks = x[extremas_idx]
+
+            bifurcation_param.extend([p] * len(x_peaks))
+            bifurcation_x.extend(x_peaks)
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(bifurcation_param, bifurcation_x, ',k', alpha=1.)
+        plt.xlabel('A')
+        plt.ylabel('x')
+        plt.title('Бифуркационная диаграмма')
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+       
+
 if __name__ == '__main__':
+    # x = np.linspace(-1, 1, 100)
+    # y = np.linspace(-1, 1, 100)
+    # X, Y = np.meshgrid(x, y)
+    # 
+    # def phi(x, a, b, c):
+    #     return (a / 2) / (1 + np.cosh((x - b) / c))
+    # 
+    # def phiphi(x, y, a, b, c):
+    #     return phi(x, a, b, c) * phi(-y, a, b, c)
+    # 
+    # 
+    # a = np.asarray([1, 0.5, 0.3])
+    # b = np.asarray([1, 0.5, 0.4])
+    # c = np.asarray([1, 1, 1])
+    # 
+    # Z = np.zeros((x.size, y.size))
+    # for i in range(len(a)):
+    #     Z += phiphi(X, Y, a[i], b[i], c[i])
+    # 
+    # Z = np.where(X < Y, Z, np.nan)
+    # 
+    # fig = plt.figure(figsize=(10, 7))
+    # ax = fig.add_subplot(111, projection='3d')
+    # surf = ax.plot_surface(X, Y, Z, cmap='viridis', edgecolor='none')
+    # 
+    # fig.colorbar(surf, shrink=0.5, aspect=5)
+    # plt.tight_layout()
+    # plt.show()
+
+    # just_solve_rodos()
+
+    # plot_everett_fn(X, Y, Z, method='linear')
+
     # # Примеры временных рядов:
     # # ts1: начинает с роста, затем спад;
     # # ts2: сначала спад, затем резкий рост;
@@ -455,17 +646,19 @@ if __name__ == '__main__':
     # areal_model_test()
     # plot_lce()
     # n_regression()
+    # TwoTrajsOnCircle()
+
+    # PoincareMapping()
+    BifurcationDiagram()
 
     # regressionTable()
     # two_trajs()
     # test_trajs_circle()
-    
+
     # with open(f"../PreisachModel/TEST.json") as f:
     #     data = json.load(f)
     #     plt.plot(data["in"], data["out"])
     #     plt.show()
-
-    just_solve_rodos()
 
     # dt = 0.1
     # t = np.arange(0, 600, dt)

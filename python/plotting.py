@@ -2,6 +2,7 @@ import json
 
 import matplotlib.pyplot as plt
 import numpy as np
+import scipy
 import warnings
 from utils import find_local_extrema
 
@@ -21,7 +22,7 @@ class PlottingFlag(Flag):
 def draw_axes(ax=None):
     if ax is None:
         ax = plt
-    
+
     ax.axhline(y=0, color='k')
     ax.axvline(x=0, color='k')
 
@@ -225,12 +226,12 @@ def animate_preisach_plane(uHist, xHist, yHist, outHist, L):
     uAx.set_ylim([-L * 1.1, L * 1.1])
     uAx.set_xlabel('samples')
     uAx.set_ylabel('input')
-    
+
     uLine, = uAx.plot([0.0], [0.0], '.', markersize=15)
 
     # create plot of preisach plane
     stateAx.plot(np.array([-L, L, -L, -L]),
-             np.array([-L, L, L, -L]), linewidth=3)
+                 np.array([-L, L, L, -L]), linewidth=3)
     stateLine, = stateAx.plot([], [], 'r', linewidth=2)
     stateAx.set_xlim(-L * 1.1, L * 1.1)
     stateAx.set_ylim(-L * 1.1, L * 1.1)
@@ -326,8 +327,9 @@ def plot_preisach_derivative(time, inputs, derivatives, title=""):
     plt.show()
 
 
-def plot_fourier_transform(sig, dt=None, plot=True):
-    # Here it's assumes analytic signal (real signal...) - so only half of the axis is required
+def plot_fourier_transform(sig, N=None, dt=None):
+    if N is None:
+        N = sig.shape[0] - 1
 
     if dt is None:
         dt = 1
@@ -337,29 +339,42 @@ def plot_fourier_transform(sig, dt=None, plot=True):
         t = np.arange(0, sig.shape[-1]) * dt
         xLabel = 'freq'
 
-    if sig.shape[0] % 2 != 0:
+    if N % 2 != 0:
         warnings.warn("signal preferred to be even in size, autoFixing it...")
         t = t[0:-1]
         sig = sig[0:-1]
 
-    sigFFT = np.fft.fft(sig) / t.shape[0]  # Divided by size t for coherent magnitude
+    sigFFT = scipy.fft.fft(sig)
+    w = scipy.signal.windows.blackman(N)
+    sig_w_FFT = scipy.fft.fft(sig[0:N] * w)
+    freq = scipy.fft.fftfreq(N, dt)[1:N // 2]
 
-    freq = np.fft.fftfreq(t.shape[0], d=dt)
+    plt.plot(freq[1:N // 2][:300], 2. / N * np.abs(sigFFT[1:N // 2 - 1])[:300], '-b')
+    # plt.semilogy(freq, 2. / N * np.abs(sig_w_FFT[1:N//2]), '-r')
+    # plt.legend(["FFT", "FFT w. window"])
+    plt.xlabel(xLabel)
+    plt.ylabel("fft")
+    plt.grid()
+    plt.show()
 
-    # Plot analytic signal - right half of frequence axis needed only...
-    firstNegInd = np.argmax(freq < 0)
-    freqAxisPos = freq[0:firstNegInd]
-    sigFFTPos = 2 * sigFFT[0:firstNegInd]  # *2 because of magnitude of analytic signal
-
-    if plot:
-        plt.figure()
-        plt.plot(freqAxisPos, np.abs(sigFFTPos))
-        plt.xlabel(xLabel)
-        plt.ylabel('mag')
-        plt.title('Analytic FFT plot')
-        plt.show()
-
-    return sigFFTPos, freqAxisPos
+    # sigFFT = np.fft.fft(sig) / t.shape[0]  # Divided by size t for coherent magnitude
+    # 
+    # freq = np.fft.fftfreq(t.shape[0], d=dt)
+    # 
+    # # Plot analytic signal - right half of frequence axis needed only...
+    # firstNegInd = np.argmax(freq < 0)
+    # freqAxisPos = freq[0:firstNegInd]
+    # sigFFTPos = 2 * sigFFT[0:firstNegInd]  # *2 because of magnitude of analytic signal
+    # 
+    # if plot:
+    #     plt.figure()
+    #     plt.plot(freqAxisPos, np.abs(sigFFTPos))
+    #     plt.xlabel(xLabel)
+    #     plt.ylabel('mag')
+    #     plt.title('Analytic FFT plot')
+    #     plt.show()
+    # 
+    # return sigFFTPos, freqAxisPos
 
 
 def plot_bifurcation_diagram(x_values, y_values, x_label, y_label, title=""):
@@ -487,3 +502,36 @@ def afc(eps=0.1):
     # plt.title(f"A = {A}")
     # plt.legend()
     # plt.show()
+
+
+def plot_everett_fn(x: np.ndarray, y: np.ndarray, z: np.ndarray, method='cubic', resolution=100):
+    """
+    
+    :param x: 
+    :param y: 
+    :param z: 
+    :param method: 'linear', 'cubic' or 'nearest'
+    :param resolution: grid resolution for each axis
+    """
+    if x.shape != y.shape or x.shape != z.shape: raise ValueError("x, y and z must have the same shape")
+
+    xi = np.linspace(np.min(x), np.max(x), resolution)
+    yi = np.linspace(np.min(y), np.max(y), resolution)
+    X, Y = np.meshgrid(xi, yi)
+
+    Z = scipy.interpolate.griddata((x, y), z, (X, Y), method=method)
+
+    fig = plt.figure(figsize=(10, 7))
+    ax = fig.add_subplot(111, projection='3d')
+    surf = ax.plot_surface(X, Y, Z, cmap='viridis', edgecolor='none')
+
+    ax.set_title('Everett function')
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+    ax.set_zlabel('z')
+
+    fig.colorbar(surf, shrink=0.5, aspect=5)
+    plt.tight_layout()
+    plt.show()
+
+
