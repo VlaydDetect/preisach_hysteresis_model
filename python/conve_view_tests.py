@@ -478,45 +478,45 @@ def two_rays_by_angle(X, eps=1e-12):
     return (ray1, ray2), arc_len, (idx_start, idx_end)
 
 # Example
-if __name__ == "__main__":
-    A = np.array([[-1.0,  0.8],
-                  [ 0.0, -2.0]])
-    b = np.array([1.0, 0.6])
-
-    A2 = np.array([
-        [0.0, 1.0],
-        [-0.1, -0.7]
-    ])
-    b2 = np.array([0, 1.5])
-
-    t, X = sample_curve(A2, b2, T=40.0, num=3001)
-    res = two_rays_by_angle(X)
-    if res[0] is None:
-        print("Двух лучей недостаточно: угловой размах кривой = {:.3f} rad (> pi).".format(res[1]))
-    else:
-        (r1, r2), arc_len, (i1, i2) = res
-        print("Выбраны индексы точек:", i1, i2, "угловой размах (rad):", arc_len)
-        # визуализация
-        plt.figure(figsize=(6,6))
-        plt.plot(X[:,0], X[:,1], '-k', label='curve')
-        L = np.max(np.linalg.norm(X, axis=1)) * 1.05
-        for v, name in [(r1,'r1'), (r2,'r2')]:
-            plt.plot([0, v[0]], [0, v[1]], '--', lw=2, label=name)
-        # shade sector if arc small
-        theta1 = np.arctan2(r1[1], r1[0])
-        theta2 = np.arctan2(r2[1], r2[0])
-        # create sector polygon (fine grid)
-        ths = np.linspace(theta1, theta2, 60)
-        # handle wrap-around properly
-        if (theta2 - theta1) > np.pi:
-            # swap to take shorter arc
-            ths = np.linspace(theta2, theta1, 60)
-        poly = np.vstack([np.zeros(2), np.column_stack([L*np.cos(ths), L*np.sin(ths)])])
-        plt.fill(poly[:,0], poly[:,1], alpha=0.15)
-        plt.gca().set_aspect('equal')
-        plt.grid(True)
-        plt.legend()
-        plt.show()
+# if __name__ == "__main__":
+#     A = np.array([[-1.0,  0.8],
+#                   [ 0.0, -2.0]])
+#     b = np.array([1.0, 0.6])
+# 
+#     A2 = np.array([
+#         [0.0, 1.0],
+#         [-0.1, -0.7]
+#     ])
+#     b2 = np.array([0, 1.5])
+# 
+#     t, X = sample_curve(A2, b2, T=40.0, num=3001)
+#     res = two_rays_by_angle(X)
+#     if res[0] is None:
+#         print("Двух лучей недостаточно: угловой размах кривой = {:.3f} rad (> pi).".format(res[1]))
+#     else:
+#         (r1, r2), arc_len, (i1, i2) = res
+#         print("Выбраны индексы точек:", i1, i2, "угловой размах (rad):", arc_len)
+#         # визуализация
+#         plt.figure(figsize=(6,6))
+#         plt.plot(X[:,0], X[:,1], '-k', label='curve')
+#         L = np.max(np.linalg.norm(X, axis=1)) * 1.05
+#         for v, name in [(r1,'r1'), (r2,'r2')]:
+#             plt.plot([0, v[0]], [0, v[1]], '--', lw=2, label=name)
+#         # shade sector if arc small
+#         theta1 = np.arctan2(r1[1], r1[0])
+#         theta2 = np.arctan2(r2[1], r2[0])
+#         # create sector polygon (fine grid)
+#         ths = np.linspace(theta1, theta2, 60)
+#         # handle wrap-around properly
+#         if (theta2 - theta1) > np.pi:
+#             # swap to take shorter arc
+#             ths = np.linspace(theta2, theta1, 60)
+#         poly = np.vstack([np.zeros(2), np.column_stack([L*np.cos(ths), L*np.sin(ths)])])
+#         plt.fill(poly[:,0], poly[:,1], alpha=0.15)
+#         plt.gca().set_aspect('equal')
+#         plt.grid(True)
+#         plt.legend()
+#         plt.show()
 
 # import numpy as np
 # from scipy.linalg import expm, eig
@@ -590,6 +590,38 @@ if __name__ == "__main__":
 #     plt.title(title)
 #     plt.show()
 
+import pandas as pd
+
+def plot_traced_shuttle_points():
+    def plot_trace(filename, label, color):
+        df = pd.read_csv(filename, names=["step", "x", "y"])
+        plt.plot(df["x"], df["y"], marker="o", linestyle="-", label=label, color=color, alpha=0.7)
+
+    def plot_limits(limits_file="limits.csv"):
+        try:
+            df = pd.read_csv(limits_file, names=["x", "y"])
+            plt.scatter(df["x"], df["y"], c="red", marker="*", s=120, label="Limits")
+        except FileNotFoundError:
+            pass
+
+    plt.figure(figsize=(7, 7))
+
+    plot_trace("D:/Programming/C++/preisach_hysteresis_model/PreisachModel/trace_even.csv", "Even sequence", "blue")
+    plot_trace("D:/Programming/C++/preisach_hysteresis_model/PreisachModel/trace_odd.csv", "Odd sequence", "green")
+    plot_trace("D:/Programming/C++/preisach_hysteresis_model/PreisachModel/trace_all.csv", "All z_n", "gray")
+
+    plot_limits()
+
+    plt.axhline(0, color="black", linewidth=0.5)
+    plt.axvline(0, color="black", linewidth=0.5)
+    plt.legend()
+    plt.title("ShuttlePoint traces")
+    plt.xlabel("x")
+    plt.ylabel("y")
+    plt.axis("equal")
+    plt.grid(True)
+    plt.show()
+
 # --- Пример с вашей матрицей A2 ---
 if __name__ == "__main__":
     cr = np.loadtxt('D:/Programming/C++/preisach_hysteresis_model/PreisachModel/out_curve.csv', delimiter=',', skiprows=1)
@@ -607,6 +639,8 @@ if __name__ == "__main__":
     plt.grid(True)
     plt.legend()
     plt.show()
+
+    # plot_traced_shuttle_points()
     
     # A2 = np.array([
     #     [0.0, 1.0],

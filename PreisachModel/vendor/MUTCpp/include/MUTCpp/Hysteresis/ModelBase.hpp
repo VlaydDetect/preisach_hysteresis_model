@@ -6,8 +6,6 @@
 
 #pragma once
 
-#include <Eigen/src/Core/Matrix.h>
-
 #include "Functions/isnan.hpp"
 #include "Functions/append.hpp"
 #include "Core/Constants.hpp"
@@ -21,6 +19,8 @@
 
 namespace mc
 {
+    using Vec = Eigen::VectorXd;
+    
     class PreisachModelBase : public RefCounted
     {
     public:
@@ -78,24 +78,12 @@ namespace mc
             m_HistoryInterfaceMax = {};
 
             CleanupState();
-
-            // For animation
-            m_PointsX = asarray<double>({-L});
-            m_PointsY = asarray<double>({-L});
-            m_InterfaceX = asarray<double>({-L, -L});
-            m_InterfaceY = asarray<double>({-L, -L});
         }
 
         void SetD(double d)
         {
             m_D = d;
             m_Bounds = {-m_L + m_D, m_L + m_D};
-        }
-
-        // std::array<Matrix<double>, 4> GetAnimationData() const
-        std::tuple<std::vector<double>, Matrix<double>, Matrix<double>, std::vector<double>> GetAnimationData() const
-        {
-            return {m_HistoryU, m_HistoryInterfaceX, m_HistoryInterfaceY, m_HistoryOutput};
         }
 
         virtual double GetMaxArea() const override
@@ -213,11 +201,6 @@ namespace mc
             }
             // -------------------------------------
 
-            if (m_KeepAnimation)
-            {
-                UpdateAnimationData(u);
-            }
-
             double p = P_Impl(u);
             m_PreviousOutput = p;
 
@@ -285,71 +268,6 @@ namespace mc
 
             double u = isnan(m_HistoryInterfaceMax[i]) ? m_InterfaceMax.back() : m_InterfaceMin.back();
             return x_i - u;
-        }
-
-        void UpdateAnimationData(double u)
-        {
-            AL_PROFILE_FUNC("PreisachModelBase::UpdateAnimationData");
-            m_PointsX = m_InterfaceX[Slice(0, -1)];
-            m_PointsY = m_InterfaceY[Slice(0, -1)];
-
-            if (m_LastElemType != m_PrevElemType)
-            {
-                m_PointsX = append(m_PointsX, {m_HistoryU.back()});
-                m_PointsY = append(m_PointsY, {m_HistoryU.back()});
-            }
-
-            if (m_LastElemType == ElementType::Max)
-            {
-                m_PointsY.putMask(m_PointsY <= u, u);
-                m_PointsY[-1] = u;
-            }
-            else
-            {
-                m_PointsX.putMask(m_PointsX >= u, u);
-                m_PointsX[-1] = u;
-            }
-
-            m_InterfaceX = append(m_PointsX, {u});
-            m_InterfaceY = append(m_PointsY, {u});
-
-            auto [iX, iY] = RemoveRedundantPoints(m_InterfaceX, m_InterfaceY);
-            m_InterfaceX = iX;
-            m_InterfaceY = iY;
-
-            m_HistoryInterfaceX = append(m_HistoryInterfaceX, m_InterfaceX);
-            m_HistoryInterfaceY = append(m_HistoryInterfaceY, m_InterfaceY);
-        }
-
-        static std::pair<Matrix<double>, Matrix<double>> RemoveRedundantPoints(
-            const Matrix<double> &pointsX, const Matrix<double> &pointsY)
-        {
-            AL_PROFILE_FUNC("PreisachModelBase::RemoveRedundantPoints");
-            auto removeInBetween = [](const Matrix<double> &arr) -> std::pair<Matrix<double>, Matrix<bool>>
-            {
-                auto whipeoutIndexes = empty<bool>(arr.shape());
-                if (arr.size() < 3)
-                {
-                    whipeoutIndexes.fill(true);
-                    return {arr, whipeoutIndexes};
-                }
-
-                whipeoutIndexes[0] = true;
-                whipeoutIndexes[-1] = true;
-                for (auto i : range(1, arr.size() - 1))
-                {
-                    whipeoutIndexes[i] = !all_equals(arr[i], arr[i - 1], arr[i + 1]);
-                }
-                return {arr[whipeoutIndexes], whipeoutIndexes};
-            };
-
-            auto [pointsX1, whipeoutIndexes1] = removeInBetween(pointsX);
-            auto pointsY1 = pointsY[whipeoutIndexes1];
-
-            auto [pointsY2, whipeoutIndexes2] = removeInBetween(pointsY1);
-            auto pointsX2 = pointsX1[whipeoutIndexes2];
-
-            return {pointsX2, pointsY2};
         }
 
         void CleanupInterfacesByMax(const double u)
@@ -466,14 +384,6 @@ namespace mc
         uint32 m_PrevIndex = -1;
 
         std::vector<double> m_HistoryInterfaceMin{}, m_HistoryInterfaceMax{};
-
-        // Matrix<double> m_HistoryInterfaceMin{}, m_HistoryInterfaceMax{}, m_HistoryU{}, m_HistoryOutput{},
-        //                m_HistoryDerivative{};
-
-        // ---- For Animation ----
-        Matrix<double> m_InterfaceX{}, m_InterfaceY{}, m_PointsX{}, m_PointsY{};
-        Matrix<double> m_HistoryInterfaceX{}, m_HistoryInterfaceY{};
-        // -----------------------
 
         enum class ElementType : bool
         {

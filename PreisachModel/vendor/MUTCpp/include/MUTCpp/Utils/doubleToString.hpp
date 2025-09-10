@@ -9,6 +9,8 @@
 #include <sstream>
 #include <string>
 
+#include "Matrix/MatrixCore.hpp"
+
 namespace mc
 {
     inline std::string doubleToString(double value, int precision)

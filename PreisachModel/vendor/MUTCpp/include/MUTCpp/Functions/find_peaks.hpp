@@ -6,14 +6,18 @@
 
 #pragma once
 
-#include "Matrix.hpp"
-#include "isnan.hpp"
+#include "Functions/isnan.hpp"
 #include "Debug/Profile.hpp"
+#include "Eigen/utils.hpp"
 #include "MUTCpp/Utils/peaks_utils.hpp"
 #include "Vector/StaticVector.hpp"
 
 namespace mc
 {
+    using ArrayXd = Eigen::ArrayXd;
+    using ArrayXI = Eigen::Array<Eigen::Index, Eigen::Dynamic, 1>;
+    using ArrayXb = Eigen::Array<bool, Eigen::Dynamic, 1>;
+
     /**
      * A struct containing properties of the peaks which were
      * calculated as intermediate results during evaluation of the specified conditions.
@@ -32,12 +36,16 @@ namespace mc
     struct PeaksProperties
     {
     public:
-        Matrix<double> peak_heights = {consts::nan};
-        Matrix<double> left_thresholds = {consts::nan}, right_thresholds = {consts::nan};
-        Matrix<double> prominences = {consts::nan};
-        Matrix<uint32> right_bases, left_bases;
-        Matrix<double> widths = {consts::nan}, width_heights = {consts::nan}, left_ips = {consts::nan}, right_ips = {consts::nan};
-        Matrix<uint32> plateau_sizes, left_edges, right_edges;
+        ArrayXd peak_heights = Eigen::ArrayXd::Constant(1, consts::nan);
+        ArrayXd left_thresholds = Eigen::ArrayXd::Constant(1, consts::nan),
+                right_thresholds = Eigen::ArrayXd::Constant(1, consts::nan);
+        ArrayXd prominences = Eigen::ArrayXd::Constant(1, consts::nan);
+        ArrayXI right_bases, left_bases;
+        ArrayXd widths = Eigen::ArrayXd::Constant(1, consts::nan),
+                width_heights = Eigen::ArrayXd::Constant(1, consts::nan),
+                left_ips = Eigen::ArrayXd::Constant(1, consts::nan),
+                right_ips = Eigen::ArrayXd::Constant(1, consts::nan);
+        ArrayXI plateau_sizes, left_edges, right_edges;
 
         auto as_tuple()
         {
@@ -118,20 +126,16 @@ namespace mc
     ///     ``consts::nan`` or a 2-element sequence of the former. The first element is always interpreted as the minimal
     ///     and the second, if supplied as the maximal required plateau size.
     /// @return Pair of matrix of peaks and `@link PeaksProperties`.
-    inline std::pair<Matrix<uint32>, PeaksProperties> find_peaks(const Matrix<double> &x,
-                                                                 const StaticVector<double, 2> &height = {},
-                                                                 const StaticVector<double, 2> &threshold = {},
-                                                                 double distance = consts::nan,
-                                                                 const StaticVector<double, 2> &prominence = {},
-                                                                 const StaticVector<double, 2> &width = {},
-                                                                 int wlen = 0, double rel_height = consts::nan,
-                                                                 const StaticVector<double, 2> &plateau_size = {})
+    inline std::pair<ArrayXI, PeaksProperties> find_peaks(const ArrayXd &x,
+                                                          const StaticVector<double, 2> &height = {},
+                                                          const StaticVector<double, 2> &threshold = {},
+                                                          double distance = consts::nan,
+                                                          const StaticVector<double, 2> &prominence = {},
+                                                          const StaticVector<double, 2> &width = {},
+                                                          int wlen = 0, double rel_height = consts::nan,
+                                                          const StaticVector<double, 2> &plateau_size = {})
     {
         AL_PROFILE_FUNC("find_peaks");
-        if (!x.isflat())
-        {
-            THROW_INVALID_ARGUMENT_ERROR("`x` must be a 1-D array");
-        }
 
         if (!isnan(distance) && distance < 1)
         {
@@ -144,23 +148,23 @@ namespace mc
         if (!plateau_size.empty())
         {
             // Evaluate plateau size
-            auto plateau_sizes = (right_edges - left_edges) + static_cast<uint32>(1);
+            ArrayXI plateau_sizes = (right_edges - left_edges) + static_cast<uint32>(1);
             auto [pmin, pmax] = unpack_condition_args(plateau_size);
-            auto keep = select_by_property(plateau_sizes.astype<double>(), pmin, pmax);
-            peaks = peaks[keep];
-            properties.plateau_sizes = plateau_sizes[keep];
-            properties.left_edges = left_edges[keep];
-            properties.right_edges = right_edges[keep];
+            auto keep = select_by_property(plateau_sizes.cast<double>(), pmin, pmax);
+            peaks = Eigen::mask(peaks, keep);
+            properties.plateau_sizes = Eigen::mask(plateau_sizes, keep);
+            properties.left_edges = Eigen::mask(left_edges, keep);
+            properties.right_edges = Eigen::mask(right_edges, keep);
         }
 
         if (!height.empty())
         {
             // Evaluate height condition
-            auto peak_heights = x[peaks];
+            ArrayXd peak_heights = x(peaks);
             auto [hmin, hmax] = unpack_condition_args(height);
             auto keep = select_by_property(peak_heights, hmin, hmax);
-            peaks = peaks[keep];
-            properties.peak_heights = peak_heights[keep];
+            peaks = Eigen::mask(peaks, keep);
+            properties.peak_heights = Eigen::mask(peak_heights, keep);
         }
 
         if (!threshold.empty())
@@ -168,18 +172,18 @@ namespace mc
             // Evaluate threshold condition
             auto [tmin, tmax] = unpack_condition_args(threshold);
             auto [keep, left_thresholds, right_thresholds] = select_by_peak_threshold(x, peaks, tmin, tmax);
-            peaks = peaks[keep];
-            properties.left_thresholds = left_thresholds[keep];
-            properties.right_thresholds = right_thresholds[keep];
+            peaks = Eigen::mask(peaks, keep);
+            properties.left_thresholds = Eigen::mask(left_thresholds, keep);
+            properties.right_thresholds = Eigen::mask(right_thresholds, keep);
         }
 
         if (!isnan(distance))
         {
-            auto keep = select_by_peak_distance(peaks, x[peaks], distance);
-            peaks = peaks[keep];
-            properties.foreach([keep](auto &elem)
+            auto keep = select_by_peak_distance(peaks, x(peaks), distance);
+            peaks = Eigen::mask(peaks, keep);
+            properties.foreach([&keep](auto &elem)
             {
-                elem = elem[keep];
+                elem = Eigen::mask(elem, keep);
             });
         }
 
@@ -198,10 +202,10 @@ namespace mc
             // Evaluate prominence condition
             auto [pmin, pmax] = unpack_condition_args(prominence);
             auto keep = select_by_property(properties.prominences, pmin, pmax);
-            peaks = peaks[keep];
-            properties.foreach([keep](auto &elem)
+            peaks = Eigen::mask(peaks, keep);
+            properties.foreach([&keep](auto &elem)
             {
-                elem = elem[keep];
+                elem = Eigen::mask(elem, keep);
             });
         }
 
@@ -217,10 +221,10 @@ namespace mc
             // Evaluate width condition
             auto [wmin, wmax] = unpack_condition_args(width);
             auto keep = select_by_property(properties.widths, wmin, wmax);
-            peaks = peaks[keep];
-            properties.foreach([keep](auto &elem)
+            peaks = Eigen::mask(peaks, keep);
+            properties.foreach([&keep](auto &elem)
             {
-                elem = elem[keep];
+                elem = Eigen::mask(elem, keep);
             });
         }
 

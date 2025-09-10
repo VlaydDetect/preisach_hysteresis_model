@@ -6,11 +6,11 @@
 
 #pragma once
 
-#include "Functions/hstack.hpp"
 #include "Random/rand.hpp"
 #include "Utils/gauss_area.hpp"
-#include "Vector/Vec2.hpp"
 #include "hep/mc.hpp"
+
+#include <Eigen/Dense>
 
 namespace mc
 {
@@ -23,72 +23,53 @@ namespace mc
 
         std::cout << "[";
         int pos = barWidth * progress;
-        for (int i = 0; i < barWidth; ++i) {
-            if (i < pos) std::cout << "=";
-            else if (i == pos) std::cout << ">";
-            else std::cout << " ";
+        for (int i = 0; i < barWidth; ++i)
+        {
+            if (i < pos)
+                std::cout << "=";
+            else if (i == pos)
+                std::cout << ">";
+            else
+                std::cout << " ";
         }
         std::cout << "] "
-                  << static_cast<int>(progress * 100.0)
-                  << "%, E = "
-                  << std::setprecision(3)
-                  << error_estimate
-                  << ", time to completion: "
-                  << estimated_time_to_completion.count()
-                  << " seconds, estimate: "
-                  << std::setprecision(5)
-                  << current_estimate
-                  << "     \r";
+            << static_cast<int>(progress * 100.0)
+            << "%, E = "
+            << std::setprecision(3)
+            << error_estimate
+            << ", time to completion: "
+            << estimated_time_to_completion.count()
+            << " seconds, estimate: "
+            << std::setprecision(5)
+            << current_estimate
+            << "     \r";
 
         // std::cout.flush();
     }
-    
+
     namespace integrate
     {
         namespace detail
         {
-            inline Matrix<double> mapToTriangle(const Matrix<double> &p, const Matrix<double> &v1,
-                                                const Matrix<double> &v2,
-                                                const Matrix<double> &v3)
+            inline Eigen::Vector2d mapToTriangle(const Eigen::Vector2d &p,
+                                                 const Eigen::Vector2d &v1,
+                                                 const Eigen::Vector2d &v2,
+                                                 const Eigen::Vector2d &v3)
             {
                 AL_PROFILE_FUNC("mc::integrate::detail::mapToTriangle");
-                Matrix<double> M = hstack({v2 - v1, v3 - v1});
-                // return dot(p, M.transpose()) + v1.transpose();
-                return p[0] * M[1] + p[1] * M[0] + v1;
+
+                Eigen::Matrix2d M;
+                M.col(0) = v2 - v1;
+                M.col(1) = v3 - v1;
+
+                return M * p + v1;
             }
         }
 
-        inline double monteCarloTriangle(std::function<double(double, double)> f, Matrix<double> v1, Matrix<double> v2,
-                                         Matrix<double> v3, const std::vector<std::size_t> &iterations/*, Vec2 range*/)
+        inline double monteCarloTriangle(const std::function<double(double, double)>& f, const Eigen::Vector2d& v1,
+                                         const Eigen::Vector2d& v2, const Eigen::Vector2d& v3)
         {
             AL_PROFILE_FUNC("mc::integrate::monteCarloTriangle");
-#if false
-            auto fn = [/*range*/ v1, v2, v3, f](const hep::mc_point<double> &point) -> double
-            {
-                double x = point.point()[0];
-                double y = point.point()[1];
-                /*if (x > y) return 0.0;
-
-                x = (range.y - range.x) * x - range.x;
-                y = (range.y - range.x) * y - range.x;*/
-
-                auto p = detail::mapToTriangle({x, y}, v1, v2, v3);
-
-                const double value = f(p[0], p[1]);
-
-                return value;
-            };
-
-            auto result = hep::vegas(
-                hep::make_integrand<double>(fn, 2),
-                iterations
-                ).results();
-
-            const double res = result.back().value();
-            const double area = gauss_area({v2, v3}, v1).total_area;
-
-            return res * area;
-#else
             auto fn = [v1, v2, v3, f](const std::vector<double> &point) -> double
             {
                 const double x = point[0];
@@ -108,15 +89,19 @@ namespace mc
             while (task.wait_for(std::chrono::seconds(1)) != std::future_status::ready)
             {
                 display_progress(mc.progress(),
-                         mc.current_error_estimate(),
-                         mc.current_estimate(),
-                         mc.estimated_time_to_completion());
+                                 mc.current_error_estimate(),
+                                 mc.current_estimate(),
+                                 mc.estimated_time_to_completion());
             }
-            
+
             double result = task.get();
             const double area = gauss_area({v2, v3}, v1).total_area;
             return result * area;
-#endif
+        }
+
+        inline double monteCarloTriangle(const std::function<double(double, double)> &f, const std::array<Eigen::Vector2d, 3>& triangle)
+        {
+            return monteCarloTriangle(f, triangle[0], triangle[1], triangle[2]);
         }
     }
 }

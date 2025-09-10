@@ -8,22 +8,19 @@
 #include <print>
 #include <tuple>
 
-#include "Functions/copy.hpp"
 #include "Functions/all_comprasions.hpp"
-#include "Functions/empty.hpp"
-#include "MUTCpp/Functions/argsort.hpp"
-#include "MUTCpp/Functions/ceil.hpp"
 #include "MUTCpp/Functions/max.hpp"
 #include "MUTCpp/Functions/min.hpp"
 #include "MUTCpp/Functions/ones.hpp"
-#include "MUTCpp/Functions/ones_like.hpp"
 #include "MUTCpp/Functions/range.hpp"
-#include "MUTCpp/Functions/vstack.hpp"
 #include "MUTCpp/Vector/StaticVector.hpp"
-#include "Matrix.hpp"
 
 namespace mc
 {
+    using ArrayXd = Eigen::ArrayXd;
+    using ArrayXI = Eigen::Array<Eigen::Index, Eigen::Dynamic, 1>;
+    using ArrayXb = Eigen::Array<bool, Eigen::Dynamic, 1>;
+
 
     /// @brief Find local maxima in a 1D array.
     /// @details This function finds all local maxima in a 1D array and returns the indices
@@ -41,66 +38,46 @@ namespace mc
     ///     `midpoints`: Returns indices of midpoints of local maxima in `x`.
     ///     `left_edges`: Returns indices of edges to the left of local maxima in `x`.
     ///     `right_edges`: Returns indices of edges to the right of local maxima in `x`.
-    inline std::array<Matrix<uint32>, 3> local_maxima_1d(const Matrix<double> &signal)
+    inline std::array<ArrayXI, 3> local_maxima_1d(const ArrayXd &signal)
     {
-        if (!signal.isflat())
+        if (signal.rows() <= 2)
         {
-            THROW_INVALID_ARGUMENT_ERROR("`x` must be a 1-D array");
+            return {ArrayXI(), ArrayXI(), ArrayXI()};
         }
 
-        Matrix<double> x = copy(signal);
-        if (x.numCols() == 1)
-        {
-            x.reshape(x.numRows());
-        }
+        std::vector<Eigen::Index> mids, lefts, rights;
+        mids.reserve(signal.size() / 2);
+        lefts.reserve(signal.size() / 2);
+        rights.reserve(signal.size() / 2);
 
-        // Preallocate, there can't be more maxima than half the size of `x`
+        const int n = static_cast<int>(signal.size());
+        int i = 1;
+        const int i_max = n - 1;
 
-        Matrix<uint32> midpoints = empty<uint32>(x.numRows(), x.numCols() / 2),
-                       left_edges = empty<uint32>(x.numRows(), x.numCols() / 2),
-                       right_edges = empty<uint32>(x.numRows(), x.numCols() / 2);
-        //Pointer to the end of valid area in allocated arrays
-        uint32 m = 0;
-
-        // Pointer to current sample, first one can't be maxima
-        uint32 i = 1;
-        uint32 i_max = x.numCols() - 1; // Last sample can't be maxima
         while (i < i_max)
         {
-            // Test if the previous sample is smaller
-            if (x[i - 1] < x[i])
+            if (signal[i - 1] < signal[i])
             {
-                uint32 i_ahead = i + 1; // Index to look ahead of current sample
-
-                // Find the next sample that is unequal to x[i]
-                while (i_ahead < i_max && x[i_ahead] == x[i])
+                int i_ahead = i + 1;
+                while (i_ahead < i_max && signal[i_ahead] == signal[i])
                 {
-                    i_ahead++;
+                    ++i_ahead;
                 }
-
-                // Maxima is found if the next unequal sample is smaller than x[i]
-                if (x[i_ahead] < x[i])
+                if (signal[i_ahead] < signal[i])
                 {
-                    // left_edges.put(m, i);
-                    left_edges[m] = i;
-                    // right_edges.put(m, i_ahead - 1);
-                    right_edges[m] = i_ahead - 1;
-                    // midpoints.put(m, (left_edges[m] + right_edges[m]) / 2);
-                    midpoints[m] = (left_edges[m] + right_edges[m]) / 2;
-                    m++;
-                    // Skip samples that can't be maximum
+                    lefts.push_back(i);
+                    rights.push_back(i_ahead - 1);
+                    mids.push_back((i + i_ahead - 1) / 2);
                     i = i_ahead;
                 }
             }
-            i++;
+            ++i;
         }
 
-        // Keep only valid part of array memory.
-        midpoints.resizeSlow(1, m);
-        left_edges.resizeSlow(1, m);
-        right_edges.resizeSlow(1, m);
-
-        return {midpoints, left_edges, right_edges};
+        const ArrayXI mid = Eigen::Map<ArrayXI>(mids.data(), mids.size());
+        const ArrayXI left = Eigen::Map<ArrayXI>(lefts.data(), lefts.size());
+        const ArrayXI right = Eigen::Map<ArrayXI>(rights.data(), rights.size());
+        return {mid, left, right};
     }
 
     /// Parse condition arguments for `find_peaks`.
@@ -115,11 +92,7 @@ namespace mc
         }
 
         double imin = interval[0];
-        double imax = consts::nan;
-        if (interval.size() == 2)
-        {
-            imax = interval[1];
-        }
+        double imax = interval.size() == 2 ? interval[1] : consts::nan;
 
         return {imin, imax};
     }
@@ -129,16 +102,16 @@ namespace mc
     /// @param pmin: Lower interval boundary for `peak_properties`. ``None`` is interpreted as an open border.
     /// @param pmax: Upper interval boundary for `peak_properties`. ``None`` is interpreted as an open border.
     /// @return: A boolean mask evaluating to true where `peak_properties` confirms to the interval.
-    inline Matrix<bool> select_by_property(const Matrix<double> &peak_properties, const double pmin, const double pmax)
+    inline ArrayXb select_by_property(const ArrayXd &peak_properties, const double pmin, const double pmax)
     {
-        auto keep = ones_like<bool>(peak_properties);
+        ArrayXb keep = ArrayXb::Constant(peak_properties.size(), true);
         if (!isnan(pmin))
         {
-            keep &= (pmin <= peak_properties);
+            keep = keep && (peak_properties >= pmin);
         }
         if (!isnan(pmax))
         {
-            keep &= (peak_properties <= pmax);
+            keep = keep && (peak_properties <= pmax);
         }
         return keep;
     }
@@ -150,25 +123,36 @@ namespace mc
     /// @return An array of three matrices:
     ///     keep: A boolean mask evaluating to true where `peaks` fulfill the threshold condition.
     ///     left_thresholds, right_thresholds: Array matching `peak` containing the thresholds of each peak on both sides;
-    inline std::tuple<Matrix<bool>, Matrix<double>, Matrix<double>> select_by_peak_threshold(
-        const Matrix<double> &x, const Matrix<uint32> &peaks,
-        double tmin, double tmax)
+    inline std::tuple<ArrayXb, ArrayXd, ArrayXd> select_by_peak_threshold(
+        const ArrayXd &x, const ArrayXI &peaks, double tmin, double tmax)
     {
-        auto stacked_thresholds = vstack({x[peaks] - x[peaks - static_cast<uint32>(1)],
-                                          x[peaks] - x[peaks + static_cast<uint32>(1)]});
-        Matrix<bool> keep = ones_like<bool>(peaks);
+        ArrayXd center = x(peaks);             // x[peaks]
+        ArrayXd left   = x(peaks - 1);  // x[peaks-1]
+        ArrayXd right  = x(peaks + 1);  // x[peaks+1]
+
+        // 2 x N
+        Eigen::MatrixXd stacked_thresholds(2, peaks.size());
+        stacked_thresholds.row(0) = (center - left).matrix().transpose();
+        stacked_thresholds.row(1) = (center - right).matrix().transpose();
+
+        ArrayXb keep = ArrayXb::Constant(peaks.size(), true);
+        
         if (!isnan(tmin))
         {
-            auto min_thresholds = min(stacked_thresholds);
-            keep &= (tmin <= min_thresholds);
+            Eigen::RowVectorXd min_thresholds = stacked_thresholds.colwise().minCoeff();
+            keep = keep && (min_thresholds.array() >= tmin);
         }
         if (!isnan(tmax))
         {
-            auto max_thresholds = max(stacked_thresholds);
-            keep &= (max_thresholds <= tmax);
+            Eigen::RowVectorXd max_thresholds = stacked_thresholds.colwise().maxCoeff();
+            keep = keep && (max_thresholds.array() <= tmax);
         }
-        return {keep, stacked_thresholds(0, stacked_thresholds.cSlice()),
-                stacked_thresholds(1, stacked_thresholds.cSlice())};
+
+        return {
+            keep,
+            stacked_thresholds.row(0).transpose().array(),
+            stacked_thresholds.row(1).transpose().array()
+        };
     }
 
     /// Evaluate which peaks fulfill the distance condition.
@@ -177,41 +161,40 @@ namespace mc
     ///     A peak with a higher priority value is kept over one with a lower one.
     /// @param distance: Minimal distance that peaks must be spaced.
     /// @return: A boolean mask evaluating to true where `peaks` fulfill the distance condition.
-    inline Matrix<bool> select_by_peak_distance(const Matrix<uint32> &peaks, const Matrix<double> &priority,
-                                                double distance)
+    inline ArrayXb select_by_peak_distance(const ArrayXI &peaks, const ArrayXd &priority, double distance)
     {
-
-        int32 peaks_size = peaks.numCols();
-        // Round up because actual peak distance can only be natural number
-        uint32 distance_ = static_cast<uint32>(ceil(distance));
-        Matrix<bool> keep = ones<bool>(1, peaks_size);
+        const int peaks_size = peaks.size();
+        if (peaks_size == 0)
+            return ArrayXb();
+        uint32 dist = static_cast<uint32>(std::ceil(distance));
+        ArrayXb keep = ArrayXb::Constant(peaks_size, true);
 
         // Create map from `i` (index for `peaks` sorted by `priority`) to `j` (index
         // for `peaks` sorted by position). This allows to iterate `peaks` and `keep`
         // with `j` by order of `priority` while still maintaining the ability to
         // step to neighbouring peaks with (`j` + 1) or (`j` - 1).
-        Matrix<uint32> priority_to_position = argsort(priority);
+        ArrayXI priority_to_position = Eigen::argsort(priority).array();
 
         for (const auto i : range(peaks_size - 1, -1, -1))
         {
             // "Translate" `i` to `j` which points to the current peak whose neighbors are to be evaluated
-            auto j = priority_to_position[i];
+            int j = priority_to_position[i];
             if (keep[j] == 0)
             {
                 // Skip evaluation for peak already marked as "don't keep"
                 continue;
             }
 
-            auto k = static_cast<int32>(j - 1);
+            int k = j - 1;
             // Flag "earlier" peaks for removal until minimal distance is exceeded
-            while (0 <= k && peaks[j] - peaks[k] < distance_)
+            while (0 <= k && peaks[j] - peaks[k] < dist)
             {
                 keep[k] = false;
                 k--;
             }
 
             k = j + 1;
-            while (k < peaks_size && peaks[k] - peaks[j] < distance_)
+            while (k < peaks_size && peaks[k] - peaks[j] < dist)
             {
                 keep[k] = false;
                 k++;
@@ -251,18 +234,19 @@ namespace mc
     /// @return An array of three matrices:
     ///     `prominences`: The calculated prominences for each peak in `peaks`.
     ///     `left_bases`, `right_bases`: The peaks' bases as indices in `x` to the left and right of each peak.
-    inline std::tuple<Matrix<double>, Matrix<uint32>, Matrix<uint32>> peak_prominences(
-        const Matrix<double> &x, const Matrix<uint32> &peaks, int32 wlen)
+    inline std::tuple<ArrayXd, ArrayXI, ArrayXI> peak_prominences(
+        const ArrayXd &x, const ArrayXI &peaks, int32 wlen)
     {
-        auto prominences = empty<double>(1, peaks.numCols());
-        auto left_bases = empty<uint32>(1, peaks.numCols()), right_bases = empty<uint32>(1, peaks.numCols());
+        const int n = peaks.size();
+        ArrayXd prominences(n);
+        ArrayXI left_bases(n), right_bases(n);
         bool show_warning = false;
 
-        for (const auto peak_nr : range(peaks.numCols()))
+        for (const auto peak_nr : range(n))
         {
-            int32 peak = static_cast<int32>(peaks[peak_nr]);
+            int32 peak = peaks[peak_nr];
             int32 i_min = 0;
-            int32 i_max = x.numCols() - 1;
+            int32 i_max = x.size() - 1;
             if (!all_less(i_min, peak, i_max))
             {
                 std::string errMsg = std::format("peak {} is not a valid index for `x`", peak);
@@ -329,31 +313,31 @@ namespace mc
     ///     `widths`: The widths for each peak in samples.
     ///     `width_heights`: The height of the contour lines at which the `widths` where evaluated.
     ///     `left_ips`, `right_ips`: Interpolated positions of left and right intersection points of a horizontal line at the respective evaluation height.
-    inline std::array<Matrix<double>, 4> peak_widths(const Matrix<double> &x, const Matrix<uint32> &peaks,
+    inline std::array<ArrayXd, 4> peak_widths(const ArrayXd &x, const ArrayXI &peaks,
                                                      double rel_height,
-                                                     const Matrix<double> &prominences,
-                                                     const Matrix<uint32> &left_bases,
-                                                     const Matrix<uint32> &right_bases)
+                                                     const ArrayXd &prominences,
+                                                     const ArrayXI &left_bases,
+                                                     const ArrayXI &right_bases)
     {
-        Matrix<double> widths = empty<double>(1, peaks.numCols()), width_heights = empty<double>(1, peaks.numCols()),
-                       left_ips = empty<double>(1, peaks.numCols()), right_ips = empty<double>(1, peaks.numCols());
+        const int n = peaks.size();
+        ArrayXd widths(n), width_heights(n), left_ips(n), right_ips(n);
         bool show_warning = false;
 
         if (rel_height < 0)
         {
             THROW_INVALID_ARGUMENT_ERROR("`rel_height` must be greater or equal to 0.0");
         }
-        if (!all_equals(peaks.numCols(), prominences.numCols(), left_bases.numCols(), right_bases.numCols()))
+        if (!all_equals(peaks.size(), prominences.size(), left_bases.size(), right_bases.size()))
         {
             THROW_INVALID_ARGUMENT_ERROR("arrays in `prominence_data` must have the same shape as `peaks`");
         }
 
-        for (const auto p : range(peaks.numCols()))
+        for (const auto p : range(n))
         {
             uint32 i_min = left_bases[p];
             uint32 i_max = right_bases[p];
             uint32 peak = peaks[p];
-            if (!(0 <= i_min && i_min <= peak && peak <= i_max && i_max < x.numCols()))
+            if (!(0 <= i_min && i_min <= peak && peak <= i_max && i_max < x.size()))
             {
                 THROW_INVALID_ARGUMENT_ERROR(std::format("prominence data is invalid for peak {}", peak));
             }

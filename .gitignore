@@ -9,6 +9,9 @@
 **.DotSettings
 **.user
 
+**.json
+**.txt
+
 .idea/
 Makefile
 *.make

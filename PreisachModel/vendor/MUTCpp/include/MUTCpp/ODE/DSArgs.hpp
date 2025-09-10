@@ -6,15 +6,18 @@
 
 #pragma once
 
-#include "Json/JsonDocument.hpp"
-
+#include <variant>
 #include <string>
 #include <unordered_map>
+#include <vector>
+#include <ranges>
 
-#include "Core/Constants.hpp"
+#include <Eigen/Dense>
+#include "Eigen/utils.hpp"
+
+#include "Json/JsonDocument.hpp"
 #include "Core/Error.hpp"
 #include "Core/Types.hpp"
-#include "Functions/arange.hpp"
 #include "Hysteresis/ArealModel.hpp"
 #include "Hysteresis/DiscreteModel.hpp"
 #include "Hysteresis/ModelBase.hpp"
@@ -25,188 +28,182 @@ namespace mc
     {
         enum class VoteDataType : uint8
         {
-            NUll = 0,
+            Null = 0,
             Bool,
             Int,
             Double,
             PreisachModel,
+            Vector,
             Matrix,
         };
 
         struct Vote
         {
         public:
+            using ValueVariant = std::variant<std::monostate, bool, int, double, Eigen::MatrixXd, Ref<
+                                                  PreisachModelBase>>;
+
             Vote() :
-                m_Type(VoteDataType::NUll)
+                m_Value(std::monostate{})
             {
             }
 
-            Vote(bool value) :
-                m_Type(VoteDataType::Bool), m_BoolValue(value)
+            Vote(bool v) :
+                m_Value(v)
             {
             }
 
-            Vote(int value) :
-                m_Type(VoteDataType::Int), m_IntValue(value)
+            Vote(int v) :
+                m_Value(v)
             {
             }
 
-            Vote(double value) :
-                m_Type(VoteDataType::Double), m_DoubleValue(value)
+            Vote(double v) :
+                m_Value(v)
             {
             }
 
-            Vote(const Matrix<double> &matrix) :
-                m_Type(VoteDataType::Matrix), m_Matrix(matrix)
+            template <typename Derived,
+                      typename = std::enable_if_t<
+                          std::is_base_of_v<Eigen::DenseBase<Derived>, Derived>
+                      >>
+            Vote(const Eigen::DenseBase<Derived> &m) :
+                m_Value(m.derived())
             {
             }
 
-            // explicit Vote(const Ref<PreisachModelBase> &value) :
-            //     m_Type(DataType::PreisachModel), m_ModelBaseValue(value)
-            // {
-            // }
-
-            explicit Vote(const Ref<DiscretePreisachModel> &value) :
-                m_Type(VoteDataType::PreisachModel), m_PreisachModelBase(value)
+            Vote(const Ref<DiscretePreisachModel> &m) :
+                m_Value(static_cast<Ref<PreisachModelBase>>(m))
             {
             }
 
-            explicit Vote(const Ref<ArealPreisachModel> &value) :
-                m_Type(VoteDataType::PreisachModel), m_PreisachModelBase(value)
+            Vote(const Ref<ArealPreisachModel> &m) :
+                m_Value(static_cast<Ref<PreisachModelBase>>(m))
             {
             }
 
-            explicit Vote(const Ref<DoubleArealPreisachModel> &value) :
-                m_Type(VoteDataType::PreisachModel), m_PreisachModelBase(value)
+            Vote(const Ref<DoubleArealPreisachModel> &m) :
+                m_Value(static_cast<Ref<PreisachModelBase>>(m))
             {
             }
 
-            // Vote(const Vote&) = delete;
-            // Vote& operator=(const Vote&) = delete;
+        public:
+            VoteDataType Type() const
+            {
+                return std::visit([]<typename T>(T &&arg) -> VoteDataType
+                {
+                    using U = std::decay_t<T>;
+                    if constexpr (std::is_same_v<U, std::monostate>)
+                        return VoteDataType::Null;
+                    else if constexpr (std::is_same_v<U, bool>)
+                        return VoteDataType::Bool;
+                    else if constexpr (std::is_same_v<U, int>)
+                        return VoteDataType::Int;
+                    else if constexpr (std::is_same_v<U, double>)
+                        return VoteDataType::Double;
+                    else if constexpr (std::is_same_v<U, Eigen::MatrixXd>)
+                        return VoteDataType::Matrix;
+                    else if constexpr (std::is_same_v<U, Ref<PreisachModelBase>>)
+                        return VoteDataType::PreisachModel;
+                    else
+                        return VoteDataType::Null;
+                }, m_Value);
+            }
 
             bool toBool() const
             {
-                switch (m_Type)
+                return std::visit([]<typename T>(T &&arg) -> bool
                 {
-                case VoteDataType::Bool:
-                {
-                    return m_BoolValue;
-                }
-                case VoteDataType::Int:
-                {
-                    return static_cast<bool>(m_IntValue);
-                }
-                case VoteDataType::Double:
-                {
-                    return static_cast<bool>(m_DoubleValue);
-                }
-                default:
-                {
-                    THROW_RUNTIME_ERROR("");
-                    return false;
-                }
-                }
+                    using U = std::decay_t<T>;
+                    if constexpr (std::is_same_v<U, bool>)
+                        return arg;
+                    else if constexpr (std::is_same_v<U, int>)
+                        return static_cast<bool>(arg);
+                    else if constexpr (std::is_same_v<U, double>)
+                        return static_cast<bool>(arg);
+                    else
+                    {
+                        THROW_RUNTIME_ERROR("Vote: cannot convert to bool");
+                        return false;
+                    }
+                }, m_Value);
             }
 
             int toInt() const
             {
-                switch (m_Type)
+                return std::visit([]<typename T>(T &&arg) -> int
                 {
-                case VoteDataType::Bool:
-                {
-                    return static_cast<int>(m_BoolValue);
-                }
-                case VoteDataType::Int:
-                {
-                    return m_IntValue;
-                }
-                case VoteDataType::Double:
-                {
-                    return static_cast<int>(m_DoubleValue);
-                }
-                default:
-                {
-                    THROW_RUNTIME_ERROR("");
-                    return 0;
-                }
-                }
+                    using U = std::decay_t<T>;
+                    if constexpr (std::is_same_v<U, bool>)
+                        return static_cast<int>(arg);
+                    else if constexpr (std::is_same_v<U, int>)
+                        return arg;
+                    else if constexpr (std::is_same_v<U, double>)
+                        return static_cast<int>(arg);
+                    else
+                    {
+                        THROW_RUNTIME_ERROR("Vote: cannot convert to int");
+                        return INT32_MAX;
+                    }
+                }, m_Value);
             }
 
             double toDouble() const
             {
-                switch (m_Type)
+                return std::visit([]<typename T>(T &&arg) -> double
                 {
-                case VoteDataType::Bool:
-                {
-                    return static_cast<double>(m_BoolValue);
-                }
-                case VoteDataType::Int:
-                {
-                    return static_cast<double>(m_IntValue);
-                }
-                case VoteDataType::Double:
-                {
-                    return m_DoubleValue;
-                }
-                default:
-                {
-                    THROW_RUNTIME_ERROR("");
-                    return 0.0;
-                }
-                }
+                    using U = std::decay_t<T>;
+                    if constexpr (std::is_same_v<U, bool>)
+                        return static_cast<double>(arg);
+                    else if constexpr (std::is_same_v<U, int>)
+                        return static_cast<double>(arg);
+                    else if constexpr (std::is_same_v<U, double>)
+                        return arg;
+                    else
+                    {
+                        THROW_RUNTIME_ERROR("Vote: cannot convert to double");
+                        return consts::nan;
+                    }
+                }, m_Value);
             }
 
-            Matrix<double> toMatrix() const
+            Eigen::VectorXd toVector() const
             {
-                switch (m_Type)
+                if (auto pval = std::get_if<Eigen::MatrixXd>(&m_Value))
                 {
-                case VoteDataType::Matrix:
-                {
-                    return m_Matrix;
+                    if (pval->cols() == 1)
+                        return *pval;
+                    if (pval->rows() == 1)
+                        return pval->transpose();
+                    THROW_RUNTIME_ERROR("Vote: not a Vector");
                 }
-                default:
-                {
-                    THROW_RUNTIME_ERROR("");
-                    return {};
-                }
-                }
+                THROW_RUNTIME_ERROR("Vote: not a Vector");
+            }
+
+            Eigen::MatrixXd toMatrix() const
+            {
+                if (auto pval = std::get_if<Eigen::MatrixXd>(&m_Value))
+                    return *pval;
+                THROW_RUNTIME_ERROR("Vote: not a Matrix");
             }
 
             const Ref<PreisachModelBase> &toPreisachModel() const
             {
-                switch (m_Type)
-                {
-                case VoteDataType::PreisachModel:
-                {
-                    return m_PreisachModelBase;
-                }
-                default:
-                {
-                    THROW_RUNTIME_ERROR("");
-                    // return nullptr;
-                }
-                }
+                if (auto pval = std::get_if<Ref<PreisachModelBase>>(&m_Value))
+                    return *pval;
+                THROW_RUNTIME_ERROR("Vote: not a PreisachModel");
             }
 
             Ref<PreisachModelBase> &toPreisachModel()
             {
-                switch (m_Type)
-                {
-                case VoteDataType::PreisachModel:
-                {
-                    return m_PreisachModelBase;
-                }
-                default:
-                {
-                    THROW_RUNTIME_ERROR("");
-                    // return nullptr;
-                }
-                }
+                if (auto pval = std::get_if<Ref<PreisachModelBase>>(&m_Value))
+                    return *pval;
+                THROW_RUNTIME_ERROR("Vote: not a PreisachModel");
             }
 
             bool isWritableType() const
             {
-                return m_Type != VoteDataType::PreisachModel || m_Type != VoteDataType::NUll;
+                return Type() != VoteDataType::PreisachModel || Type() != VoteDataType::Null;
             }
 
             void WriteFieldToDoc(mc::json::JsonDocument &doc, const std::string &name) const
@@ -216,7 +213,7 @@ namespace mc
                     THROW_RUNTIME_ERROR("Vote type is not writable to json");
                 }
 
-                switch (m_Type)
+                switch (Type())
                 {
                 case VoteDataType::Bool:
                 {
@@ -233,6 +230,11 @@ namespace mc
                     doc.AddField(name, toDouble());
                     break;
                 }
+                case VoteDataType::Vector:
+                {
+                    doc.AddField(name, toVector());
+                    break;
+                }
                 case VoteDataType::Matrix:
                 {
                     doc.AddField(name, toMatrix());
@@ -244,15 +246,8 @@ namespace mc
                 }
             }
 
-            VoteDataType Type() const { return m_Type; }
-
         private:
-            VoteDataType m_Type;
-            int m_BoolValue{false};
-            int m_IntValue{0};
-            double m_DoubleValue{consts::nan};
-            Matrix<double> m_Matrix;
-            Ref<PreisachModelBase> m_PreisachModelBase;
+            ValueVariant m_Value;
         };
 
         using DSArgs = std::unordered_map<std::string, Vote>;
@@ -266,28 +261,46 @@ namespace mc
             case VoteDataType::Bool:
             {
                 std::vector<bool> data(votes.size());
-                std::ranges::transform(votes, data.begin(), [](const Vote &vote) { return vote.toBool(); });
+                data.reserve(votes.size());
+                for (auto &v : votes)
+                    data.push_back(v.toBool());
                 doc.AddField(name, data);
                 break;
             }
             case VoteDataType::Int:
             {
                 std::vector<int> data(votes.size());
-                std::ranges::transform(votes, data.begin(), [](const Vote &vote) { return vote.toInt(); });
+                data.reserve(votes.size());
+                for (auto &v : votes)
+                    data.push_back(v.toInt());
                 doc.AddField(name, data);
                 break;
             }
             case VoteDataType::Double:
             {
                 std::vector<double> data(votes.size());
-                std::ranges::transform(votes, data.begin(), [](const Vote &vote) { return vote.toDouble(); });
+                data.reserve(votes.size());
+                for (auto &v : votes)
+                    data.push_back(v.toDouble());
+                doc.AddField(name, data);
+                break;
+            }
+            case VoteDataType::Vector:
+            {
+                std::vector<Eigen::VectorXd> data(votes.size());
+                data.reserve(votes.size());
+                for (auto &v : votes)
+                    data.push_back(v.toVector());
+                Eigen::isFlat(data[0]);
                 doc.AddField(name, data);
                 break;
             }
             case VoteDataType::Matrix:
             {
-                std::vector<Matrix<double>> data(votes.size());
-                std::ranges::transform(votes, data.begin(), [](const Vote &vote) { return vote.toMatrix(); });
+                std::vector<Eigen::MatrixXd> data(votes.size());
+                data.reserve(votes.size());
+                for (auto &v : votes)
+                    data.push_back(v.toMatrix());
                 doc.AddField(name, data);
                 break;
             }
@@ -300,17 +313,21 @@ namespace mc
         {
             inline std::vector<Vote> VoteRange(double start, double stop, double step = 1.0)
             {
-                std::vector<double> values = mc::arange(start, stop, step).toFlattenVector();
+                const auto values = Eigen::arange(start, stop, step);
                 std::vector<Vote> votes;
-                std::ranges::transform(values, std::back_inserter(votes), [](const double v) { return Vote(v); });
+                votes.reserve(values.size());
+                for (auto v : values)
+                    votes.emplace_back(v);
                 return votes;
             }
 
             inline std::vector<Vote> VoteRange(int32 start, int32 stop, int32 step = 1.0)
             {
-                std::vector<int32> values = mc::arange(start, stop, step).toFlattenVector();
+                const auto values = Eigen::arange(start, stop, step);
                 std::vector<Vote> votes;
-                std::ranges::transform(values, std::back_inserter(votes), [](const double v) { return Vote(v); });
+                votes.reserve(values.size());
+                for (auto v : values)
+                    votes.emplace_back(v);
                 return votes;
             }
         }

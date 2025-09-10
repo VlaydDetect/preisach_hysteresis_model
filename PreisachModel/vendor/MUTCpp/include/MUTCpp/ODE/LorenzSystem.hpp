@@ -6,38 +6,38 @@
 
 #pragma once
 
-#include "Matrix.hpp"
 #include "DSArgs.hpp"
 #include "DynamicSystem.hpp"
-#include "Functions.hpp"
+
+#include <Eigen/Dense>
 
 namespace mc
 {
     namespace ode
     {
         inline Ref<ContinuousDS> GetLorenzSystem(double dt, const DSArgs &args, const DSArgs &nextArgs = {},
-                                                 const Matrix<double> &x0 = {1.5, -1.5, 20.0})
+                                                 const Eigen::Vector3d &x0 = {1.5, -1.5, 20.0})
         {
-            auto func = [](Matrix<double> x, double t, const DSArgs &args) -> Matrix<double>
+            auto func = [](Eigen::VectorXd x, double t, const DSArgs &args) -> Eigen::VectorXd
             {
                 double sigma = args.at("sigma").toDouble();
                 double rho = args.at("rho").toDouble();
                 double beta = args.at("beta").toDouble();
 
-                auto res = mc::zeros_like<double>(x);
+                Eigen::VectorXd res = Eigen::VectorXd::Zero(x.size());
                 res[0] = sigma * (x[1] - x[0]);
                 res[1] = x[0] * (rho - x[2]) - x[1];
                 res[2] = x[0] * x[1] - beta * x[2];
                 return res;
             };
 
-            auto jac = [](Matrix<double> x, double t, const DSArgs &args) -> Matrix<double>
+            auto jac = [](Eigen::VectorXd x, double t, const DSArgs &args) -> Eigen::MatrixXd
             {
                 double sigma = args.at("sigma").toDouble();
                 double rho = args.at("rho").toDouble();
                 double beta = args.at("beta").toDouble();
 
-                auto res = mc::zeros<double>(x.shape().m_Cols);
+                Eigen::MatrixXd res = Eigen::MatrixXd::Zero(x.size(), x.size());
                 res(0, 0) = -sigma;
                 res(0, 1) = sigma;
                 res(1, 0) = rho - x[2];

@@ -7,6 +7,9 @@
 #include <random>
 #include <chrono>
 
+#include <Eigen/Dense>
+#include "Eigen/utils.hpp"
+
 // #include "Model/DiscreteModel.hpp"
 #include "FileWriter/FileWriter.hpp"
 #include "Server/Server.hpp"
@@ -44,7 +47,7 @@ void OperatorDerivativeTest()
 
     auto [inputs1, outputs] = model->HysteresisLoop();
     auto [inputs2, derivatives] = model->DerivativeHistory();
-    auto [inHist, xHist, yHist, outHist] = model->GetAnimationData();
+    // auto [inHist, xHist, yHist, outHist] = model->GetAnimationData();
 
     mc::json::JsonDocument message({"name", "method", "dt", "h", "times", "loop", "anim", "results"});
     message.AddField("name", "OperatorDerivativeTest");
@@ -56,11 +59,11 @@ void OperatorDerivativeTest()
     message.AddSubField({"results", "derivatives"}, derivatives);
     message.AddSubField({"loop", "inputs"}, u);
     message.AddSubField({"loop", "outputs"}, outputs);
-    message.AddSubField({"anim", "in"}, inHist);
-    message.AddSubField({"anim", "x"}, xHist);
-    message.AddSubField({"anim", "y"}, yHist);
-    message.AddSubField({"anim", "out"}, outHist);
-    message.AddSubField({"anim", "save"}, true);
+    // message.AddSubField({"anim", "in"}, inHist);
+    // message.AddSubField({"anim", "x"}, xHist);
+    // message.AddSubField({"anim", "y"}, yHist);
+    // message.AddSubField({"anim", "out"}, outHist);
+    // message.AddSubField({"anim", "save"}, true);
 
     // g_Server.SendDataMessage(message);
     mc::Ref file = mc::Ref<FileWriter>::Create("ArealModelTest.json");
@@ -1116,8 +1119,8 @@ void OperatorDerivativeTest()
 
 void JustSolveRodos()
 {
-    mc::ode::DynamicalSystem::DSFunc func = [](const mc::Matrix<double> &x, const double t,
-                                               mc::ode::DSArgs &args) -> mc::Matrix<double>
+    mc::ode::DynamicalSystem::DSFunc func = [](const Eigen::VectorXd &x, const double t,
+                                               mc::ode::DSArgs &args) -> Eigen::VectorXd
     {
         AL_PROFILE_FUNC("Rodos::func");
         double dt = args.at("dt").toDouble();
@@ -1128,7 +1131,7 @@ void JustSolveRodos()
         double E = args.at("E").toDouble();
         auto &model = args.at("model").toPreisachModel();
 
-        auto res = mc::zeros_like<double>(x);
+        Eigen::VectorXd res = Eigen::VectorXd::Zero(x.size());
 
         res[0] = x[1];
         res[1] = A * mc::cos(w * t) - gamma * x[1] - mc::power(w0, 2) * x[0] + E * model->P(
@@ -1138,8 +1141,8 @@ void JustSolveRodos()
         return res;
     };
 
-    mc::ode::DynamicalSystem::DSFunc jac = [](const mc::Matrix<double> &x, const double t,
-                                              mc::ode::DSArgs &args) -> mc::Matrix<double>
+    mc::ode::DynamicalSystem::DSFunc jac = [](const Eigen::VectorXd &x, const double t,
+                                              mc::ode::DSArgs &args) -> Eigen::MatrixXd
     {
         return {};
     };
@@ -1172,7 +1175,7 @@ void JustSolveRodos()
 
     mc::ode::DSArgs args2 = {};
 
-    mc::Matrix x0 = {0.0, 0.0, 0.0};
+    Eigen::Vector3d x0 = {0.0, 0.0, 0.0};
 
     mc::Ref system = mc::Ref<mc::ode::ContinuousDS>::Create(func, jac, dt, args, args2, x0);
     auto traj = system->Forward(steps);
@@ -1189,8 +1192,8 @@ void JustSolveRodos()
     // message.AddField("h", h);
     message.AddField("E", E);
     message.AddField("time", time);
-    message.AddSubField({"results", "x"}, traj(traj.rSlice(), 0));
-    message.AddSubField({"results", "v"}, traj(traj.rSlice(), 1));
+    message.AddSubField({"results", "x"}, Eigen::VectorXd(traj.col(0)));
+    message.AddSubField({"results", "v"}, Eigen::VectorXd(traj.col(1)));
     // message.AddSubField({"results", "derivatives"}, derivatives);
     message.AddSubField({"loop", "inputs"}, inputs1);
     message.AddSubField({"loop", "outputs"}, outputs);
@@ -1206,8 +1209,8 @@ void JustSolveRodos()
 
 void TestTrajsCircle()
 {
-    mc::ode::DynamicalSystem::DSFunc func = [](const mc::Matrix<double> &x, const double t,
-                                               mc::ode::DSArgs &args) -> mc::Matrix<double>
+    mc::ode::DynamicalSystem::DSFunc func = [](const Eigen::VectorXd &x, const double t,
+                                               mc::ode::DSArgs &args) -> Eigen::VectorXd
     {
         AL_PROFILE_FUNC("Rodos::func");
         double dt = args.at("dt").toDouble();
@@ -1218,7 +1221,7 @@ void TestTrajsCircle()
         double E = args.at("E").toDouble();
         auto &model = args.at("model").toPreisachModel();
 
-        auto res = mc::zeros_like<double>(x);
+        Eigen::VectorXd res = Eigen::VectorXd::Zero(x.size());
 
         res[0] = x[1];
         res[1] = A * mc::cos(w * t) - gamma * x[1] - mc::power(w0, 2) * x[0] + E * model->P(
@@ -1228,8 +1231,8 @@ void TestTrajsCircle()
         return res;
     };
 
-    mc::ode::DynamicalSystem::DSFunc jac = [](const mc::Matrix<double> &x, const double t,
-                                              mc::ode::DSArgs &args) -> mc::Matrix<double>
+    mc::ode::DynamicalSystem::DSFunc jac = [](const Eigen::VectorXd &x, const double t,
+                                              mc::ode::DSArgs &args) -> Eigen::MatrixXd
     {
         return {};
     };
@@ -1291,20 +1294,12 @@ void TestTrajsCircle()
     std::vector<mc::ode::Vote> e_range;
     std::ranges::transform(es, std::back_inserter(e_range), [](const double e) { return mc::ode::Vote(e); });
 
-    const mc::Matrix<double> angels = mc::arange(0., mc::consts::twoPi, 0.5);
-    std::vector<mc::ode::Vote> coords = {
-        // mc::Matrix({1., 0., 0.}),
-        // mc::Matrix({sqrt(2.) / 2, sqrt(2.) / 2, 0.}),
-        // mc::Matrix({0., 1., 0.}),
-        // mc::Matrix({-sqrt(2.) / 2, sqrt(2.) / 2, 0.}),
-        // mc::Matrix({-1., 0., 0.}),
-        // mc::Matrix({-sqrt(2.) / 2, -sqrt(2.) / 2, 0.}),
-        // mc::Matrix({0., -1., 0.}),
-        // mc::Matrix({sqrt(2.) / 2, -sqrt(2.) / 2, 0.}),
-    };
+    const Eigen::VectorXd angels = Eigen::arange(0., mc::consts::twoPi, 0.5);
+    std::vector<mc::ode::Vote> coords;
+    coords.reserve(angels.size());
     for (const auto &angel : angels)
     {
-        mc::Matrix m = {mc::cos(angel), mc::sin(angel), 0.};
+        Eigen::Vector3d m = {mc::cos(angel), mc::sin(angel), 0.};
         coords.emplace_back(m);
     }
 
@@ -1321,7 +1316,7 @@ void TestTrajsCircle()
 
         std::uniform_real_distribution<double> dist(-side / 2.0, side / 2.0);
 
-        std::vector<mc::Matrix<double>> points;
+        std::vector<Eigen::Vector3d> points;
         points.reserve(n);
 
         for (int i = 0; i < n; ++i)
@@ -1333,20 +1328,20 @@ void TestTrajsCircle()
     };
 
     uint32_t seed;
-    std::vector<mc::Matrix<double>> points = gen_random_points(10, 1., seed);
+    std::vector<Eigen::Vector3d> points = gen_random_points(10, 1., seed);
 
     std::println("seed: {}", seed);
     std::println("random points: {}", points);
 
     std::vector<mc::ode::Vote> x0s;
     std::ranges::transform(points, std::back_inserter(x0s),
-                           [](const mc::Matrix<double> &point) { return mc::ode::Vote(point); });
+                           [](const Eigen::VectorXd &point) { return mc::ode::Vote(point); });
 
     auto div_solution_fn = [time](mc::Ref<mc::ode::DynamicalSystem> system,
                                   const std::unordered_map<mc::ode::DSArgs::key_type, mc::ode::Vote> &args)
     {
         double e = args.at("e").toDouble();
-        mc::Matrix<double> v = args.at("v").toMatrix();
+        Eigen::VectorXd v = args.at("v").toMatrix();
         // mc::Matrix<double> x0 = args.at("x0").toMatrix();
         // system->SetX0(x0);
         // double x0_step = args.at("x0_step").toDouble();
@@ -1354,33 +1349,31 @@ void TestTrajsCircle()
         // mc::Matrix<double> x0 = x0_step * mc::normalize(v);
         // system->SetX0(x0);
 
-        std::vector<std::vector<double>> mainTraj = {};
-        mainTraj.push_back(system->GetX().toFlattenVector());
+        uint32_t count = static_cast<uint32_t>(time / system->GetDeltaTime());
+        Eigen::MatrixXd mainTraj = Eigen::MatrixXd::Zero(count + 1, system->GetDimension());
+        mainTraj.row(0) = system->GetX().transpose();
 
-        auto w = system->GetX() + normalize(v) * e;
+        Eigen::VectorXd w = system->GetX() + v.normalized() * e;
 
-        std::vector<std::vector<double>> secondTraj = {};
-        secondTraj.push_back(w.toFlattenVector());
+        Eigen::MatrixXd secondTraj = Eigen::MatrixXd::Zero(count + 1, system->GetDimension());
+        mainTraj.row(0) = w.transpose();
 
-        auto count = static_cast<mc::uint32>(time / system->GetDeltaTime());
-        while (count--)
+        for (uint32_t i = 1; i <= count; ++i)
         {
-            auto traj = system->Forward(1);
-            mainTraj.push_back(system->GetX().toFlattenVector());
+            system->Forward(1);
+            mainTraj.row(i) = system->GetX().transpose();
 
             w = system->NextTM(w);
-            secondTraj.push_back(w.toFlattenVector());
+            secondTraj.row(i) = w.transpose();
         }
 
-        auto main = mc::Matrix(mainTraj);
-        auto x1 = main(main.rSlice(), 0);
-        auto y1 = main(main.rSlice(), 1);
+        Eigen::VectorXd x1 = mainTraj.col(0);
+        Eigen::VectorXd y1 = mainTraj.col(1);
 
-        auto other = mc::Matrix(secondTraj);
-        auto x2 = other(other.rSlice(), 0);
-        auto y2 = other(other.rSlice(), 1);
+        Eigen::VectorXd x2 = secondTraj.col(0);
+        Eigen::VectorXd y2 = secondTraj.col(1);
 
-        auto div = mc::sqrt(mc::square(x1 - x2) + mc::square(y1 - y2));
+        Eigen::VectorXd div = ((x1 - x2).array().square() + (y1 - y2).array().square()).sqrt();
         return div;
     };
 
@@ -1396,7 +1389,7 @@ void TestTrajsCircle()
     for (const auto &param : res)
     {
         double best_e = param.params.at("e").toDouble();
-        auto best_v = param.params.at("v").toMatrix();
+        Eigen::VectorXd best_v = param.params.at("v").toVector();
         // mc::Matrix<double> best_x0 = param.params.at("x0").toMatrix();
         // double best_x0_step = param.params.at("x0_step").toDouble();
         auto best_metric = param.metric;
@@ -1410,7 +1403,7 @@ void TestTrajsCircle()
         std::print("Metric start: {}\n", best_metric.m_Start.value());
         std::print("Metric end: {}\n", best_metric.m_End.value());
 
-        std::unordered_map<std::string, std::vector<mc::Matrix<double>>> trajs1, trajs2;
+        std::unordered_map<std::string, std::vector<Eigen::MatrixXd>> trajs1, trajs2;
         std::vector<double> ns;
 
         constexpr int M = 20;
@@ -1423,8 +1416,7 @@ void TestTrajsCircle()
         const double minT = (startT + d1) / M;
         const double maxT = (endT - startT + d2) / M;
 
-        mc::Matrix<double> Ts = {};
-        Ts = mc::append(Ts, mc::arange(minT, maxT, 0.005));
+        Eigen::VectorXd Ts = Eigen::arange(minT, maxT, 0.005);
 
         auto doc = mc::ode::DivergenceDegreeRegressionData(system, 0., 0.1, best_v, Ts, M, trajs1, trajs2, ns);
 
@@ -1467,8 +1459,8 @@ void TestTrajsCircle()
 
 void TestEverettFunction()
 {
-    mc::ode::DynamicalSystem::DSFunc func = [](const mc::Matrix<double> &x, const double t,
-                                               mc::ode::DSArgs &args) -> mc::Matrix<double>
+    mc::ode::DynamicalSystem::DSFunc func = [](const Eigen::VectorXd &x, const double t,
+                                               mc::ode::DSArgs &args) -> Eigen::VectorXd
     {
         AL_PROFILE_FUNC("Rodos::func");
         double dt = args.at("dt").toDouble();
@@ -1479,7 +1471,7 @@ void TestEverettFunction()
         double E = args.at("E").toDouble();
         auto &model = args.at("model").toPreisachModel();
 
-        auto res = mc::zeros_like<double>(x);
+        Eigen::VectorXd res = Eigen::VectorXd::Zero(x.size());
 
         res[0] = x[1];
         res[1] = A * mc::cos(w * t) - gamma * x[1] - mc::power(w0, 2) * x[0] + E * model->P(
@@ -1489,8 +1481,8 @@ void TestEverettFunction()
         return res;
     };
 
-    mc::ode::DynamicalSystem::DSFunc jac = [](const mc::Matrix<double> &x, const double t,
-                                              mc::ode::DSArgs &args) -> mc::Matrix<double>
+    mc::ode::DynamicalSystem::DSFunc jac = [](const Eigen::VectorXd &x, const double t,
+                                              mc::ode::DSArgs &args) -> Eigen::MatrixXd
     {
         return {};
     };
@@ -1555,7 +1547,6 @@ void TestEverettFunction()
 
     auto [inputs1, outputs] = model->HysteresisLoop();
     auto [inputs2, derivatives] = model->DerivativeHistory();
-    auto [inHist, xHist, yHist, outHist] = model->GetAnimationData();
 
     mc::json::JsonDocument message({"name", "method", "dt", "h", "E", "time", "loop", "anim", "results"});
     message.AddField("name", "JustSolveRodos");
@@ -1564,15 +1555,11 @@ void TestEverettFunction()
     message.AddField("h", h);
     message.AddField("E", E);
     message.AddField("time", time);
-    message.AddSubField({"results", "x"}, traj(traj.rSlice(), 0));
-    message.AddSubField({"results", "v"}, traj(traj.rSlice(), 1));
+    message.AddSubField({"results", "x"}, traj.col(0).eval());
+    message.AddSubField({"results", "v"}, traj.col(1).eval());
     message.AddSubField({"results", "derivatives"}, derivatives);
-    message.AddSubField({"loop", "inputs"}, inHist);
+    message.AddSubField({"loop", "inputs"}, inputs1);
     message.AddSubField({"loop", "outputs"}, outputs);
-    message.AddSubField({"anim", "in"}, inHist);
-    message.AddSubField({"anim", "x"}, xHist);
-    message.AddSubField({"anim", "y"}, yHist);
-    message.AddSubField({"anim", "out"}, outHist);
 
     // g_Server.SendDataMessage(message);
     mc::Ref file = mc::Ref<FileWriter>::Create("JustSolveRodos.json");
@@ -1581,8 +1568,8 @@ void TestEverettFunction()
 
 void SecondAttractor()
 {
-    mc::ode::DynamicalSystem::DSFunc func = [](const mc::Matrix<double> &x, const double t,
-                                               mc::ode::DSArgs &args) -> mc::Matrix<double>
+    mc::ode::DynamicalSystem::DSFunc func = [](const Eigen::VectorXd &x, const double t,
+                                               mc::ode::DSArgs &args) -> Eigen::VectorXd
     {
         AL_PROFILE_FUNC("Rodos::func");
         double dt = args.at("dt").toDouble();
@@ -1593,7 +1580,7 @@ void SecondAttractor()
         double E = args.at("E").toDouble();
         auto &model = args.at("model").toPreisachModel();
 
-        auto res = mc::zeros_like<double>(x);
+        Eigen::VectorXd res = Eigen::VectorXd::Zero(x.size());
 
         if (x[0] > 0)
         {
@@ -1612,8 +1599,8 @@ void SecondAttractor()
         return res;
     };
 
-    mc::ode::DynamicalSystem::DSFunc jac = [](const mc::Matrix<double> &x, const double t,
-                                              mc::ode::DSArgs &args) -> mc::Matrix<double>
+    mc::ode::DynamicalSystem::DSFunc jac = [](const Eigen::VectorXd &x, const double t,
+                                              mc::ode::DSArgs &args) -> Eigen::MatrixXd
     {
         return {};
     };
@@ -1647,14 +1634,13 @@ void SecondAttractor()
 
     mc::ode::DSArgs args2 = {};
 
-    mc::Matrix<double> x0 = {0.0, 0.0, 0.0};
+    Eigen::Vector3d x0 = {0.0, 0.0, 0.0};
 
     mc::Ref system = mc::Ref<mc::ode::ContinuousDS>::Create(func, jac, dt, args, args2, x0);
     auto traj = system->Forward(steps);
 
     auto [inputs1, outputs] = model->HysteresisLoop();
     // auto [inputs2, derivatives] = model->DerivativeHistory();
-    // auto [inHist, xHist, yHist, outHist] = model->GetAnimationData();
 
     // mc::json::JsonDocument message({"name", "method", "dt", "h", "E", "time", "loop", "anim", "results"});
     mc::json::JsonDocument message({"name", "method", "dt", "E", "time", "results", "loop"});
@@ -1664,15 +1650,11 @@ void SecondAttractor()
     // message.AddField("h", h);
     message.AddField("E", E);
     message.AddField("time", time);
-    message.AddSubField({"results", "x"}, traj(traj.rSlice(), 0));
-    message.AddSubField({"results", "v"}, traj(traj.rSlice(), 1));
+    message.AddSubField({"results", "x"}, traj.col(0).eval());
+    message.AddSubField({"results", "v"}, traj.col(1).eval());
     // message.AddSubField({"results", "derivatives"}, derivatives);
     message.AddSubField({"loop", "inputs"}, inputs1);
     message.AddSubField({"loop", "outputs"}, outputs);
-    // message.AddSubField({"anim", "in"}, inHist);
-    // message.AddSubField({"anim", "x"}, xHist);
-    // message.AddSubField({"anim", "y"}, yHist);
-    // message.AddSubField({"anim", "out"}, outHist);
 
     // g_Server.SendDataMessage(message);
     mc::Ref file = mc::Ref<FileWriter>::Create("JustSolveRodos.json");
@@ -1689,8 +1671,8 @@ void CourseWorkModelsDiff()
     auto model = mc::Ref<mc::DiscretePreisachModel>::Create(L, h2, true);
     // auto model = mc::Ref<mc::ArealPreisachModel>::Create(L, true);
 
-    mc::ode::DynamicalSystem::DSFunc func = [](const mc::Matrix<double> &x, const double t,
-                                               mc::ode::DSArgs &args) -> mc::Matrix<double>
+    mc::ode::DynamicalSystem::DSFunc func = [](const Eigen::VectorXd &x, const double t,
+                                               mc::ode::DSArgs &args) -> Eigen::VectorXd
     {
         AL_PROFILE_FUNC("Rodos::func");
         double dt = args.at("dt").toDouble();
@@ -1701,7 +1683,7 @@ void CourseWorkModelsDiff()
         double E = args.at("E").toDouble();
         auto &model = args.at("model").toPreisachModel();
 
-        auto res = mc::zeros_like<double>(x);
+        Eigen::VectorXd res = Eigen::VectorXd::Zero(x.size());
 
         res[0] = x[1];
         res[1] = A * mc::cos(w * t) - gamma * x[1] - mc::power(w0, 2) * x[0] + E * model->P(
@@ -1711,7 +1693,7 @@ void CourseWorkModelsDiff()
         return res;
     };
 
-    auto jac = [](mc::Matrix<double> x, double t, const mc::ode::DSArgs &args) -> mc::Matrix<double>
+    auto jac = [](Eigen::VectorXd x, double t, const mc::ode::DSArgs &args) -> Eigen::MatrixXd
     {
         double w0 = args.at("w0").toDouble();
         double gamma = args.at("gamma").toDouble();
@@ -1720,7 +1702,7 @@ void CourseWorkModelsDiff()
         double dt = args.at("dt").toDouble();
         double A = args.at("A").toDouble();
 
-        auto res = mc::zeros<double>(x.shape().m_Cols);
+        Eigen::MatrixXd res = Eigen::MatrixXd::Zero(x.size(), x.size());
 
         res(0, 1) = 1.0;
 
@@ -1809,15 +1791,14 @@ void CourseWorkModelsDiff()
     // mc::Ref file = mc::Ref<FileWriter>::Create("JustSolveRodos.json");
     // file->Write(message.ToString());
 
-    std::unordered_map<std::string, std::vector<mc::Matrix<double>>> trajs1, trajs2;
+    std::unordered_map<std::string, std::vector<Eigen::MatrixXd>> trajs1, trajs2;
     std::vector<double> ns;
 
     constexpr int M = 400;
 
-    mc::Matrix<double> Ts = {};
-    Ts = mc::append(Ts, mc::arange(0.1, 2.35, 0.25));
+    Eigen::VectorXd Ts = Eigen::arange(0.1, 2.35, 0.25);
 
-    auto doc = mc::ode::DivergenceDegreeRegressionData(system, 0., 1., {0.7, -0.7, 0.0}, Ts, M, trajs1, trajs2, ns);
+    auto doc = mc::ode::DivergenceDegreeRegressionData(system, 0., 1., Eigen::Vector3d(0.7, -0.7, 0.0), Ts, M, trajs1, trajs2, ns);
     mc::Ref file = mc::Ref<FileWriter>::Create("RodosLCEs_Regression.json");
     file->Write(doc.ToString());
 
@@ -1834,8 +1815,8 @@ void TwoTrajsOnCircle()
 
     double phase = mc::consts::pi / 4;
 
-    mc::ode::DynamicalSystem::DSFunc func = [phase](const mc::Matrix<double> &x, const double t,
-                                                    mc::ode::DSArgs &args) -> mc::Matrix<double>
+    mc::ode::DynamicalSystem::DSFunc func = [phase](const Eigen::VectorXd &x, const double t,
+                                                    mc::ode::DSArgs &args) -> Eigen::VectorXd
     {
         AL_PROFILE_FUNC("Rodos::func");
         double dt = args.at("dt").toDouble();
@@ -1846,7 +1827,7 @@ void TwoTrajsOnCircle()
         double E = args.at("E").toDouble();
         auto &model = args.at("model").toPreisachModel();
 
-        auto res = mc::zeros_like<double>(x);
+        Eigen::VectorXd res = Eigen::VectorXd::Zero(x.size());
 
         const double rhs = A * mc::sin(w * t + phase) + E * model->P(
             x[0], static_cast<int>(t / dt));
@@ -1858,7 +1839,7 @@ void TwoTrajsOnCircle()
         return res;
     };
 
-    auto jac = [](mc::Matrix<double> x, double t, const mc::ode::DSArgs &args) -> mc::Matrix<double> { return {}; };
+    auto jac = [](const Eigen::VectorXd &x, double t, const mc::ode::DSArgs &args) -> Eigen::MatrixXd { return {}; };
 
     double dt = 0.01;
     double time = 200.0;
@@ -1890,7 +1871,7 @@ void TwoTrajsOnCircle()
     message.AddField("name", "TrajsCircle");
     message.AddField("time", time);
 
-    std::vector<mc::Matrix<double>> coords = {
+    std::vector<Eigen::Vector3d> coords = {
         {1., 0., 0.},
         {sqrt(2.) / 2, sqrt(2.) / 2, 0.},
         {0., 1., 0.},
@@ -1901,9 +1882,9 @@ void TwoTrajsOnCircle()
         {sqrt(2.) / 2, -sqrt(2.) / 2, 0.},
     };
     std::vector<std::string> coordsStr(coords.size());
-    std::ranges::transform(coords, coordsStr.begin(), [](const mc::Matrix<double> &elem)
+    std::ranges::transform(coords, coordsStr.begin(), [](const Eigen::Vector3d &elem)
     {
-        return doubleToString(elem, 4);
+        return Eigen::DoubleVectorToString(elem, 4);
     });
     message.AddField("coords", coordsStr);
 
@@ -1916,8 +1897,8 @@ void TwoTrajsOnCircle()
     {
         system->Reset();
         system->Forward(10. * mc::consts::twoPi / w);
-        
-        auto v1 = system->GetX() + normalize(v) * 0.01;
+
+        Eigen::VectorXd v1 = system->GetX() + v.normalized() * 0.01;
 
         system->SetResetFn([v1, L](mc::ode::DSArgs &args, mc::ode::DSArgs &nextArgs)
         {
@@ -1935,26 +1916,26 @@ void TwoTrajsOnCircle()
         system->CallResetFn();
 
         std::vector<std::vector<double>> mainTraj = {};
-        mainTraj.push_back(system->GetX().toFlattenVector());
+        mainTraj.push_back(Eigen::to_std(system->GetX()));
 
         std::vector<std::vector<double>> secondTraj = {};
-        secondTraj.push_back(v1.toFlattenVector());
+        secondTraj.push_back(Eigen::to_std(v1));
 
         auto count = static_cast<mc::uint32>(time / system->GetDeltaTime());
         while (count--)
         {
             auto traj = system->Forward(1);
-            mainTraj.push_back(system->GetX().toFlattenVector());
+            mainTraj.push_back(Eigen::to_std(system->GetX()));
 
             v1 = system->NextTM(v1);
-            secondTraj.push_back(v1.toFlattenVector());
+            secondTraj.push_back(Eigen::to_std(v1));
         }
 
         auto [in1, out1] = system->GetArgs().at("model").toPreisachModel()->HysteresisLoop();
         auto [in2, out2] = system->GetNextArgs().at("model").toPreisachModel()->HysteresisLoop();
 
-        trajs.insert({doubleToString(v, 4), {mainTraj, secondTraj}});
-        loops.insert({doubleToString(v, 4), {in1, out1, in2, out2}});
+        trajs.insert({Eigen::DoubleVectorToString(v, 4), {mainTraj, secondTraj}});
+        loops.insert({Eigen::DoubleVectorToString(v, 4), {in1, out1, in2, out2}});
     }
 
     auto &doc = message.GetDoc();
@@ -1968,13 +1949,13 @@ void TwoTrajsOnCircle()
 
 void PoincareMapping()
 {
-    std::vector<mc::Matrix<double>> radonsPM = {};
-    std::vector<mc::Matrix<double>> lorenzPM = {};
-    
+    std::vector<Eigen::VectorXd> radonsPM = {};
+    std::vector<Eigen::VectorXd> lorenzPM = {};
+
     // RADONS PM
     {
-        mc::ode::DynamicalSystem::DSFunc func = [](const mc::Matrix<double> &x, const double t,
-                                                    mc::ode::DSArgs &args) -> mc::Matrix<double>
+        mc::ode::DynamicalSystem::DSFunc func = [](const Eigen::VectorXd &x, const double t,
+                                                   mc::ode::DSArgs &args) -> Eigen::VectorXd
         {
             AL_PROFILE_FUNC("Rodos::func");
             double dt = args.at("dt").toDouble();
@@ -1985,7 +1966,7 @@ void PoincareMapping()
             double E = args.at("E").toDouble();
             auto &model = args.at("model").toPreisachModel();
 
-            auto res = mc::zeros_like<double>(x);
+            Eigen::VectorXd res = Eigen::VectorXd::Zero(x.size());
 
             const double rhs = A * mc::sin(w * t) + E * model->P(
                 x[0], static_cast<int>(t / dt));
@@ -1997,7 +1978,7 @@ void PoincareMapping()
             return res;
         };
 
-        auto jac = [](mc::Matrix<double> x, double t, const mc::ode::DSArgs &args) -> mc::Matrix<double> { return {}; };
+        auto jac = [](Eigen::VectorXd x, double t, const mc::ode::DSArgs &args) -> Eigen::MatrixXd { return {}; };
 
         double dt = 0.05;
         double time = 200.0;
@@ -2029,36 +2010,36 @@ void PoincareMapping()
 
         radonsPM = mc::ode::PoincareMapping(system, mc::consts::twoPi / w, 200);
     }
-    
+
     // LORENZ PM
     {
-        mc::Matrix x0 = {1.5, -1.5, 20.0};
+        Eigen::Vector3d x0 = {1.5, -1.5, 20.0};
         double t0 = 0.0;
         double dt = 0.01;
         double time = 100.0;
         int steps = static_cast<int>(time / dt);
-    
+
         double sigma = 10.0;
         double rho = 28.0;
         double beta = 8.0 / 3.0;
-    
+
         bool usePreisach = true;
         double L = 1.0;
         double E = 1.35;
         auto model = mc::Ref<mc::ArealPreisachModel>::Create(L);
-    
-        auto func = [&](mc::Matrix<double> x, double t, const mc::ode::DSArgs &args) -> mc::Matrix<double>
+
+        auto func = [&](Eigen::VectorXd x, double t, const mc::ode::DSArgs &args) -> Eigen::VectorXd
         {
-            auto res = mc::zeros_like<double>(x);
+            Eigen::VectorXd res = Eigen::VectorXd::Zero(x.size());
             res[0] = sigma * (x[1] - x[0]) + (usePreisach ? E * model->P(x[0], static_cast<int>(t / dt)) : 0.0);
             res[1] = x[0] * (rho - x[2]) - x[1];
             res[2] = x[0] * x[1] - beta * x[2];
             return res;
         };
-    
-        auto jac = [&](mc::Matrix<double> x, double t, const mc::ode::DSArgs &args) -> mc::Matrix<double>
+
+        auto jac = [&](Eigen::VectorXd x, double t, const mc::ode::DSArgs &args) -> Eigen::MatrixXd
         {
-            auto res = mc::zeros<double>(x.shape().m_Cols);
+            Eigen::MatrixXd res = Eigen::MatrixXd::Zero(x.size(), x.size());
             res(0, 0) = -sigma + (usePreisach ? E * model->DerivativeOperator(t, dt) : 0.0);
             res(0, 1) = sigma;
             res(1, 0) = rho - x[2];
@@ -2071,7 +2052,7 @@ void PoincareMapping()
         };
 
         mc::ode::DSArgs args = {};
-    
+
         mc::Ref lorenz = mc::Ref<mc::ode::ContinuousDS>::Create(func, jac, dt, args, args, x0, t0);
 
         // lorenzPM = mc::ode::PoincareMapping(system, mc::consts::twoPi / w, 100);
@@ -2081,7 +2062,7 @@ void PoincareMapping()
     message.AddField("name", "PoincareMapping");
     message.AddField("RadonsPoincareMapping", radonsPM);
     message.AddField("LorenzPoincareMapping", lorenzPM);
-    
+
     mc::Ref file = mc::Ref<FileWriter>::Create("PoincareMapping.json");
     file->Write(message.ToString());
 }
@@ -2123,7 +2104,7 @@ void BifurcationDiagram()
     constexpr double L = 1.0;
     auto model = mc::Ref<mc::ArealPreisachModel>::Create(L);
     model->SetEverettFunction(everett);
-    
+
     mc::ode::DSArgs args = {
         {"dt", dt},
         {"gamma", gamma},
@@ -2156,10 +2137,46 @@ void BifurcationDiagram()
 
 #include "MUTCpp/ODE/shuttle.hpp"
 
+void RadonsShuttlePoint()
+{
+    double dt = 0.01;
+    double gamma = 0.7;
+    double w0 = 0.1;
+    double w = 1.0;
+    double A = 1.5;
+    double E = 1.35;
+
+    constexpr double L = 1.0;
+    auto model = mc::Ref<mc::ArealPreisachModel>::Create(L);
+    
+    mc::ode::DSArgs args = {
+        {"dt", dt},
+        {"gamma", gamma},
+        {"A", A},
+        {"w0", w0},
+        {"w", w},
+        {"E", E},
+        {"model", mc::ode::Vote(model)}
+    };
+    mc::Ref<mc::ode::DynamicalSystem> system = mc::ode::GetRadonsSystem(dt, args);
+
+    Eigen::Matrix2d Am(2, 2);
+    Am << 0.0, 1.0,
+        -w0, -gamma;
+    Eigen::Vector2d b(2);
+    b << 0.0, A;
+
+    const Eigen::Vector2d u0 = {0.2, 0.25};
+    
+    auto p = mc::ShuttlePoint(system, mc::SolidCone2d::fromCurve(Am, b, mc::detail::Settings()), u0, mc::consts::twoPi / w);
+    std::println("z_odd: {}, z_even: {}", p.limits[0], p.limits[1]);
+}
+
 int main()
 {
-    mc::run_example_2d();
+    // mc::run_example_2d();
     
+    RadonsShuttlePoint();
     // CourseWorkModelsDiff();
     // auto integrand = hep::make_integrand<double>(
     //     square,

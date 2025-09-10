@@ -28,7 +28,7 @@ namespace mc
 
             WriteVotesToDoc(message, param_name, param_value, param_value[0].Type());
 
-            std::vector<Matrix<double>> trajs;
+            std::vector<Eigen::MatrixXd> trajs;
 
             for (const auto &val : param_value)
             {

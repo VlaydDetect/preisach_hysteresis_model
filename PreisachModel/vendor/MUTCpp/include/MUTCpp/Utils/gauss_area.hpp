@@ -7,39 +7,43 @@
 #pragma once
 
 #include <vector>
-#include "Vector/Vec2.hpp"
 #include "Core/Types.hpp"
 #include "Functions/abs.hpp"
+
+#include <Eigen/Dense>
 
 namespace mc
 {
     struct GaussAreaResult
     {
         double total_area;
-        std::vector<std::tuple<double, std::array<Vec2, 3>>> areas_n_triangles;
+        std::vector<std::tuple<double, std::array<Eigen::Vector2d, 3>>> areas_n_triangles;
     };
 
-    inline GaussAreaResult gauss_area(const std::vector<Vec2> &points, const Vec2 &pivot = {0.0, 0.0})
+    inline GaussAreaResult gauss_area(const std::vector<Eigen::Vector2d> &points,
+                                      const Eigen::Vector2d &pivot = Eigen::Vector2d::Zero())
     {
         AL_PROFILE_FUNC("mc::utils::gauss_area");
-        
+
         const uint32 n = points.size();
         double s = 0.;
-        std::vector<std::tuple<double, std::array<Vec2, 3>>> areas_n_triangles;
+        std::vector<std::tuple<double, std::array<Eigen::Vector2d, 3>>> areas_n_triangles;
 
-        for (uint32 i = 0; i < n-1; i++)
+        for (uint32 i = 0; i < n - 1; i++)
         {
-            const Vec2 &p1 = points[i];
-            const Vec2 &p2 = points[i + 1];
+            const Eigen::Vector2d &p1 = points[i];
+            const Eigen::Vector2d &p2 = points[i + 1];
 
-            std::array<Vec2, 3> triangle = {pivot, p1, p2};
-            double area = (pivot.x - p1.x) * (pivot.y - p2.y) - (pivot.y - p1.y) * (pivot.x - p2.x);
-            area = abs(area) / 2.;
+            std::array triangle = {pivot, p1, p2};
+            Eigen::Matrix2d M;
+            M.col(0) = pivot - p1;
+            M.col(1) = pivot - p2;
+            double area = abs(M.determinant()) / 2.;
 
             s += area;
             areas_n_triangles.push_back({area, triangle});
         }
-        
+
         return GaussAreaResult(s, areas_n_triangles);
     }
 }

@@ -19,26 +19,25 @@ namespace mc
             if (data.empty())
                 return {};
 
-            std::vector<std::unordered_map<Key, Val>> result;
-
             std::vector<Key> keys;
             std::vector<std::vector<Val>> vals;
-            for (const auto &[key, vec] : data)
+            for (const auto &[k,v] : data)
             {
-                keys.push_back(key);
-                vals.push_back(vec);
+                keys.push_back(k);
+                vals.push_back(v);
             }
 
-            std::vector<uint32> indices(vals.size(), 0);
+            std::vector<size_t> indices(vals.size(), 0);
+            std::vector<std::unordered_map<Key, Val>> result;
 
             while (true)
             {
-                std::unordered_map<Key, Val> combination;
+                std::unordered_map<Key, Val> comb;
                 for (size_t i = 0; i < vals.size(); ++i)
                 {
-                    combination[keys[i]] = vals[i][indices[i]];
+                    comb[keys[i]] = vals[i][indices[i]];
                 }
-                result.push_back(combination);
+                result.push_back(std::move(comb));
 
                 size_t level = vals.size();
                 while (level > 0)
@@ -48,7 +47,6 @@ namespace mc
                         break;
                     indices[level] = 0;
                 }
-
                 if (level == 0 && indices[0] == 0)
                     break;
             }

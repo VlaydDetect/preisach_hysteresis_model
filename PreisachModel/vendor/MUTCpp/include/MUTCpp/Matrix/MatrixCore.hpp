@@ -2017,7 +2017,7 @@ namespace mc
         /// @param inAxis (Optional, default NONE)
         /// @return Matrix
         ///
-        [[nodiscard]] Matrix<size_type> argsort(Axis inAxis = Axis::NONE) const
+        [[nodiscard]] mc::Matrix<size_type> argsort(Axis inAxis = Axis::NONE) const
         {
             STATIC_ASSERT_ARITHMETIC_OR_COMPLEX(dtype);
 
@@ -2034,7 +2034,7 @@ namespace mc
                 };
 
                 algo::stable_sort(idx.begin(), idx.end(), function);
-                return Matrix<size_type>(idx); // NOLINT(modernize-return-braced-init-list)
+                return mc::Matrix<size_type>(idx); // NOLINT(modernize-return-braced-init-list)
             }
             case Axis::COL:
             {

@@ -10,7 +10,9 @@
 #include <set>
 #include <map>
 
-#include "../Functions/toVector.hpp"
+#include <Eigen/Dense>
+#include "Eigen/utils.hpp"
+
 #include "Matrix/MatrixCore.hpp"
 #include "Vector/Vec2.hpp"
 #include "Vector/Vec3.hpp"
@@ -77,17 +79,18 @@ namespace mc
                 m_Doc[name] = data;
             }
 
-            template <typename dtype>
-            void AddField(const std::string &name, Matrix<dtype> data)
+            template <typename Scalar, int R, int C>
+            void AddField(const std::string &name, const Eigen::Matrix<Scalar, R, C> &data)
             {
                 assert(m_Header.contains(name));
-                if (data.isflat())
+                if (Eigen::isFlat(data))
                 {
-                    m_Doc[name] = data.toFlattenVector();
+                    std::vector<Scalar> vec(data.size());
+                    m_Doc[name] = Eigen::to_std(data);
                 }
                 else
                 {
-                    m_Doc[name] = mc::toVector(data);
+                    m_Doc[name] = Eigen::toVector2D(data);
                 }
             }
 
@@ -97,29 +100,30 @@ namespace mc
                 m_Doc[name] = data;
             }
 
-            template <typename dtype>
-            void AddField(const std::string &name, std::vector<Matrix<dtype>> data)
+            template <typename Scalar, int R, int C>
+            void AddField(const std::string &name,
+                          const std::vector<Eigen::Matrix<Scalar, R, C>> &data)
             {
                 assert(m_Header.contains(name));
 
-                if (algo::all_of(data.begin(), data.end(), [](const Matrix<dtype> &elem) { return elem.isflat(); }))
+                // Все плоские
+                if (std::all_of(data.begin(), data.end(),
+                                [](const auto &elem) { return Eigen::isFlat(elem); }))
                 {
-                    std::vector<std::vector<dtype>> vecs(data.size());
-                    algo::transform(data.begin(), data.end(), vecs.begin(), [](const Matrix<dtype> &elem)
-                    {
-                        return elem.toFlattenVector();
-                    });
+                    // Все плоские → vector<vector<Scalar>>
+                    std::vector<std::vector<Scalar>> vecs(data.size());
+                    std::transform(data.begin(), data.end(), vecs.begin(),
+                                   [](const Eigen::Vector<Scalar, R> &elem) { return Eigen::to_std(elem); });
                     m_Doc[name] = vecs;
                 }
-                else if (algo::all_of(data.begin(), data.end(),
-                                      [](const Matrix<dtype> &elem) { return !elem.isflat(); }))
+                // Все матрицы
+                else if (std::all_of(data.begin(), data.end(),
+                                     [](const auto &elem) { return !Eigen::isFlat(elem); }))
                 {
-                    std::vector<std::vector<std::vector<dtype>>> vecs(data.size());
-                    algo::transform(data.begin(), data.end(), vecs.begin(), [](const Matrix<dtype> &elem)
-                    {
-                        auto vec = mc::toVector(elem);
-                        return vec;
-                    });
+                    // Все матрицы → vector<vector<vector<Scalar>>>
+                    std::vector<std::vector<std::vector<Scalar>>> vecs(data.size());
+                    std::transform(data.begin(), data.end(), vecs.begin(),
+                                   [](const Eigen::Matrix<Scalar, R, C> &elem) { return Eigen::toVector2D(elem); });
                     m_Doc[name] = vecs;
                 }
                 else
@@ -129,72 +133,52 @@ namespace mc
                 }
             }
 
-            template <typename T, typename dtype>
-            void AddField(const std::string &name, std::unordered_map<T, std::vector<Matrix<dtype>>> data)
+            template <typename T, typename Scalar, int R, int C>
+            void AddField(const std::string &name,
+                          const std::unordered_map<T, std::vector<Eigen::Matrix<Scalar, R, C>>> &data)
             {
                 assert(m_Header.contains(name));
 
-                using iterType = std::pair<T, std::vector<Matrix<dtype>>>;
-
-                const auto allFlat = [](const std::vector<Matrix<dtype>> &data)
+                const auto allFlat = [](const std::vector<Eigen::Matrix<Scalar, R, C>> &vec)
                 {
-                    return algo::all_of(data.begin(), data.end(), [](const Matrix<dtype> &elem)
-                    {
-                        return elem.isflat();
-                    });
+                    return std::all_of(vec.begin(), vec.end(),
+                                       [](const auto &elem) { return Eigen::isFlat(elem); });
                 };
 
-                const auto allNotFlat = [](const std::vector<Matrix<dtype>> &data)
+                const auto allNotFlat = [](const std::vector<Eigen::Matrix<Scalar, R, C>> &vec)
                 {
-                    return algo::all_of(data.begin(), data.end(), [](const Matrix<dtype> &elem)
-                    {
-                        return elem.isflat();
-                    });
+                    return std::all_of(vec.begin(), vec.end(),
+                                       [](const auto &elem) { return !Eigen::isFlat(elem); });
                 };
 
-                const auto flat = [](const std::vector<Matrix<dtype>> &data)
+                // Все векторы
+                if (std::all_of(data.begin(), data.end(),
+                                [&](const auto &kv) { return allFlat(kv.second); }))
                 {
-                    std::vector<std::vector<dtype>> vecs(data.size());
-                    algo::transform(data.begin(), data.end(), vecs.begin(), [](const Matrix<dtype> &elem)
+                    // Все векторы
+                    std::unordered_map<T, std::vector<std::vector<Scalar>>> vecs;
+                    for (const auto &[key, mats] : data)
                     {
-                        return elem.toFlattenVector();
-                    });
-                    return vecs;
-                };
-
-                const auto toVec = [](const std::vector<Matrix<dtype>> &data)
-                {
-                    std::vector<std::vector<std::vector<dtype>>> vecs(data.size());
-                    algo::transform(data.begin(), data.end(), vecs.begin(), [](const Matrix<dtype> &elem)
-                    {
-                        return mc::toVector(elem);
-                    });
-                    return vecs;
-                };
-
-
-                if (algo::all_of(data.begin(), data.end(), [allFlat](const iterType &elem)
-                {
-                    return allFlat(elem.second);
-                }))
-                {
-                    std::unordered_map<T, std::vector<std::vector<dtype>>> vecs;
-                    algo::for_each(data.begin(), data.end(), [&vecs, flat](const iterType &elem)
-                    {
-                        vecs.insert({elem.first, flat(elem.second)});
-                    });
+                        std::vector<std::vector<Scalar>> inner(mats.size());
+                        std::transform(mats.begin(), mats.end(), inner.begin(),
+                                       [](const Eigen::Vector<Scalar, R> &elem) { return Eigen::to_std(elem); });
+                        vecs.insert({key, std::move(inner)});
+                    }
                     m_Doc[name] = vecs;
                 }
-                else if (algo::all_of(data.begin(), data.end(), [allNotFlat](const iterType &elem)
+                // Все матрицы
+                else if (std::all_of(data.begin(), data.end(),
+                                     [&](const auto &kv) { return allNotFlat(kv.second); }))
                 {
-                    return allNotFlat(elem.second);
-                }))
-                {
-                    std::unordered_map<T, std::vector<std::vector<std::vector<dtype>>>> vecs;
-                    algo::for_each(data.begin(), data.end(), [&vecs, toVec](const iterType &elem)
+                    // Все матрицы
+                    std::unordered_map<T, std::vector<std::vector<std::vector<Scalar>>>> vecs;
+                    for (const auto &[key, mats] : data)
                     {
-                        vecs.insert({elem.first, toVec(elem.second)});
-                    });
+                        std::vector<std::vector<std::vector<Scalar>>> inner(mats.size());
+                        std::transform(mats.begin(), mats.end(), inner.begin(),
+                                       [](const Eigen::Matrix<Scalar, R, C> &elem) { return Eigen::toVector2D(elem); });
+                        vecs.insert({key, std::move(inner)});
+                    }
                     m_Doc[name] = vecs;
                 }
                 else
@@ -204,82 +188,63 @@ namespace mc
                 }
             }
 
-            void AddField(const std::string &name, Vec2 data)
-            {
-                assert(m_Header.contains(name));
-                m_Doc[name] = data.toArray();
-            }
-
-            void AddField(const std::string &name, Vec3 data)
-            {
-                assert(m_Header.contains(name));
-                m_Doc[name] = data.toArray();
-            }
-
             template <typename T>
                 requires std::is_arithmetic_v<T> || std::is_same_v<T, std::string> ||
                 std::is_same_v<T, const char *>
-            // void AddSubField(const std::string &field, const std::string &name, T data)
             void AddSubField(const std::initializer_list<std::string> &fields, T data)
             {
-                // assert(m_Header.contains(field));
-                // m_Doc[field][name] = data;
                 ASSIGN_FIELDS(fields, data);
             }
 
             template <typename T>
                 requires std::is_arithmetic_v<T> || std::is_same_v<T, std::string> ||
                 std::is_same_v<T, const char *>
-            // void AddSubField(const std::string &field, const std::string &name, std::vector<T> data)
             void AddSubField(const std::initializer_list<std::string> &fields, std::vector<T> data)
             {
-                // assert(m_Header.contains(field));
-                // m_Doc[field][name] = data;
                 ASSIGN_FIELDS(fields, data);
             }
 
-            template <typename dtype>
-            // void AddSubField(const std::string &field, const std::string &name, Matrix<dtype> data)
-            void AddSubField(const std::initializer_list<std::string> &fields, Matrix<dtype> data)
+            template <typename Scalar, int R, int C>
+            void AddSubField(const std::initializer_list<std::string> &fields, const Eigen::Matrix<Scalar, R, C> &data)
             {
-                // assert(m_Header.contains(field));
-                if (data.isflat())
+                if (Eigen::isFlat(data))
                 {
-                    // m_Doc[field][name] = data.toFlattenVector();
-                    ASSIGN_FIELDS(fields, data.toFlattenVector());
+                    ASSIGN_FIELDS(fields, Eigen::to_std(data));
                 }
                 else
                 {
-                    // m_Doc[field][name] = mc::toVector(data);
-                    ASSIGN_FIELDS(fields, mc::toVector(data));
+                    ASSIGN_FIELDS(fields, Eigen::toVector2D(data));
                 }
             }
 
-            template <typename dtype>
-            // void AddSubField(const std::string &field, const std::string &name, std::vector<Matrix<dtype>> data)
-            void AddSubField(const std::initializer_list<std::string> &fields, std::vector<Matrix<dtype>> data)
+            template <typename Scalar, int R, int C>
+            void AddSubField(const std::initializer_list<std::string> &fields,
+                             std::vector<Eigen::Matrix<Scalar, R, C>> data)
             {
-                // assert(m_Header.contains(field));
-
-                if (algo::all_of(data.begin(), data.end(), [](const Matrix<dtype> &elem) { return elem.isflat(); }))
+                // Все векторы
+                if (algo::all_of(data.begin(), data.end(), [](const Eigen::Matrix<Scalar, R, C> &elem)
                 {
-                    std::vector<std::vector<dtype>> vecs(data.size());
-                    algo::transform(data.begin(), data.end(), vecs.begin(), [](const Matrix<dtype> &elem)
+                    return Eigen::isFlat(elem);
+                }))
+                {
+                    // Все векторы
+                    std::vector<std::vector<Scalar>> vecs(data.size());
+                    algo::transform(data.begin(), data.end(), vecs.begin(), [](const Eigen::Vector<Scalar, R> &elem)
                     {
-                        return elem.toFlattenVector();
+                        return Eigen::to_std(elem);
                     });
-                    // m_Doc[field][name] = vecs;
                     ASSIGN_FIELDS(fields, vecs);
                 }
+                // Все матрицы
                 else if (algo::all_of(data.begin(), data.end(),
-                                      [](const Matrix<dtype> &elem) { return !elem.isflat(); }))
+                                      [](const Eigen::Matrix<Scalar, R, C> &elem) { return !Eigen::isFlat(elem); }))
                 {
-                    std::vector<std::vector<std::vector<dtype>>> vecs(data.size());
-                    algo::transform(data.begin(), data.end(), vecs.begin(), [](const Matrix<dtype> &elem)
+                    // Все матрицы
+                    std::vector<std::vector<std::vector<Scalar>>> vecs(data.size());
+                    algo::transform(data.begin(), data.end(), vecs.begin(), [](const Eigen::Matrix<Scalar, R, C> &elem)
                     {
-                        return mc::toVector(elem);
+                        return Eigen::toVector2D(elem);
                     });
-                    // m_Doc[field][name] = vecs;
                     ASSIGN_FIELDS(fields, vecs);
                 }
                 else
@@ -289,76 +254,74 @@ namespace mc
                 }
             }
 
-            template <typename T, typename dtype>
-            // void AddSubField(const std::string &field, const std::string &name, std::unordered_map<T, std::vector<Matrix<dtype>>> data)
+            template <typename T, typename Scalar, int R, int C>
             void AddSubField(const std::initializer_list<std::string> &fields,
-                             std::unordered_map<T, std::vector<Matrix<dtype>>> data)
+                             std::unordered_map<T, std::vector<Eigen::Matrix<Scalar, R, C>>> data)
             {
-                // assert(m_Header.contains(name));
+                using iterType = std::pair<T, std::vector<Eigen::Matrix<Scalar, R, C>>>;
 
-                using iterType = std::pair<T, std::vector<Matrix<dtype>>>;
-
-                const auto allFlat = [](const std::vector<Matrix<dtype>> &data)
+                const auto allFlat = [](const std::vector<Eigen::Matrix<Scalar, R, C>> &data)
                 {
-                    return algo::all_of(data.begin(), data.end(), [](const Matrix<dtype> &elem)
+                    return algo::all_of(data.begin(), data.end(), [](const Eigen::Matrix<Scalar, R, C> &elem)
                     {
-                        return elem.isflat();
+                        return Eigen::isFlat(elem);
                     });
                 };
 
-                const auto allNotFlat = [](const std::vector<Matrix<dtype>> &data)
+                const auto allNotFlat = [](const std::vector<Eigen::Matrix<Scalar, R, C>> &data)
                 {
-                    return algo::all_of(data.begin(), data.end(), [](const Matrix<dtype> &elem)
+                    return algo::none_of(data.begin(), data.end(), [](const Eigen::Matrix<Scalar, R, C> &elem)
                     {
-                        return elem.isflat();
+                        return Eigen::isFlat(elem);
                     });
                 };
 
-                const auto flat = [](const std::vector<Matrix<dtype>> &data)
+                const auto flat = [](const std::vector<Eigen::Matrix<Scalar, R, C>> &data)
                 {
-                    std::vector<std::vector<dtype>> vecs(data.size());
-                    algo::transform(data.begin(), data.end(), vecs.begin(), [](const Matrix<dtype> &elem)
+                    std::vector<std::vector<Scalar>> vecs(data.size());
+                    algo::transform(data.begin(), data.end(), vecs.begin(), [](const Eigen::Vector<Scalar, R> &elem)
                     {
-                        return elem.toFlattenVector();
+                        return Eigen::to_std(elem);
                     });
                     return vecs;
                 };
 
-                const auto toVec = [](const std::vector<Matrix<dtype>> &data)
+                const auto toVec = [](const std::vector<Eigen::Matrix<Scalar, R, C>> &data)
                 {
-                    std::vector<std::vector<std::vector<dtype>>> vecs(data.size());
-                    algo::transform(data.begin(), data.end(), vecs.begin(), [](const Matrix<dtype> &elem)
+                    std::vector<std::vector<std::vector<Scalar>>> vecs(data.size());
+                    algo::transform(data.begin(), data.end(), vecs.begin(), [](const Eigen::Matrix<Scalar, R, C> &elem)
                     {
-                        return mc::toVector(elem);
+                        return Eigen::toVector2D(elem);
                     });
                     return vecs;
                 };
 
-
+                // Все векторы
                 if (algo::all_of(data.begin(), data.end(), [allFlat](const iterType &elem)
                 {
                     return allFlat(elem.second);
                 }))
                 {
-                    std::unordered_map<T, std::vector<std::vector<dtype>>> vecs;
+                    // Все векторы
+                    std::unordered_map<T, std::vector<std::vector<Scalar>>> vecs;
                     algo::for_each(data.begin(), data.end(), [&vecs, flat](const iterType &elem)
                     {
                         vecs.insert({elem.first, flat(elem.second)});
                     });
-                    // m_Doc[field][name] = vecs;
                     ASSIGN_FIELDS(fields, vecs);
                 }
+                // Все матрицы
                 else if (algo::all_of(data.begin(), data.end(), [allNotFlat](const iterType &elem)
                 {
                     return allNotFlat(elem.second);
                 }))
                 {
-                    std::unordered_map<T, std::vector<std::vector<std::vector<dtype>>>> vecs;
+                    // Все матрицы
+                    std::unordered_map<T, std::vector<std::vector<std::vector<Scalar>>>> vecs;
                     algo::for_each(data.begin(), data.end(), [&vecs, toVec](const iterType &elem)
                     {
                         vecs.insert({elem.first, toVec(elem.second)});
                     });
-                    // m_Doc[field][name] = vecs;
                     ASSIGN_FIELDS(fields, vecs);
                 }
                 else
@@ -366,22 +329,6 @@ namespace mc
                     THROW_INVALID_ARGUMENT_ERROR(
                         "Map with matrices with different dimensions is not supported to json serialization now.");
                 }
-            }
-
-            // void AddSubField(const std::string &field, const std::string &name, Vec2 data)
-            void AddSubField(const std::initializer_list<std::string> &fields, Vec2 data)
-            {
-                // assert(m_Header.contains(name));
-                // m_Doc[field][name] = data.toArray();
-                ASSIGN_FIELDS(fields, data.toArray());
-            }
-
-            // void AddSubField(const std::string &field, const std::string &name, Vec3 data)
-            void AddSubField(const std::initializer_list<std::string> &fields, Vec3 data)
-            {
-                // assert(m_Header.contains(name));
-                // m_Doc[field][name] = data.toArray();
-                ASSIGN_FIELDS(fields, data.toArray());
             }
 
             void Check() const

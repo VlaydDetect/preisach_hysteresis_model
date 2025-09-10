@@ -10,6 +10,8 @@
 #include "Functions/nans.hpp"
 #include "Utils/conversions.hpp"
 
+#include <Eigen/Dense>
+
 namespace mc
 {
     class DiscretePreisachModel : public SinglePreisachModel
@@ -31,27 +33,29 @@ namespace mc
                 {
                     m_R(i, j) = m_Up;
                 }
-            
+
                 if (utils::essentiallyEqual(m_R(i, j), m_Up) && u <= -m_L + m_H * i)
                 {
                     m_R(i, j) = m_Down;
                 }
-            
+
                 p += m_R(i, j);
             }
 
             p /= GetSum();
 
-            auto c = std::ranges::count_if(m_R, [&](const double& elem) { return utils::essentiallyEqual(elem, m_Down); });
+            // auto c = std::ranges::count_if(m_R, [&](const double& elem) { return utils::essentiallyEqual(elem, m_Down); });
 
             // std::print("Input: {:.3f};   Output: {:.5f};    DownCount: {}/{}\n", u, p, c, m_Count * m_Count);
-            
+
             return 2. * p;
         }
-        
+
         void Init()
         {
-            m_R = nans(m_Count);
+            m_R = Eigen::Matrix2d::Constant(m_Count, m_Count, std::numeric_limits<double>::quiet_NaN());
+
+            m_Indices.reserve(static_cast<std::size_t>(m_Count) * static_cast<std::size_t>(m_Count + 1) / 2);
 
             for (int i = 0; i < m_Count; i++)
             {
@@ -59,15 +63,11 @@ namespace mc
                 {
                     if (i <= j)
                     {
-                        m_IndicesI.push_back(i);
-                        m_IndicesJ.push_back(j);
-                        // m_R(i, j) = m_Down;
+                        m_Indices.emplace_back(i, j);
+                        m_R(i, j) = m_Down;
                     }
                 }
             }
-            m_Indices = vecs2pairs(m_IndicesI, m_IndicesJ);
-            
-            m_R.put(m_IndicesI, m_IndicesJ, m_Down);
         }
 
         double GetSum() const
@@ -76,8 +76,7 @@ namespace mc
         }
 
     private:
-        Matrix<double> m_R;
-        std::vector<int> m_IndicesI, m_IndicesJ;
+        Eigen::Matrix2d m_R;
         std::vector<std::pair<int, int>> m_Indices;
         double m_H;
         int m_Count;

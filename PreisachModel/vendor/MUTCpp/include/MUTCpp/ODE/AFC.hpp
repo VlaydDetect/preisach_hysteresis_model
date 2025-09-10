@@ -6,15 +6,14 @@
 
 #pragma once
 
-#include "Matrix.hpp"
 #include "Functions/byDelta.hpp"
-#include "Functions/reverse.hpp"
-#include "Functions/zeros.hpp"
 #include "DynamicSystem.hpp"
 #include "Json.hpp"
-#include "Functions/abs.hpp"
 #include "Functions/find_peaks.hpp"
 #include "Functions/range.hpp"
+
+#include <Eigen/Dense>
+#include "Eigen/utils.hpp"
 
 namespace mc
 {
@@ -29,55 +28,64 @@ namespace mc
         /// @param freq_delta: delta step for frequency
         /// @param eps: Epsilon value for amplitude condition
         /// @param freqArgName: name of frequency argument in system arguments map (default is 'w')
-        inline json::JsonDocument AFC(DynamicalSystem *system, double time, double freq_max, double freq_delta,
+        inline json::JsonDocument AFC(Ref<DynamicalSystem> system, double time, double freq_max, double freq_delta,
                                       double eps = 0.1, std::string freqArgName = "w")
         {
             AL_PROFILE_FUNC("AFC");
-            Matrix<double> x0 = zeros<double>(1, system->GetDimension());
 
-            auto steps = static_cast<int>(time / system->GetDeltaTime());
+            const int dim = system->GetDimension();
+            Eigen::VectorXd x0 = Eigen::VectorXd::Zero(dim);
+            auto steps = static_cast<int>(time / dim);
 
-            Matrix<double> freqs_inc = byDelta(0.0, freq_max + freq_delta, freq_delta);
-            Matrix<double> freqs_dec = reverse(freqs_inc);
+            Eigen::VectorXd freqs_inc = Eigen::arange(0.0, freq_max + freq_delta, freq_delta);
+            Eigen::VectorXd freqs_dec = freqs_inc.reverse().eval();
 
-            std::vector<Matrix<double>> trajs_inc = {};
-            std::vector<Matrix<double>> trajs_dec = {};
+            std::vector<Eigen::VectorXd> trajs_inc = {};
+            trajs_inc.reserve(freqs_inc.size());
+            std::vector<Eigen::VectorXd> trajs_dec;
+            trajs_dec.reserve(freqs_dec.size());
 
-            Matrix<double> amplitudes_inc = {};
-            Matrix<double> amplitudes_dec = {};
+            Eigen::VectorXd amplitudes_inc(freqs_inc.size());
+            Eigen::VectorXd amplitudes_dec(freqs_dec.size());
 
-            auto freqLoop = [steps, freqArgName, eps](DynamicalSystem *system, const Matrix<double> &freqs, std::vector<Matrix<double>> &trajs,
-                                                              Matrix<double> &amplitudes, Matrix<double> &x0)
+            auto freqLoop = [&](const Eigen::VectorXd &freqs, std::vector<Eigen::VectorXd> &trajs,
+                                Eigen::VectorXd &amplitudes)
             {
                 AL_PROFILE_FUNC("AFC::freqLoop");
-                double amplitude = consts::nan;
 
-                for (const auto w : freqs)
+                for (Eigen::Index k = 0; k < freqs.size(); ++k)
                 {
+                    const double w = freqs[k];
                     std::print("{}\n", w);
+
                     system->Reset(x0);
                     system->AddAndSetArg(freqArgName, Vote(w));
-                    
-                    auto traj = system->Forward(steps);
-                    trajs.push_back(traj);
-                    
-                    auto xi = traj(traj.rSlice(), 0);
-                    auto [peaks, props] = find_peaks(xi);
-                    for (const auto i : range(peaks.size() - 1))
+
+                    Eigen::MatrixXd traj = system->Forward(steps);
+                    trajs.push_back(std::move(traj));
+
+                    const Eigen::VectorXd xi = trajs.back().col(0);
+                    auto [peaks, props] = find_peaks(xi.array());
+
+                    double amplitude = consts::nan;
+                    if (peaks.size() > 1)
                     {
-                        if (abs(xi[peaks[i]] - xi[peaks[i - 1]]) < eps)
+                        for (const auto i : range(peaks.size() - 1))
                         {
-                            amplitude = xi[peaks[-1]];
+                            if (abs(xi[peaks[i]] - xi[peaks[i - 1]]) < eps)
+                            {
+                                amplitude = xi[peaks[peaks.size() - 1]];
+                            }
                         }
                     }
-                    amplitudes = append(amplitudes, {amplitude});
-                    // x0 = traj(-1, traj.cSlice());
-                    x0 = {xi[-1], traj(-1, 1), x0[-1]};
+
+                    amplitudes[k] = amplitude;
+                    x0 = trajs.back().row(trajs.back().rows() - 1).transpose();
                 }
             };
 
-            freqLoop(system, freqs_inc, trajs_inc, amplitudes_inc, x0);
-            freqLoop(system, freqs_dec, trajs_dec, amplitudes_dec, x0);
+            freqLoop(freqs_inc, trajs_inc, amplitudes_inc);
+            freqLoop(freqs_dec, trajs_dec, amplitudes_dec);
 
             json::JsonDocument doc({"name", "time", "dt", "A", "freqs", "forward", "backward"});
             doc.AddField("name", "AFC");
