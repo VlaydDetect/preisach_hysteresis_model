@@ -17,7 +17,8 @@
 
 namespace Eigen
 {
-    inline void to_json(nlohmann::json &j, const MatrixXd &matrix)
+    template <typename Derived>
+    void to_json(nlohmann::json &j, const MatrixBase<Derived> &matrix)
     {
         j = nlohmann::json::array();
         for (int i = 0; i < matrix.rows(); ++i)
@@ -31,7 +32,8 @@ namespace Eigen
         }
     }
 
-    inline void from_json(const nlohmann::json &j, MatrixXd &matrix)
+    template <typename Derived>
+    void from_json(const nlohmann::json &j, MatrixBase<Derived> &matrix)
     {
         if (!j.is_array() || j.empty() || !j.front().is_array())
         {
@@ -58,13 +60,19 @@ namespace mc
 {
     namespace detail
     {
+        /**
+         * @struct Settings
+         * @param T: Curve simulation time.
+         * @param dt: Delta time step.
+         * @param tol: Difference between adjacent points on the curve for premature simulation stopping.
+         * @param patience: Number of consecutive simulation steps with a change < tol.
+         */
         struct Settings
         {
             double T = 40.0;
             double dt = 0.05;
             double tol = 1e-5; // изменение для досрочной остановки
             int patience = 3; // сколько последовательных шагов с изменением < tol
-            double cond_threshold = 1e12; // порог обусловленности для диагонализации
         };
 
         inline void to_json(nlohmann::json &j, const Settings &settings)
@@ -74,7 +82,6 @@ namespace mc
             j["dt"] = settings.dt;
             j["tol"] = settings.tol;
             j["patience"] = settings.patience;
-            j["cond_threshold"] = settings.cond_threshold;
         }
 
         inline void from_json(const nlohmann::json &j, Settings &settings)
@@ -85,7 +92,6 @@ namespace mc
             settings.dt = j["dt"].get<double>();
             settings.tol = j["tol"].get<double>();
             settings.patience = j["patience"].get<int>();
-            settings.cond_threshold = j["cond_threshold"].get<double>();
         }
 
         struct CurveResult
@@ -173,7 +179,9 @@ namespace mc
             // результат в [0, 2pi)
             double x = std::fmod(ang, 2.0 * consts::pi);
             if (x < 0)
+            {
                 x += 2.0 * consts::pi;
+            }
             return x;
         }
 
@@ -182,7 +190,9 @@ namespace mc
             const auto &pts = cr.pts;
             const int m = static_cast<int>(pts.size());
             if (m < 2)
+            {
                 return std::nullopt;
+            }
 
             std::vector<double> ang(m);
             std::vector<double> norms(m);
@@ -213,7 +223,7 @@ namespace mc
             for (int i = 0; i < m; ++i)
             {
                 double a1 = arr[i].first;
-                double a2 = arr[(i + 1) % m].first + ((i + 1 == m) ? 2.0 * consts::pi : 0.0);
+                double a2;
                 if (i + 1 == m)
                 {
                     // last to first wrap
@@ -255,6 +265,8 @@ namespace mc
                 TwoRaysResult out;
                 out.ok = false;
                 out.arc_len = arc_len;
+                out.idx1 = -1;
+                out.idx2 = -1;
                 return out;
             }
 
@@ -263,17 +275,6 @@ namespace mc
             double start_mod = start; // in (-pi, 3pi), but shifts handled below
             double target1 = start_mod;
             double target2 = start_mod + arc_len;
-
-
-            auto angle_distance_mod = [](double a, double b)-> double
-            {
-                // distance on circle, result in [0, 2pi)
-                double d = std::fmod(std::fabs(a - b), 2.0 * consts::pi);
-                if (d > consts::pi)
-                    d = 2.0 * consts::pi - d;
-                return d;
-            };
-
 
             int best1 = -1, best2 = -1;
             double bestd1 = 1e300, bestd2 = 1e300;
@@ -301,6 +302,7 @@ namespace mc
             }
 
             TwoRaysResult out;
+            out.ok = true;
             out.idx1 = best1;
             out.idx2 = best2;
             out.ray1 = pts[best1];
@@ -310,7 +312,7 @@ namespace mc
         }
     }
 
-    void write_curve_csv(const std::string &prefix, const detail::CurveResult &cr)
+    inline void write_curve_csv(const std::string &prefix, const detail::CurveResult &cr)
     {
         std::string fname = prefix + "_curve.csv";
         std::ofstream ofs(fname);
@@ -325,7 +327,7 @@ namespace mc
     }
 
 
-    void write_rays_csv(const std::string &prefix, const detail::TwoRaysResult &r)
+    inline void write_rays_csv(const std::string &prefix, const detail::TwoRaysResult &r)
     {
         std::string fname = prefix + "_rays.csv";
         std::ofstream ofs(fname);
@@ -337,7 +339,7 @@ namespace mc
         std::cout << "[INFO] Rays written to: " << fname << "\n";
     }
 
-    void run_example_2d()
+    inline void run_example_2d()
     {
         Eigen::Matrix2d A(2, 2);
         A << 0.0, 1.0,
@@ -345,12 +347,8 @@ namespace mc
         Eigen::Vector2d b(2);
         b << 0.0, 1.5;
 
-        double T = 40.0;
-        double dt = 0.05;
-        double tol = 1e-5;
-
         detail::Settings s = detail::Settings();
-        s.T = 5.0;
+        s.T = 100000000.0;
 
         detail::CurveResult cr = detail::generate_curve(A, b, s);
         if (cr.t.empty())
@@ -368,7 +366,8 @@ namespace mc
         else if (const auto trv = tr.value(); !trv.ok)
         {
             THROW_RUNTIME_ERROR(
-                std::format("[ERROR] Two rays insufficient: angular span = {} rad (> pi).", trv.arc_len));
+                std::format("[ERROR] Two rays insufficient: angular span = {} rad ({}°) (> pi).", trv.arc_len, mc::
+                    rad2deg(trv.arc_len)));
         }
         else
         {
@@ -378,7 +377,6 @@ namespace mc
         }
 
         std::cout << "[DONE] Outputs written with prefix '" << "out" << "'.\n";
-        std::cout << "[INFO] Use the provided Python snippet (in the README or program output) to visualize results.";
         return;
     }
 
@@ -390,7 +388,7 @@ namespace mc
     };
 
     /**
-     * @class SolidCone
+     * @class SolidCone2d
      * @brief A class that describes a solid cone in n-dimensional Euclidean space.
      *
      * A cone is defined by a set of boundary rays.
@@ -398,16 +396,18 @@ namespace mc
      * 1. By explicitly specifying the boundary rays.
      * 2. By approximating it using the generating curve exp(A * t), where A is the Hurwitz matrix.
      */
-    class SolidCone2d
+    class SolidCone2d : public RefCounted
     {
     public:
         enum class ConstructionType { FROM_RAYS, FROM_CURVE };
+
+        virtual ~SolidCone2d() override = default;
 
         /**
         * @brief Construct a cone from a set of boundary rays.
         * @param rays A matrix whose columns are the vectors of the boundary rays.
         */
-        static SolidCone2d fromRays(const Eigen::Matrix2d &rays)
+        static Ref<SolidCone2d> fromRays(const Eigen::Matrix2d &rays)
         {
             SolidCone2d c;
             c.m_Dimension = 2;
@@ -434,7 +434,7 @@ namespace mc
 
             c.m_Rng.seed(std::chrono::high_resolution_clock::now().time_since_epoch().count());
 
-            return c;
+            return Ref(&c);
         }
 
         /**
@@ -449,7 +449,7 @@ namespace mc
          * @param s настройки генерации конуса
          * @param t "Большое" время для матричной экспоненты.
          */
-        static SolidCone2d fromCurve(const Eigen::Matrix2d &A, const Eigen::Vector2d &b, detail::Settings s)
+        static Ref<SolidCone2d> fromCurve(const Eigen::Matrix2d &A, const Eigen::Vector2d &b, const detail::Settings &s)
         {
             SolidCone2d c;
             c.m_Dimension = 2;
@@ -482,7 +482,7 @@ namespace mc
 
             c.m_Rng.seed(std::chrono::high_resolution_clock::now().time_since_epoch().count());
 
-            return c;
+            return Ref(&c);
         }
 
         // Проверка принадлежности точки x к замыканию конуса (closure). Возвращает pair{belongs, coefficients}
@@ -537,7 +537,7 @@ namespace mc
             if (x.isZero())
                 return true;
             Eigen::Vector2d coeffs = m_BoundaryRays.inverse() * x;
-            return coeffs[0] >= -tol && coeffs[1] >= -tol;
+            return coeffs[0] >= tol && coeffs[1] >= tol;
         }
 
         /// Генерация случайной внутренней точки (не на границе)
@@ -609,7 +609,7 @@ namespace mc
             return j;
         }
 
-        static SolidCone2d FromJson(const nlohmann::json &j)
+        static Ref<SolidCone2d> FromJson(const nlohmann::json &j)
         {
             int n = j.at("dimension").get<int>();
 
@@ -637,10 +637,11 @@ namespace mc
                         A(i, k) = Aarr[i][k];
                     }
                 }
-                Eigen::Vector2d b = j["curve_b"];
+                Eigen::Vector2d b;
+                Eigen::from_json(j["curve_b"], b);
                 detail::Settings s = j["curve_settings"];
-                c.m_GeneratingMatrix = GenerationCurve(A, b, s);
-                c.m_ConstructionType = ConstructionType::FROM_CURVE;
+                c->m_GeneratingMatrix = GenerationCurve(A, b, s);
+                c->m_ConstructionType = ConstructionType::FROM_CURVE;
             }
 
             return c;
@@ -732,7 +733,23 @@ namespace mc
         int m_NNLS_MaxIters = 2000;
         double m_InteriorEps = 1e-9; // минимальное значение коэффициента для внутренней точки
 
-        thread_local std::mt19937_64 m_Rng;
+        std::mt19937_64 m_Rng;
+    };
+
+    struct CSVWriter
+    {
+        std::ofstream file;
+
+        CSVWriter(const std::string &filename)
+        {
+            file.open(filename, std::ios::trunc);
+            file << std::fixed << std::setprecision(8);
+        }
+
+        void writePoint(int step, const Eigen::Vector2d &v)
+        {
+            file << step << "," << v.x() << "," << v.y() << "\n";
+        }
     };
 
     struct ShuttlePointResult
@@ -741,48 +758,46 @@ namespace mc
         std::vector<Eigen::Vector2d> limits = {}; // либо {A}, либо {A,B}
     };
 
-    inline ShuttlePointResult ShuttlePoint(Ref<ode::DynamicalSystem> system, Ref<SolidCone2d> cone, double period)
+    inline ShuttlePointResult ShuttlePoint(Ref<ode::DynamicalSystem> system, Ref<SolidCone2d> cone,
+                                           const Eigen::Vector2d &u0, double period)
     {
+        CSVWriter trace_even("trace_even.csv");
+        CSVWriter trace_odd("trace_odd.csv");
+        CSVWriter trace_all("trace_all.csv");
+
         // 1) Поиск начальных точек z- и z+
         // Простая эвристика: берём две случайные точки в конусе, увеличиваем их норму
-        Eigen::Vector2d z_minus = 10.0 * cone->sampleInterior();
-        Eigen::Vector2d z_plus = -10.0 * cone->sampleInterior();
+        Eigen::Vector2d z_minus = -10.0 * u0;
+        Eigen::Vector2d z_plus = 10.0 * u0;
+
+        bool cond_z_minus = cone->contains(system->Shift(z_minus, period) - z_minus);
+        bool cond_z_plus = cone->contains(z_plus - system->Shift(z_plus, period));
 
         // Проверка условий для z- и z+
-        auto cond1 = [&](const Eigen::Vector2d &z)
-        {
-            return cone->contains(system->Shift(z, period) - z);
-        };
-        auto cond2 = [&](const Eigen::Vector2d &z)
-        {
-            return cone->contains(-system->Shift(z, period) + z);
-        };
-
-        if (!cond1(z_minus))
+        if (cond_z_minus)
         {
             THROW_RUNTIME_ERROR("[ERROR] z- does not satisfy cone condition.");
         }
-        if (!cond2(z_plus))
+        if (!cond_z_plus)
         {
             THROW_RUNTIME_ERROR("[WARN] z+ does not satisfy cone condition.");
         }
 
-        // 2) Выбор u0 из внутренности конуса
-        Eigen::Vector2d u0 = cone->sampleInterior();
-
         // 3) Последовательность sigma_n
-        auto sigma = [](int n) { return 1.0 / std::pow(2.0, n); };
+        auto sigma_n = [](int n) { return 1.0 / std::pow(2.0, n); };
 
         // Настройки итераций
-        constexpr int maxIter = 10'000;
-        constexpr double z_tol = 1e-6; 
+        constexpr int maxIter = 20;
         constexpr double tol = 1e-6;
 
-        std::vector<Eigen::Vector2d> z_even;
         std::vector<Eigen::Vector2d> z_odd;
+        z_odd.push_back(z_minus);
+        std::vector<Eigen::Vector2d> z_even;
+        z_even.push_back(z_plus);
 
         // Вспомогательные последовательности
-        auto build_sequence = [&](const Eigen::Vector2d &y0, bool add, int sig_idx) -> std::optional<Eigen::Vector2d>
+        auto build_sequence = [maxIter, &system, period, sigma_n, u0, &cone](
+            const Eigen::Vector2d &y0, bool add, int sig_idx, CSVWriter &trace) -> std::optional<Eigen::Vector2d>
         {
             Eigen::Vector2d y_prev = y0;
             for (int n = 1; n < maxIter; ++n)
@@ -790,22 +805,24 @@ namespace mc
                 Eigen::Vector2d y_next = system->Shift(y_prev, period);
                 if (add)
                 {
-                    y_next += sigma(sig_idx) * u0;
+                    y_next += sigma_n(sig_idx) * u0;
                 }
                 else
                 {
-                    y_next -= sigma(sig_idx) * u0;
+                    y_next -= sigma_n(sig_idx) * u0;
                 }
+
+                trace.writePoint(n, y_next);
 
                 // проверка условий выбора z
                 if (add)
                 {
-                    if (cone->contains(y_prev - y_next - sigma(sig_idx+2) * u0))
+                    if (cone->contains(y_prev - y_next - sigma_n(sig_idx + 2) * u0))
                         return y_next;
                 }
                 else
                 {
-                    if (cone->contains(y_next - y_prev - sigma(sig_idx+3) * u0))
+                    if (cone->contains(y_next - y_prev - sigma_n(sig_idx + 2) * u0))
                         return y_next;
                 }
 
@@ -817,14 +834,15 @@ namespace mc
         // Основной цикл построения z_n
         bool stop = false;
         ShuttlePointResult result;
-        for (int iter = 0; iter < maxIter && !stop; ++iter)
+        for (int iter = 1; iter < maxIter + 1 && !stop; ++iter)
         {
-            if (iter % 2 == 0) // нечётный шаг, строим "возрастающую"
+            if (iter % 2 != 0) // нечётный шаг, строим "возрастающую"
             {
-                auto z1 = build_sequence(iter == 0 ? z_minus : z_odd.back(), true, 1);                
+                auto z1 = build_sequence(z_odd.back(), true, iter, trace_odd);
                 if (z1.has_value())
                 {
                     z_odd.push_back(z1.value());
+                    trace_all.writePoint(iter, *z1);
                 }
                 else
                 {
@@ -834,10 +852,11 @@ namespace mc
             }
             else // чётный шаг, строим "убывающую"
             {
-                auto z2 = build_sequence(iter == 1 ? z_plus : z_even.back(), false, 2);
+                auto z2 = build_sequence(z_even.back(), false, iter, trace_even);
                 if (z2.has_value())
                 {
                     z_even.push_back(z2.value());
+                    trace_all.writePoint(iter, *z2);
                 }
                 else
                 {
@@ -847,31 +866,34 @@ namespace mc
             }
 
             // Проверка сходимости
-            if (!z_even.empty() && !z_odd.empty())
-            {
-                const Eigen::Vector2d& a = z_even.back();
-                const Eigen::Vector2d& b = z_odd.back();
-
-                double dist = (a - b).norm();
-                if (dist < tol)
-                {
-                    result.converged = true;
-                    result.limits = { 0.5 * (a + b) };
-                    stop = true;
-                }
-                else if (z_even.size() > 2 && z_odd.size() > 2)
-                {
-                    double d1 = (z_even.back() - z_even[z_even.size()-2]).norm();
-                    double d2 = (z_odd.back()  - z_odd[z_odd.size()-2]).norm();
-                    if (d1 < tol && d2 < tol)
-                    {
-                        result.converged = true;
-                        result.limits = { a, b };
-                        stop = true;
-                    }
-                }
-            }
+            // if (!z_even.empty() && !z_odd.empty())
+            // {
+            //     const Eigen::Vector2d &a = z_even.back();
+            //     const Eigen::Vector2d &b = z_odd.back();
+            //
+            //     double dist = (a - b).norm();
+            //     if (dist < tol)
+            //     {
+            //         result.converged = true;
+            //         result.limits = {0.5 * (a + b)};
+            //         stop = true;
+            //     }
+            //     else if (z_even.size() > 2 && z_odd.size() > 2)
+            //     {
+            //         double d1 = (z_even.back() - z_even[z_even.size() - 2]).norm();
+            //         double d2 = (z_odd.back() - z_odd[z_odd.size() - 2]).norm();
+            //         if (d1 < tol && d2 < tol)
+            //         {
+            //             result.converged = true;
+            //             result.limits = {a, b};
+            //             stop = true;
+            //         }
+            //     }
+            // }
         }
+
+        result.converged = true;
+        result.limits = {z_odd.back(), z_even.back()};
 
         if (!result.converged)
             std::cerr << "[WARN] ShuttlePoint did not converge.\n";
