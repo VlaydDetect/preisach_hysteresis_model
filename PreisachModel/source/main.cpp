@@ -1798,7 +1798,8 @@ void CourseWorkModelsDiff()
 
     Eigen::VectorXd Ts = Eigen::arange(0.1, 2.35, 0.25);
 
-    auto doc = mc::ode::DivergenceDegreeRegressionData(system, 0., 1., Eigen::Vector3d(0.7, -0.7, 0.0), Ts, M, trajs1, trajs2, ns);
+    auto doc = mc::ode::DivergenceDegreeRegressionData(system, 0., 1., Eigen::Vector3d(0.7, -0.7, 0.0), Ts, M, trajs1,
+                                                       trajs2, ns);
     mc::Ref file = mc::Ref<FileWriter>::Create("RodosLCEs_Regression.json");
     file->Write(doc.ToString());
 
@@ -2139,16 +2140,106 @@ void BifurcationDiagram()
 
 void RadonsShuttlePoint()
 {
+    AL_PROFILE_FUNC("RadonsShuttlePoint");
+
     double dt = 0.01;
-    double gamma = 0.7;
-    double w0 = 0.1;
+    double gamma = 4.;
+    double w0 = 3.;
+    double w = 1.0;
+    double A = 1.5;
+    double E = 1.35;
+
+    constexpr double L = 1.0;
+
+    auto model1 = mc::Ref<mc::ArealPreisachModel>::Create(L);
+    model1->P(L, -1);
+    mc::ode::DSArgs args1 = {
+        {"dt", dt},
+        {"gamma", gamma},
+        {"A", A},
+        {"w0", w0},
+        {"w", w},
+        {"E", E},
+        {"model", mc::ode::Vote(model1)}
+    };
+    mc::Ref<mc::ode::DynamicalSystem> system1 = mc::ode::GetRadonsSystem(dt, args1);
+    system1->SetResetFn([](mc::ode::DSArgs &args, mc::ode::DSArgs &)
+    {
+        auto model = args.at("model").toPreisachModel();
+        model->ResetState();
+        args.insert_or_assign("model", mc::ode::Vote(model));
+    });
+
+    auto model2 = mc::Ref<mc::ArealPreisachModel>::Create(L);
+    mc::ode::DSArgs args2 = {
+        {"dt", dt},
+        {"gamma", gamma},
+        {"A", A},
+        {"w0", w0},
+        {"w", w},
+        {"E", E},
+        {"model", mc::ode::Vote(model2)}
+    };
+    mc::Ref<mc::ode::DynamicalSystem> system2 = mc::ode::GetRadonsSystem(dt, args1);
+    system2->SetResetFn([](mc::ode::DSArgs &args, mc::ode::DSArgs &)
+    {
+        auto model = args.at("model").toPreisachModel();
+        model->ResetState();
+        args.insert_or_assign("model", mc::ode::Vote(model));
+    });
+
+    Eigen::Matrix2d Am(2, 2);
+    Am << 0.0, 1.0,
+        -w0, -gamma;
+    Eigen::Vector2d b(2);
+    b << 0.0, A;
+
+    const Eigen::Vector2d u0 = {0.3, 0.3};
+
+    auto p = mc::ShuttlePoint(system1, system2, mc::SolidCone2d::fromCurve(Am, b, mc::detail::Settings()),
+                              u0, {-1.5, -1.1}, {1.6, 0.9}, mc::consts::twoPi / w);
+
+    std::println("z_odd: {}, z_even: {}", p.limits[0], p.limits[1]);
+
+
+    auto model3 = mc::Ref<mc::ArealPreisachModel>::Create(L);
+    mc::ode::DSArgs args3 = {
+        {"dt", dt},
+        {"gamma", gamma},
+        {"A", A},
+        {"w0", w0},
+        {"w", w},
+        {"E", E},
+        {"model", mc::ode::Vote(model2)}
+    };
+    mc::Ref<mc::ode::DynamicalSystem> system3 = mc::ode::GetRadonsSystem(dt, args3, {}, p.limits[0]);
+    auto traj = system3->Forward(500.0);
+
+    Eigen::VectorXd x = traj.col(0);
+    Eigen::VectorXd v = traj.col(1);
+
+    mc::json::JsonDocument message({"name", "x", "v"});
+    message.AddField("name", "ShuttlePoint");
+    message.AddField("x", x);
+    message.AddField("v", v);
+
+    mc::Ref file = mc::Ref<FileWriter>::Create("ShuttlePointTraj.json");
+    file->Write(message.ToString());
+}
+
+void ShiftTest()
+{
+    double dt = 0.01;
+    double gamma = 4.;
+    double w0 = 3.;
     double w = 1.0;
     double A = 1.5;
     double E = 1.35;
 
     constexpr double L = 1.0;
     auto model = mc::Ref<mc::ArealPreisachModel>::Create(L);
-    
+    model->P(L, -1);
+
     mc::ode::DSArgs args = {
         {"dt", dt},
         {"gamma", gamma},
@@ -2158,25 +2249,59 @@ void RadonsShuttlePoint()
         {"E", E},
         {"model", mc::ode::Vote(model)}
     };
-    mc::Ref<mc::ode::DynamicalSystem> system = mc::ode::GetRadonsSystem(dt, args);
 
-    Eigen::Matrix2d Am(2, 2);
-    Am << 0.0, 1.0,
-        -w0, -gamma;
-    Eigen::Vector2d b(2);
-    b << 0.0, A;
+    // Eigen::Matrix2d Am(2, 2);
+    // Am << 0.0, 1.0,
+    //     -w0, -gamma;
+    // Eigen::Vector2d b(2);
+    // b << 0.0, A;
+    // mc::SolidCone2d::fromCurve(Am, b, mc::detail::Settings());
 
-    const Eigen::Vector2d u0 = {0.2, 0.25};
-    
-    auto p = mc::ShuttlePoint(system, mc::SolidCone2d::fromCurve(Am, b, mc::detail::Settings()), u0, mc::consts::twoPi / w);
-    std::println("z_odd: {}, z_even: {}", p.limits[0], p.limits[1]);
+    Eigen::Vector2d x0 = {-1.5, -1.1};
+    mc::Ref<mc::ode::DynamicalSystem> system = mc::ode::GetRadonsSystem(dt, args, {}, x0);
+    system->SetResetFn([](mc::ode::DSArgs &args, mc::ode::DSArgs &)
+    {
+        auto model = args.at("model").toPreisachModel();
+        model->ResetState();
+        args.insert_or_assign("model", mc::ode::Vote(model));
+    });
+    double period = 1.0 * mc::consts::twoPi / w;
+
+    const auto traj1 = system->Forward(2. * period);
+    Eigen::VectorXd x1 = traj1.col(0);
+    Eigen::VectorXd v1 = traj1.col(1);
+
+    x0 = {1.6, 0.9};
+    system->ResetTo(x0);
+    const auto traj2 = system->Forward(10.0 * period);
+    Eigen::VectorXd x2 = traj2.col(0);
+    Eigen::VectorXd v2 = traj2.col(1);
+
+    // const Eigen::Vector2d u0 = {0.5, 0.5};
+    //
+    // const auto traj = system->ShiftTraj(u0, mc::consts::twoPi / w);
+    // Eigen::VectorXd x = traj.row(0);
+    // Eigen::VectorXd v = traj.row(1);
+
+    mc::json::JsonDocument message({"name", "z+", "z-"});
+    message.AddField("name", "ShuttlePoint");
+    message.AddSubField({"z-", "x"}, x1);
+    message.AddSubField({"z-", "v"}, v1);
+    message.AddSubField({"z+", "x"}, x2);
+    message.AddSubField({"z+", "v"}, v2);
+
+    mc::Ref file = mc::Ref<FileWriter>::Create("ShiftTest.json");
+    file->Write(message.ToString());
 }
 
 int main()
 {
     // mc::run_example_2d();
-    
-    RadonsShuttlePoint();
+
+    // RadonsShuttlePoint();
+    ShiftTest();
+
+
     // CourseWorkModelsDiff();
     // auto integrand = hep::make_integrand<double>(
     //     square,

@@ -567,11 +567,11 @@ def BifurcationDiagram():
 
         bifurcation_param = []
         bifurcation_x = []
-        
+
         for i in range(len(params)):
             p = params[i]
             research = trajs[i]
-                x = np.asarray([point[0] for point in research])
+            x = np.asarray([point[0] for point in research])
 
             maxima = argrelextrema(x, np.greater)
             minima = argrelextrema(x, np.less)
@@ -589,9 +589,98 @@ def BifurcationDiagram():
         plt.grid(True)
         plt.tight_layout()
         plt.show()
-       
+
+
+def ShuttlePointTraj():
+    with open(f"../PreisachModel/ShuttlePointTraj.json") as f:
+        data = json.load(f)
+        x = np.array(data["x"])
+        v = np.array(data["v"])
+
+        plt.plot(x)
+        plt.xlabel('t')
+        plt.ylabel('x')
+        plt.show()
+        plt.plot(x, v)
+        plt.xlabel('x')
+        plt.ylabel('v')
+        plt.show()
+
+
+def ShiftTest():
+    with open(f"../PreisachModel/ShiftTest.json") as f:
+        data = json.load(f)
+        z_minus = data["z-"]
+        z_plus = data["z+"]
+        
+        x1 = np.array(z_minus["x"])
+        v1 = np.array(z_minus["v"])
+        
+        print(x1[-1], v1[-1])
+
+        x2 = np.array(z_plus["x"])        
+        v2 = np.array(z_plus["v"])
+        # print(x2[-1], v2[-1])
+
+        x0 = "{0.8, 0.8}"
+        T = "T"
+        gamma = 4.
+        omega0 = 3.
+
+        plt.figure(figsize=(12, 12))
+        plt.suptitle(f"x0 = -{x0}, T = {T}\n$\\gamma = {gamma}, \\omega_0 = {omega0}, \\omega = \\omega_0, A = 1.5$")
+        
+        plt.subplot(121)
+        plt.plot(x1, v1)
+        plt.plot(-1.190174627449658, 0.13896378639632018, 'x', color='black', label='End')
+        plt.plot(x1[0], v1[0], 'o', color='green', label='Begin')
+        plt.plot(x1[-1], v1[-1], 'x', color='red', label='End')
+        plt.xlabel('x')
+        plt.ylabel('v')
+        plt.grid()
+        plt.title(f"z-")
+
+        plt.subplot(122)
+        plt.plot(x2, v2)
+        plt.plot(x2[0], v2[0], 'o', color='green', label='Begin')
+        plt.plot(x2[-1], v2[-1], 'x', color='red', label='End')
+        plt.xlabel('x')
+        plt.ylabel('v')
+        plt.grid()
+        plt.title(f"z+")
+
+        plt.show()
+
 
 if __name__ == '__main__':
+    # ShuttlePointTraj()
+
+    ShiftTest()
+
+    # # сетка для отображения
+    # x = np.linspace(0., 5., 1000)
+    # y = np.linspace(0., 5., 1000)
+    # X, Y = np.meshgrid(x, y)
+    # 
+    # D = Y ** 2 - 4 * X
+    # sqrtD = np.sqrt(np.maximum(D, 0))  # sqrt только для D>=0
+    # lambda1 = (-Y + sqrtD) / 2
+    # lambda2 = (-Y - sqrtD) / 2
+    # region = (D >= 0) & (lambda1 < 0) & (lambda2 < 0)
+    # 
+    # plt.figure(figsize=(12, 12))
+    # plt.contourf(X, Y, region, levels=[-1, 0, 1], colors=["white", "lightblue"], alpha=0.7)
+    # 
+    # # оси
+    # plt.axhline(0, color="black", linewidth=1)
+    # plt.axvline(0, color="black", linewidth=1)
+    # 
+    # plt.title("Область, где матрица A гурвицева")
+    # plt.xlabel("x")
+    # plt.ylabel("y")
+    # plt.gca().set_aspect("equal", adjustable="box")
+    # plt.show()
+
     # x = np.linspace(-1, 1, 100)
     # y = np.linspace(-1, 1, 100)
     # X, Y = np.meshgrid(x, y)
@@ -649,7 +738,7 @@ if __name__ == '__main__':
     # TwoTrajsOnCircle()
 
     # PoincareMapping()
-    BifurcationDiagram()
+    # BifurcationDiagram()
 
     # regressionTable()
     # two_trajs()
@@ -680,8 +769,8 @@ if __name__ == '__main__':
     # plot_hysteresis_loop(inputs, outputs, E)
     # plot_fourier_transform(np.array(x), dt)
 
-    dt = 0.01
-    t = np.arange(0, 1800, dt)
+    # dt = 0.01
+    # t = np.arange(0, 1800, dt)
     # s = []
     # read_array("../PreisachModel/preisach_sin.txt", s)
     #

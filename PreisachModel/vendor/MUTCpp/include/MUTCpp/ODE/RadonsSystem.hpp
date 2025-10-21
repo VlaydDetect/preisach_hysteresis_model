@@ -31,7 +31,7 @@ namespace mc
                 Eigen::VectorXd res = Eigen::VectorXd::Zero(x.size());
 
                 res[0] = x[1];
-                res[1] = A * cos(w * t) - gamma * x[1] - power(w0, 2) * x[0] + E * model->P(
+                res[1] = A * sin(w * t) - gamma * x[1] - w0 * x[0] + E * model->P(
                     x[0], static_cast<int>(t / dt));
 
                 return res;

@@ -7,12 +7,8 @@
 #pragma once
 
 #include "Functions/isnan.hpp"
-#include "Functions/append.hpp"
 #include "Core/Constants.hpp"
 #include "Debug/Profile.hpp"
-#include "Functions/all_comprasions.hpp"
-#include "Functions/asarray.hpp"
-#include "Functions/empty.hpp"
 #include "Ref/Ref.hpp"
 
 #include <Eigen/Dense>
@@ -30,6 +26,14 @@ namespace mc
             m_HistoryU = {};
             m_HistoryOutput = {};
             m_HistoryDerivative = {};
+        }
+
+        void ResetState()
+        {
+            m_HistoryU = {};
+            m_HistoryOutput = {};
+            m_HistoryDerivative = {};
+            ResetImpl();
         }
 
         PreisachModelBase(const PreisachModelBase &) = delete;
@@ -59,6 +63,9 @@ namespace mc
         virtual double P(double u, int i = -1) = 0;
 
         virtual double DerivativeOperator(double t, double dt) = 0;
+
+    protected:
+        virtual void ResetImpl() = 0;
 
     protected:
         double m_L;
@@ -251,6 +258,20 @@ namespace mc
     protected:
         virtual double P_Impl(double u) = 0;
 
+        virtual void ResetImpl() override
+        {
+            m_PreviousInput = consts::nan;
+            m_PreviousOutput = consts::nan;
+            m_InterfaceMax = {};
+            m_InterfaceMin = {};
+            m_PrevIndex = INT_MIN;
+            m_HistoryInterfaceMin = {};
+            m_HistoryInterfaceMax = {};
+            m_FirstElemType = ElementType::Max;
+            m_PrevElemType = ElementType::Max;
+            m_LastElemType = ElementType::Max;
+        }
+
         // TODO: need bounds?
         virtual double DerivativeOperator_Impl(uint32_t i)
         {
@@ -381,7 +402,7 @@ namespace mc
         double m_PreviousOutput = consts::nan;
         std::vector<double> m_InterfaceMax{}, m_InterfaceMin{};
         bool m_KeepDerivative = false, m_KeepAnimation = false;
-        uint32 m_PrevIndex = -1;
+        uint32 m_PrevIndex = INT_MIN;
 
         std::vector<double> m_HistoryInterfaceMin{}, m_HistoryInterfaceMax{};
 
@@ -458,12 +479,21 @@ namespace mc
         }
 
     protected:
+        virtual void ResetImpl() override
+        {
+            m_UpperModel.Reset();
+            m_LowerModel.Reset();
+            m_PrevIndex = INT_MIN;
+            m_PreviousOutput = consts::nan;
+        }
+
+    protected:
         Ref<SinglePreisachModel> m_UpperModel;
         Ref<SinglePreisachModel> m_LowerModel;
 
         std::array<double, 2> m_D;
 
-        uint32 m_PrevIndex = -1;
+        int32 m_PrevIndex = INT_MIN;
         double m_PreviousOutput = consts::nan;
     };
 }

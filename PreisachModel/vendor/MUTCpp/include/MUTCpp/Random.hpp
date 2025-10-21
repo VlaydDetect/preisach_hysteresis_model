@@ -21,3 +21,5 @@
 #include "Random/randN.hpp"
 #include "Random/shuffle.hpp"
 #include "Random/uniform.hpp"
+
+#include "Random/random_double.hpp"

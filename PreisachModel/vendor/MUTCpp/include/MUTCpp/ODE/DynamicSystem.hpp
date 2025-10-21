@@ -17,13 +17,13 @@ namespace mc
 {
     using Vec = Eigen::VectorXd;
     using Mat = Eigen::MatrixXd;
-    
+
     namespace ode
     {
         namespace detail
         {
             inline Vec rk4(
-                const std::function<Vec(const Vec&, double, DSArgs &)> &fn,
+                const std::function<Vec(const Vec &, double, DSArgs &)> &fn,
                 const Vec &x, double t, double dt, DSArgs &args)
             {
                 const Vec k1 = fn(x, t, args);
@@ -64,7 +64,9 @@ namespace mc
 
             virtual ~DynamicalSystem() override = default;
 
-            virtual void ShiftNext(Vec& x, double& t) = 0;
+            virtual void ShiftNext(Vec &x, double &t) = 0;
+
+            virtual Vec ShiftTrajNext(const Vec &x, double t) = 0;
 
             /// Compute the state of the system after one time step.
             virtual void Next() = 0;
@@ -85,6 +87,12 @@ namespace mc
 
             Vec Shift(const Vec &x0, double period)
             {
+                // if (m_Args.contains("model"))
+                // {
+                //     auto model = m_Args.at("model").toPreisachModel();
+                //     model->ResetState();
+                // }
+
                 AL_PROFILE_FUNC("DynamicalSystem::Shift");
                 int numSteps = static_cast<int>(period / m_DeltaTime);
 
@@ -95,9 +103,46 @@ namespace mc
                     ShiftNext(x, t);
                 }
 
+                // if (m_Args.contains("model"))
+                // {
+                //     auto model = m_Args.at("model").toPreisachModel();
+                //     model->ResetState();
+                // }
+
                 return x;
             }
-            
+
+            Mat ShiftTraj(const Vec &x0, double period)
+            {
+                // if (m_Args.contains("model"))
+                // {
+                //     auto model = m_Args.at("model").toPreisachModel();
+                //     model->ResetState();
+                // }
+
+                AL_PROFILE_FUNC("DynamicalSystem::Shift");
+                int numSteps = static_cast<int>(period / m_DeltaTime);
+
+                Mat traj = Mat::Zero(m_Dimension, numSteps + 1);
+                traj.col(0) = x0;
+
+                double t = 0.0;
+                Vec x = x0;
+                for (int i = 1; i < numSteps + 1; i++)
+                {
+                    ShiftNext(x, t);
+                    traj.col(i) = x;
+                }
+
+                // if (m_Args.contains("model"))
+                // {
+                //     auto model = m_Args.at("model").toPreisachModel();
+                //     model->ResetState();
+                // }
+
+                return traj;
+            }
+
             /**
              * Forward the system for numSteps.
              * @param time Time of simulation to take.
@@ -114,13 +159,13 @@ namespace mc
              * @param numSteps Number of simulation steps to take.
              * @return Trajectory of the system of dimension (numSteps + 1, m_Dimension) if keepTraj.
              */
-            template <typename dtype, std::enable_if_t<std::is_integral_v<dtype>, int>  = 0>
+            template <typename dtype, std::enable_if_t<std::is_integral_v<dtype>, int> = 0>
             Mat Forward(dtype numSteps)
             {
                 AL_PROFILE_FUNC("DynamicalSystem::Forward");
                 Mat traj = Mat::Zero(numSteps + 1, m_Dimension);
                 traj.row(0) = m_X.transpose();
-                
+
                 for (dtype i = 1; i < numSteps + 1; ++i)
                 {
                     Next();
@@ -135,6 +180,19 @@ namespace mc
             /// Reset a system solution to x0 and time to t0
             void Reset()
             {
+                m_X = m_X0;
+                m_T = m_T0;
+
+                if (m_ResetFn.has_value())
+                {
+                    m_ResetFn.value()(m_Args, m_NextArgs);
+                }
+            }
+
+            /// Update x0 and reset a system solution to x0 and time to t0
+            void ResetTo(const Vec &x0)
+            {
+                m_X0 = x0;
                 m_X = m_X0;
                 m_T = m_T0;
 
@@ -165,19 +223,6 @@ namespace mc
             void ResetSystemTime()
             {
                 m_T = m_T0;
-            }
-
-            /// Update x0 and reset a system solution to x0 and time to t0
-            void Reset(const Vec &x0)
-            {
-                m_X0 = x0;
-                m_X = m_X0;
-                m_T = m_T0;
-
-                if (m_ResetFn.has_value())
-                {
-                    m_ResetFn.value()(m_Args, m_NextArgs);
-                }
             }
 
             void AddAndSetArg(const std::string &name, const Vote &arg)
@@ -244,11 +289,17 @@ namespace mc
             {
             }
 
-            virtual void ShiftNext(Vec& x, double& t) override
+            virtual void ShiftNext(Vec &x, double &t) override
             {
                 AL_PROFILE_FUNC("ContinuousDS::ShiftNext");
                 x = detail::rk4(m_Function, x, t, m_DeltaTime, m_Args);
                 t += m_DeltaTime;
+            }
+
+            virtual Vec ShiftTrajNext(const Vec &x, double t) override
+            {
+                AL_PROFILE_FUNC("ContinuousDS::ShiftTrajNext");
+                return detail::rk4(m_Function, x, t, m_DeltaTime, m_Args);
             }
 
             /// Compute the state of the system after one time step with RK4 method.

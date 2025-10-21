@@ -604,7 +604,7 @@ def plot_traced_shuttle_points():
         except FileNotFoundError:
             pass
 
-    plt.figure(figsize=(7, 7))
+    # plt.figure(figsize=(7, 7))
 
     plot_trace("D:/Programming/C++/preisach_hysteresis_model/PreisachModel/trace_even.csv", "Even sequence", "blue")
     plot_trace("D:/Programming/C++/preisach_hysteresis_model/PreisachModel/trace_odd.csv", "Odd sequence", "green")
@@ -620,7 +620,7 @@ def plot_traced_shuttle_points():
     plt.ylabel("y")
     plt.axis("equal")
     plt.grid(True)
-    plt.show()
+    # plt.show()
 
 # --- Пример с вашей матрицей A2 ---
 if __name__ == "__main__":
@@ -630,17 +630,18 @@ if __name__ == "__main__":
     t = cr[:, 0]
     X = cr[:, 1:3]
 
-    plt.figure(figsize=(6, 6))
+    plt.figure(figsize=(10, 10))
     plt.plot(X[:, 0], X[:, 1], '-k', label='curve')
-    L = np.max(np.linalg.norm(X, axis=1)) * 1.05
+    L = np.max(np.linalg.norm(rays, axis=1)) * 5
     for i in range(len(rays)):
-        plt.plot([0, rays[i, 1]], [0, rays[i, 2]], '--', lw=2, label=f'ray{i}')
+        plt.plot([0, rays[i, 0] * L], [0, rays[i, 1] * L], '--', lw=2, label=f'ray{i}')
     plt.gca().set_aspect('equal', 'box')
     plt.grid(True)
     plt.legend()
-    plt.show()
+    # plt.show()
 
-    # plot_traced_shuttle_points()
+    plot_traced_shuttle_points()
+    plt.show()
     
     # A2 = np.array([
     #     [0.0, 1.0],

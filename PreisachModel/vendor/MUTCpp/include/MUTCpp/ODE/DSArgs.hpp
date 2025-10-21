@@ -72,6 +72,11 @@ namespace mc
             {
             }
 
+            Vote(const Ref<PreisachModelBase> &m) :
+                m_Value(static_cast<Ref<PreisachModelBase>>(m))
+            {
+            }
+
             Vote(const Ref<DiscretePreisachModel> &m) :
                 m_Value(static_cast<Ref<PreisachModelBase>>(m))
             {
@@ -150,6 +155,7 @@ namespace mc
 
             double toDouble() const
             {
+                AL_PROFILE_SCOPE("Vote::toDouble");
                 return std::visit([]<typename T>(T &&arg) -> double
                 {
                     using U = std::decay_t<T>;

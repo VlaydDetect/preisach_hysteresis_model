@@ -7,6 +7,8 @@
 #pragma once
 #include <vector>
 #include <random>
+#include <expected>
+#include <stdexcept>
 
 #include "Ref/Ref.hpp"
 #include "DynamicSystem.hpp"
@@ -97,6 +99,8 @@ namespace mc
         struct CurveResult
         {
             std::vector<double> t;
+            Eigen::Matrix2d A;
+            Eigen::Vector2d b;
             std::vector<Eigen::Vector2d> pts; // size m x n
         };
 
@@ -120,7 +124,10 @@ namespace mc
 
         inline CurveResult generate_curve(const Eigen::Matrix2d &A, const Eigen::Vector2d &b, const Settings &s)
         {
+            AL_PROFILE_FUNC("generate_curve");
             CurveResult res;
+            res.A = A;
+            res.b = b;
             const int maxSteps = static_cast<int>(std::ceil(s.T / s.dt));
             res.t.reserve(std::min(maxSteps + 1, 1'000'000));
             res.pts.reserve(std::min(maxSteps + 1, 1'000'000));
@@ -164,151 +171,249 @@ namespace mc
             return res;
         }
 
-        struct TwoRaysResult
+        // struct TwoRaysResult
+        // {
+        //     Eigen::Matrix2d rays; // 2 x 2 (rows are unit rays)
+        //     std::array<int, 2> idxs; // sample indices
+        //     double arc_len;
+        //     std::string info;
+        // };
+
+        // TwoRaysResult two_rays_by_angle_2d(const CurveResult &cr, Eigen::Matrix2d A,
+        //                                           double min_norm_ratio = 1e-6, double eps_tangent = 1e-12)
+        // {
+        //     const auto &pts = cr.pts;
+        //     const int m = static_cast<int>(pts.size());
+        //     if (m < 2)
+        //     {
+        //         THROW_INVALID_ARGUMENT_ERROR("Cure is too small (< 2 points).");
+        //     }
+        //
+        //     std::vector<double> norms(m);
+        //     double max_norm = 0.0;
+        //     for (int i = 0; i < m; ++i)
+        //     {
+        //         norms[i] = pts[i].norm();
+        //         if (norms[i] > max_norm)
+        //         {
+        //             max_norm = norms[i];
+        //         }
+        //     }
+        //     if (max_norm == 0.0)
+        //     {
+        //         TwoRaysResult r;
+        //         r.rays = Eigen::Matrix2d::Zero();
+        //         r.idxs = {-1, -1};
+        //         r.arc_len = consts::pi;
+        //         r.info = "all samples zero - fallback";
+        //         return r;
+        //     }
+        //
+        //     double thr = max_norm * min_norm_ratio;
+        //     std::vector<int> valid;
+        //     valid.reserve(m);
+        //     for (int i = 0; i < m; ++i)
+        //     {
+        //         if (norms[i] >= thr)
+        //         {
+        //             valid.push_back(i);
+        //         }
+        //     }
+        //
+        //     if (valid.empty())
+        //     {
+        //         // fallback to eigenvector + perp
+        //         Eigen::Vector2d v = dominant_real_eigvec(A);
+        //         Eigen::Vector2d perp(2);
+        //         perp << -v(1), v(0);
+        //         Eigen::Matrix2d R;
+        //         R.col(0) = v / v.norm();
+        //         R.col(1) = perp / perp.norm();
+        //         TwoRaysResult r;
+        //         r.rays = R;
+        //         r.idxs = {-1, -1};
+        //         r.arc_len = consts::pi;
+        //         r.info = "no valid points; fallback eigvec";
+        //         return r;
+        //     }
+        //
+        //     // compute angles for valid points
+        //     std::vector<std::pair<double, int>> ang_idx;
+        //     ang_idx.reserve(valid.size());
+        //     for (size_t k = 0; k < valid.size(); ++k)
+        //     {
+        //         const auto &pt = pts[valid[k]];
+        //         double th = std::atan2(pt.y(), pt.x());
+        //         ang_idx.emplace_back(th, static_cast<int>(k)); // store index into 'valid'
+        //     }
+        //
+        //     // sort by angle
+        //     std::ranges::sort(ang_idx, [](auto const &a, auto const &b) { return a.first < b.first; });
+        //
+        //     // create sorted angles array and mapping to valid indices
+        //     int M = static_cast<int>(ang_idx.size());
+        //     std::vector<double> ang_sorted(M);
+        //     std::vector<int> ang_sorted_idx(M); // indices into 'valid'
+        //     for (int j = 0; j < M; ++j)
+        //     {
+        //         ang_sorted[j] = ang_idx[j].first;
+        //         ang_sorted_idx[j] = ang_idx[j].second;
+        //     }
+        //
+        //     // find largest circular gap
+        //     double largest_gap = -1.0;
+        //     int kmax = 0;
+        //     for (int j = 0; j < M; ++j)
+        //     {
+        //         double a = ang_sorted[j];
+        //         double bval = ang_sorted[(j + 1) % M];
+        //         if (j == M - 1)
+        //             bval += 2.0 * mc::consts::pi;
+        //         double gap = bval - a;
+        //         if (gap > largest_gap)
+        //         {
+        //             largest_gap = gap;
+        //             kmax = j;
+        //         }
+        //     }
+        //     double arc_len = 2.0 * consts::pi - largest_gap;
+        //
+        //     // endpoints indices in ang_sorted: start = kmax+1, end = kmax
+        //     int pos_start_sorted = (kmax + 1) % M;
+        //     int pos_end_sorted = kmax;
+        //
+        //     // map to original sample indices:
+        //     int idx_start = valid[ang_sorted_idx[pos_start_sorted]];
+        //     int idx_end = valid[ang_sorted_idx[pos_end_sorted]];
+        //
+        //     Eigen::Vector2d pos_start = pts[idx_start];
+        //     Eigen::Vector2d pos_end = pts[idx_end];
+        //
+        //     auto choose_ray = [&](const Eigen::Vector2d &pos)-> std::pair<Eigen::Vector2d, std::string>
+        //     {
+        //         double pos_norm = pos.norm();
+        //         Eigen::Vector2d ray;
+        //         if (pos_norm >= thr)
+        //         {
+        //             // radial
+        //             ray = pos / pos_norm;
+        //             // ensure outward
+        //             if (ray.dot(pos) < 0)
+        //                 ray = -ray;
+        //             return {ray, "radial"};
+        //         }
+        //         Eigen::Vector2d tang = A * pos;
+        //         if (tang.norm() >= eps_tangent)
+        //         {
+        //             ray = tang / tang.norm();
+        //             if (pos_norm > 1e-12 && ray.dot(pos) < 0)
+        //                 ray = -ray;
+        //             return {ray, "tangent"};
+        //         }
+        //         Eigen::Vector2d eig = dominant_real_eigvec(A);
+        //         if (eig.norm() < 1e-12)
+        //             eig(0) = 1.0;
+        //         eig.normalize();
+        //         if (pos_norm > 1e-12 && eig.dot(pos) < 0)
+        //             eig = -eig;
+        //         return {eig, "eigvec_fallback"};
+        //     };
+        //
+        //     auto [r1, reason1] = choose_ray(pos_start);
+        //     auto [r2, reason2] = choose_ray(pos_end);
+        //
+        //     Eigen::Matrix2d rays;
+        //     rays.col(0) = r1;
+        //     rays.col(1) = r2;
+        //
+        //     TwoRaysResult res;
+        //     res.rays = rays;
+        //     res.idxs = {idx_start, idx_end};
+        //     res.arc_len = arc_len;
+        //     res.info = std::string("start: ") + reason1 + ", end: " + reason2;
+        //     return res;
+        // }
+
+        struct Tangent
         {
-            bool ok;
-            Eigen::Vector2d ray1;
-            Eigen::Vector2d ray2;
-            double arc_len;
-            int idx1;
-            int idx2;
+            double k; // slope
+            double b; // intercept
+
+            [[nodiscard]] constexpr double operator()(double x) const noexcept
+            {
+                return k * x + b;
+            }
         };
 
-        inline double wrap_to_2pi(double ang)
+        [[nodiscard]] inline std::expected<Tangent, std::string> tangent_from_table(
+            const std::vector<Eigen::Vector2d> &data, size_t idx)
         {
-            // результат в [0, 2pi)
-            double x = std::fmod(ang, 2.0 * consts::pi);
-            if (x < 0)
+            AL_PROFILE_FUNC("tangent_from_table");
+            const auto n = data.size();
+            if (idx >= n)
             {
-                x += 2.0 * consts::pi;
+                return std::unexpected("Index out of bounds.");
             }
-            return x;
+
+            const double x0 = data[idx][0];
+            const double y0 = data[idx][1];
+
+            double m = 0.0;
+
+            if (idx > 0 && idx < n - 1)
+            {
+                // central difference
+                const double x_prev = data[idx - 1][0];
+                const double y_prev = data[idx - 1][1];
+                const double x_next = data[idx + 1][0];
+                const double y_next = data[idx + 1][1];
+                m = (y_next - y_prev) / (x_next - x_prev);
+            }
+            else if (idx == 0 && n > 1)
+            {
+                // forward difference
+                const double x1 = data[1][0];
+                const double y1 = data[1][1];
+                m = (y1 - y0) / (x1 - x0);
+            }
+            else if (idx == n - 1 && n > 1)
+            {
+                // backward difference
+                const double x1 = data[n - 2][0];
+                const double y1 = data[n - 2][1];
+                m = (y0 - y1) / (x0 - x1);
+            }
+            else
+            {
+                return std::unexpected("Insufficient data for tangent computation.");
+            }
+
+            const double b = y0 - m * x0;
+            return Tangent{m, b};
         }
 
-        inline std::optional<TwoRaysResult> two_rays_by_angle_2d(const CurveResult &cr, double eps = 1e-12)
+        inline Eigen::Matrix2d pick_two_support_rays_2d(const CurveResult &c)
         {
-            const auto &pts = cr.pts;
-            const int m = static_cast<int>(pts.size());
-            if (m < 2)
+            AL_PROFILE_FUNC("pick_two_support_rays_2d");
+            auto tan = tangent_from_table(c.pts, c.pts.size() - 1);
+            if (!tan.has_value())
             {
-                return std::nullopt;
+                THROW_RUNTIME_ERROR(tan.error());
             }
 
-            std::vector<double> ang(m);
-            std::vector<double> norms(m);
-            for (int i = 0; i < m; ++i)
-            {
-                norms[i] = pts[i].norm();
-                if (norms[i] < eps)
-                {
-                    std::cerr << "[WARN] Point " << i << " is too close to origin (norm=" << norms[i] << ").\n";
-                    return std::nullopt;
-                }
-                ang[i] = std::atan2(pts[i](1), pts[i](0)); // (-pi, pi]
-            }
+            const Eigen::Vector2d r1 = c.b;
 
+            auto tan_v = tan.value();
+            double x = -1 / tan_v.k;
+            double y = tan_v(x);
+            const Eigen::Vector2d r2 = {x, y};
 
-            // sort angles
-            std::vector<std::pair<double, int>> arr(m);
-            for (int i = 0; i < m; ++i)
-            {
-                arr[i] = {ang[i], i};
-            }
-            std::ranges::sort(arr, [](auto &a, auto &b) { return a.first < b.first; });
-
-
-            // compute gaps (including wrap-around)
-            double largest_gap = -1.0;
-            int largest_idx = -1; // index i such that gap between arr[i] and arr[i+1]
-            for (int i = 0; i < m; ++i)
-            {
-                double a1 = arr[i].first;
-                double a2;
-                if (i + 1 == m)
-                {
-                    // last to first wrap
-                    a2 = arr[0].first + 2.0 * consts::pi;
-                }
-                else
-                {
-                    a2 = arr[i + 1].first;
-                }
-                double gap = a2 - a1;
-                if (gap > largest_gap)
-                {
-                    largest_gap = gap;
-                    largest_idx = i;
-                }
-            }
-
-
-            double min_cover_arc = 2.0 * consts::pi - largest_gap;
-            // endpoints of minimal arc are arr[largest_idx+1] .. arr[largest_idx]
-            double start = arr[(largest_idx + 1) % m].first;
-            double end = arr[largest_idx].first;
-            if (end < start)
-            {
-                end += 2.0 * consts::pi;
-            }
-            double arc_len = end - start;
-
-
-            // numerical safety
-            if (arc_len < 0)
-            {
-                arc_len = min_cover_arc; // fallback
-            }
-
-
-            if (arc_len > consts::pi + 1e-12)
-            {
-                TwoRaysResult out;
-                out.ok = false;
-                out.arc_len = arc_len;
-                out.idx1 = -1;
-                out.idx2 = -1;
-                return out;
-            }
-
-
-            // find original indices closest to start and to start+arc_len
-            double start_mod = start; // in (-pi, 3pi), but shifts handled below
-            double target1 = start_mod;
-            double target2 = start_mod + arc_len;
-
-            int best1 = -1, best2 = -1;
-            double bestd1 = 1e300, bestd2 = 1e300;
-            for (int i = 0; i < m; ++i)
-            {
-                // normalize ang[i] to be comparable with start_mod
-                double a = ang[i];
-                // try shifts of +-2pi to get near targets
-                double candidates[3] = {a, a + 2.0 * consts::pi, a - 2.0 * consts::pi};
-                for (double ac : candidates)
-                {
-                    double d1 = std::fabs(ac - target1);
-                    double d2 = std::fabs(ac - target2);
-                    if (d1 < bestd1)
-                    {
-                        bestd1 = d1;
-                        best1 = i;
-                    }
-                    if (d2 < bestd2)
-                    {
-                        bestd2 = d2;
-                        best2 = i;
-                    }
-                }
-            }
-
-            TwoRaysResult out;
-            out.ok = true;
-            out.idx1 = best1;
-            out.idx2 = best2;
-            out.ray1 = pts[best1];
-            out.ray2 = pts[best2];
-            out.arc_len = arc_len;
-            return out;
+            Eigen::Matrix2d rays;
+            // rays.col(0) = r1.normalized();
+            // rays.col(1) = r2.normalized();
+            rays.col(0) = r1;
+            rays.col(1) = r2;
+            return rays;
         }
     }
 
@@ -327,14 +432,14 @@ namespace mc
     }
 
 
-    inline void write_rays_csv(const std::string &prefix, const detail::TwoRaysResult &r)
+    inline void write_rays_csv(const std::string &prefix, const Eigen::Matrix2d &rays)
     {
         std::string fname = prefix + "_rays.csv";
         std::ofstream ofs(fname);
         ofs << std::setprecision(12);
         ofs << "idx,x,y\n";
-        ofs << r.idx1 << "," << r.ray1(0) << "," << r.ray1(1) << "\n";
-        ofs << r.idx2 << "," << r.ray2(0) << "," << r.ray2(1) << "\n";
+        ofs << rays(0, 0) << "," << rays(1, 0) << "\n";
+        ofs << rays(0, 1) << "," << rays(1, 1) << "\n";
         ofs.close();
         std::cout << "[INFO] Rays written to: " << fname << "\n";
     }
@@ -357,24 +462,36 @@ namespace mc
             return;
         }
 
+        auto rays = detail::pick_two_support_rays_2d(cr);
         write_curve_csv("out", cr);
+        write_rays_csv("out", rays);
 
-        if (auto tr = two_rays_by_angle_2d(cr); !tr.has_value())
-        {
-            THROW_RUNTIME_ERROR("[ERROR] Cannot chose rays.");
-        }
-        else if (const auto trv = tr.value(); !trv.ok)
-        {
-            THROW_RUNTIME_ERROR(
-                std::format("[ERROR] Two rays insufficient: angular span = {} rad ({}°) (> pi).", trv.arc_len, mc::
-                    rad2deg(trv.arc_len)));
-        }
-        else
-        {
-            std::cout << "[INFO] Two rays chosen: indices " << trv.idx1 << ", " << trv.idx2 << ", arc (rad)=" << trv.
-                arc_len << "\n";
-            write_rays_csv("out", trv);
-        }
+        // auto tr = detail::two_rays_by_angle_2d(cr, A);
+        //
+        // if (tr.idxs[0] == -1)
+        // {
+        //     THROW_RUNTIME_ERROR(std::format("[ERROR]: {}", tr.info));
+        // }
+        // else
+        // {
+        //     std::cout << "[INFO]" << " (" << tr.info << ") " << "Two rays chosen: indices " << tr.idxs[0] << ", " << tr.
+        //         idxs[1] << ", arc (rad)=" << tr.
+        //         arc_len << "\n";
+        //     write_rays_csv("out", tr);
+        // }
+        //
+        // if (const auto trv = tr.value(); !trv.ok)
+        // {
+        //     THROW_RUNTIME_ERROR(
+        //         std::format("[ERROR] Two rays insufficient: angular span = {} rad ({}°) (> pi).", trv.arc_len, mc::
+        //             rad2deg(trv.arc_len)));
+        // }
+        // else
+        // {
+        //     std::cout << "[INFO] Two rays chosen: indices " << trv.idx1 << ", " << trv.idx2 << ", arc (rad)=" << trv.
+        //         arc_len << "\n";
+        //     write_rays_csv("out", trv);
+        // }
 
         std::cout << "[DONE] Outputs written with prefix '" << "out" << "'.\n";
         return;
@@ -409,32 +526,33 @@ namespace mc
         */
         static Ref<SolidCone2d> fromRays(const Eigen::Matrix2d &rays)
         {
-            SolidCone2d c;
-            c.m_Dimension = 2;
-            c.m_BoundaryRays = rays;
-            c.m_GeneratingMatrix = std::nullopt;
-            c.m_ConstructionType = ConstructionType::FROM_RAYS;
+            AL_PROFILE_FUNC("SolidCone2d::fromRays");
+            SolidCone2d *c = new SolidCone2d();
+            c->m_Dimension = 2;
+            c->m_BoundaryRays = rays;
+            c->m_GeneratingMatrix = std::nullopt;
+            c->m_ConstructionType = ConstructionType::FROM_RAYS;
 
             // Проверка на полноразмерность: ядро дополняется
-            if (const Eigen::FullPivLU<Eigen::Matrix2d> lu(c.m_BoundaryRays); lu.rank() < 2)
+            if (const Eigen::FullPivLU<Eigen::Matrix2d> lu(c->m_BoundaryRays); lu.rank() < 2)
             {
                 // Если не полноразмерные генераторы, конус не содержит шар -> не телесный
                 THROW_INVALID_ARGUMENT_ERROR("given rays do not span R^2; cone is not solid");
             }
 
-            for (int j = 0; j < c.m_BoundaryRays.cols(); ++j)
+            for (int j = 0; j < c->m_BoundaryRays.cols(); ++j)
             {
-                const double nm = c.m_BoundaryRays.col(j).norm();
+                const double nm = c->m_BoundaryRays.col(j).norm();
                 if (nm <= 1e-9)
                 {
                     THROW_INVALID_ARGUMENT_ERROR(std::format("zero ray provided at {}", j));
                 }
-                c.m_BoundaryRays.col(j) /= nm;
+                c->m_BoundaryRays.col(j) /= nm;
             }
 
-            c.m_Rng.seed(std::chrono::high_resolution_clock::now().time_since_epoch().count());
+            c->m_Rng.seed(std::chrono::high_resolution_clock::now().time_since_epoch().count());
 
-            return Ref(&c);
+            return Ref(c);
         }
 
         /**
@@ -451,91 +569,50 @@ namespace mc
          */
         static Ref<SolidCone2d> fromCurve(const Eigen::Matrix2d &A, const Eigen::Vector2d &b, const detail::Settings &s)
         {
-            SolidCone2d c;
-            c.m_Dimension = 2;
-            c.m_GeneratingMatrix = GenerationCurve(A, b, s);
-            c.m_ConstructionType = ConstructionType::FROM_CURVE;
+            AL_PROFILE_FUNC("SolidCone2d::fromCurve");
+            SolidCone2d *c = new SolidCone2d();
+            c->m_Dimension = 2;
+            c->m_GeneratingMatrix = GenerationCurve(A, b, s);
+            c->m_ConstructionType = ConstructionType::FROM_CURVE;
 
             const detail::CurveResult cr = detail::generate_curve(A, b, s);
-            if (cr.t.empty())
-            {
-                THROW_RUNTIME_ERROR("[ERROR] No samples generated.");
-            }
+            write_curve_csv("out", cr);
+            // if (cr.t.empty())
+            // {
+            //     THROW_RUNTIME_ERROR("[ERROR] No samples generated.");
+            // }
+            //
+            // if (auto tr = two_rays_by_angle_2d(cr); !tr.has_value())
+            // {
+            //     THROW_RUNTIME_ERROR("[ERROR] Cannot chose rays.");
+            // }
+            // else if (const auto trv = tr.value(); !trv.ok)
+            // {
+            //     THROW_RUNTIME_ERROR(
+            //         std::format("[ERROR] Two rays insufficient: angular span = {} rad (> pi).", trv.arc_len));
+            // }
+            // else
+            // {
+            //     std::cout << "[INFO] Two rays chosen: indices " << trv.idx1 << ", " << trv.idx2 << ", arc (rad)=" << trv
+            //         .
+            //         arc_len << "\n";
+            //     c.m_BoundaryRays.col(0) = trv.ray1;
+            //     c.m_BoundaryRays.col(1) = trv.ray2;
+            // }
 
-            if (auto tr = two_rays_by_angle_2d(cr); !tr.has_value())
-            {
-                THROW_RUNTIME_ERROR("[ERROR] Cannot chose rays.");
-            }
-            else if (const auto trv = tr.value(); !trv.ok)
-            {
-                THROW_RUNTIME_ERROR(
-                    std::format("[ERROR] Two rays insufficient: angular span = {} rad (> pi).", trv.arc_len));
-            }
-            else
-            {
-                std::cout << "[INFO] Two rays chosen: indices " << trv.idx1 << ", " << trv.idx2 << ", arc (rad)=" << trv
-                    .
-                    arc_len << "\n";
-                c.m_BoundaryRays.col(0) = trv.ray1;
-                c.m_BoundaryRays.col(1) = trv.ray2;
-            }
+            auto rays = detail::pick_two_support_rays_2d(cr);
+            c->m_BoundaryRays = rays;
+            write_rays_csv("out", rays);
 
-            c.m_Rng.seed(std::chrono::high_resolution_clock::now().time_since_epoch().count());
+            c->m_Rng.seed(std::chrono::high_resolution_clock::now().time_since_epoch().count());
 
-            return Ref(&c);
+            return Ref(c);
         }
-
-        // Проверка принадлежности точки x к замыканию конуса (closure). Возвращает pair{belongs, coefficients}
-        // std::pair<bool, Eigen::VectorXd> ContainsWithCoeffs(const Eigen::VectorXd &x, double tol = 1e-8) const
-        // {
-        //     if (x.size() != m_Dimension)
-        //         throw std::invalid_argument("Dimension mismatch in contains");
-        //     const auto opt = solve_nnls_projected_gradient(x);
-        //     if (!opt.has_value())
-        //     {
-        //         return {false, Eigen::VectorXd()};
-        //     }
-        //     Eigen::VectorXd c = *opt;
-        //     const double res = (m_BoundaryRays * c - x).norm();
-        //     bool ok = res <= std::max(tol, 1e-8);
-        //     return {ok, c};
-        // }
-
-        // true если точка находится во внутренности конуса (не на границе).
-        // Критерий: есть представление x = R*c, с c_i >= interior_eps (для как минимум n линейно независимых положительных коэффициентов)
-        // bool ContainsInterior(const Eigen::VectorXd &x, double tol = 1e-8) const
-        // {
-        //     auto [ok, c] = ContainsWithCoeffs(x, tol);
-        //     if (!ok)
-        //         return false;
-        //     // Считаем внутренней, если существуют >= n линейно независимых положительных коэффициентов,
-        //     // но для практичности: требуем, чтобы хотя бы n коэффициентов > interior_eps и R(selection) имела ранк n.
-        //     std::vector<int> idx;
-        //     for (int i = 0; i < c.size(); ++i)
-        //     {
-        //         if (c(i) > m_InteriorEps)
-        //         {
-        //             idx.push_back(i);
-        //         }
-        //     }
-        //     if (static_cast<int>(idx.size()) < m_Dimension)
-        //         return false;
-        //     Eigen::MatrixXd M(m_Dimension, static_cast<int>(idx.size()));
-        //     for (int j = 0; j < static_cast<int>(idx.size()); ++j)
-        //     {
-        //         M.col(j) = m_BoundaryRays.col(idx[j]);
-        //     }
-        //     // ранг
-        //     Eigen::FullPivLU<Eigen::MatrixXd> lu(M);
-        //     return lu.rank() == m_Dimension;
-        // }
 
         // Проверка принадлежности точки конусу (внутри или на границе)
         bool contains(const Eigen::Vector2d &x, double tol = 1e-8) const
         {
-            // return ContainsWithCoeffs(x, tol).first;
-            if (x.isZero())
-                return true;
+            AL_PROFILE_FUNC("SolidCone2d::contains");
             Eigen::Vector2d coeffs = m_BoundaryRays.inverse() * x;
             return coeffs[0] >= tol && coeffs[1] >= tol;
         }
@@ -543,6 +620,7 @@ namespace mc
         /// Генерация случайной внутренней точки (не на границе)
         Eigen::Vector2d sampleInterior(double minCoeff = 0.1, double maxCoeff = 1.0)
         {
+            AL_PROFILE_FUNC("SolidCone2d::sampleInterior");
             // thread_local std::mt19937 gen(std::random_device{}());
             std::uniform_real_distribution<double> dist(minCoeff, maxCoeff);
 
@@ -550,34 +628,6 @@ namespace mc
             double b = dist(m_Rng);
             return a * m_BoundaryRays.col(0) + b * m_BoundaryRays.col(1);
         }
-
-        // // Сэмплинг случайной внутренней точки.
-        // // Стратегия: берем m = R.cols() > = n. Генерируем положительные коэффициенты exp(1) (или uniform>0),
-        // // обеспечивающие положительность; если полученная точка не интериорная, повторяем попытки.
-        // Eigen::VectorXd sample_interior_point(double scale = 1.0, int max_tries = 200)
-        // {
-        //     std::exponential_distribution expd(1.0);
-        //     int m = m_BoundaryRays.cols();
-        //     if (m == 0)
-        //         throw std::runtime_error("No rays to sample from");
-        //     for (int attempt = 0; attempt < max_tries; ++attempt)
-        //     {
-        //         Eigen::VectorXd coeffs(m);
-        //         for (int i = 0; i < m; ++i)
-        //         {
-        //             // ensure strictly positive
-        //             double v = expd(m_Rng);
-        //             coeffs(i) = std::max(v, 1e-6);
-        //         }
-        //         Eigen::VectorXd x = m_BoundaryRays * coeffs * scale;
-        //         if (ContainsInterior(x))
-        //             return x;
-        //     }
-        //     // fallback: take mean of rays (strictly positive combination)
-        //     Eigen::VectorXd coeffs = Eigen::VectorXd::Ones(m) * 0.5;
-        //     Eigen::VectorXd x = m_BoundaryRays * coeffs * scale;
-        //     return x;
-        // }
 
         nlohmann::json ToJson() const
         {
@@ -729,10 +779,6 @@ namespace mc
         ConstructionType m_ConstructionType;
         std::optional<GenerationCurve> m_GeneratingMatrix;
 
-        double m_NNLS_Tol = 1e-8;
-        int m_NNLS_MaxIters = 2000;
-        double m_InteriorEps = 1e-9; // минимальное значение коэффициента для внутренней точки
-
         std::mt19937_64 m_Rng;
     };
 
@@ -758,23 +804,31 @@ namespace mc
         std::vector<Eigen::Vector2d> limits = {}; // либо {A}, либо {A,B}
     };
 
-    inline ShuttlePointResult ShuttlePoint(Ref<ode::DynamicalSystem> system, Ref<SolidCone2d> cone,
-                                           const Eigen::Vector2d &u0, double period)
+    inline ShuttlePointResult ShuttlePoint(Ref<ode::DynamicalSystem> system_minus, Ref<ode::DynamicalSystem> system_plus, const Ref<SolidCone2d> &cone,
+                                           const Eigen::Vector2d &u0, const Eigen::Vector2d &z_minus,
+                                           const Eigen::Vector2d &z_plus, double period)
     {
+        AL_PROFILE_FUNC("ShuttlePoint");
+
         CSVWriter trace_even("trace_even.csv");
         CSVWriter trace_odd("trace_odd.csv");
         CSVWriter trace_all("trace_all.csv");
 
-        // 1) Поиск начальных точек z- и z+
-        // Простая эвристика: берём две случайные точки в конусе, увеличиваем их норму
-        Eigen::Vector2d z_minus = -10.0 * u0;
-        Eigen::Vector2d z_plus = 10.0 * u0;
+        mc::json::JsonDocument message({"name", "z+", "z-"});
+        
+        std::println("z-: {}, z+: {}", z_minus, z_plus);
 
-        bool cond_z_minus = cone->contains(system->Shift(z_minus, period) - z_minus);
-        bool cond_z_plus = cone->contains(z_plus - system->Shift(z_plus, period));
+        // const Eigen::Vector2d z_minus = -40.0 * u0;
+        // const Eigen::Vector2d z_plus = 40.0 * u0;
+
+        const Eigen::Vector2d z_minus_new = system_minus->Shift(z_minus, period) - z_minus - u0;
+        const Eigen::Vector2d z_plus_new = z_plus - system_plus->Shift(z_plus, period) - u0;
+
+        bool cond_z_minus = cone->contains(z_minus_new);
+        bool cond_z_plus = cone->contains(z_plus_new);
 
         // Проверка условий для z- и z+
-        if (cond_z_minus)
+        if (!cond_z_minus)
         {
             THROW_RUNTIME_ERROR("[ERROR] z- does not satisfy cone condition.");
         }
@@ -784,11 +838,16 @@ namespace mc
         }
 
         // 3) Последовательность sigma_n
-        auto sigma_n = [](int n) { return 1.0 / std::pow(2.0, n); };
+        auto sigma_n = [](int n)
+        {
+            double v = 1.0 / std::pow(2.0, n);
+            std::println("sigma_{}: {}", n, v);
+            return v;
+        };
 
         // Настройки итераций
         constexpr int maxIter = 20;
-        constexpr double tol = 1e-6;
+        constexpr int maxYIter = 1000;
 
         std::vector<Eigen::Vector2d> z_odd;
         z_odd.push_back(z_minus);
@@ -796,21 +855,27 @@ namespace mc
         z_even.push_back(z_plus);
 
         // Вспомогательные последовательности
-        auto build_sequence = [maxIter, &system, period, sigma_n, u0, &cone](
+        auto build_sequence = [maxYIter, &system_minus, &system_plus, period, sigma_n, u0, &cone](
             const Eigen::Vector2d &y0, bool add, int sig_idx, CSVWriter &trace) -> std::optional<Eigen::Vector2d>
         {
+            AL_PROFILE_FUNC("ShuttlePoint::build_sequence");
             Eigen::Vector2d y_prev = y0;
-            for (int n = 1; n < maxIter; ++n)
+            std::println("y{}_0: {}", sig_idx, y_prev);
+            for (int n = 1; n < maxYIter; ++n)
             {
-                Eigen::Vector2d y_next = system->Shift(y_prev, period);
+                Eigen::Vector2d y_next;
                 if (add)
                 {
+                    y_next = system_minus->Shift(y_prev, period);
                     y_next += sigma_n(sig_idx) * u0;
                 }
                 else
                 {
+                    y_next = system_plus->Shift(y_prev, period);
                     y_next -= sigma_n(sig_idx) * u0;
                 }
+
+                std::println("y{}_{}: {}", sig_idx, n, y_next);
 
                 trace.writePoint(n, y_next);
 
@@ -818,12 +883,18 @@ namespace mc
                 if (add)
                 {
                     if (cone->contains(y_prev - y_next - sigma_n(sig_idx + 2) * u0))
+                    {
+                        std::println("y{}_{} that satisfies condition: {}", sig_idx, n, y_next);
                         return y_next;
+                    }
                 }
                 else
                 {
                     if (cone->contains(y_next - y_prev - sigma_n(sig_idx + 2) * u0))
+                    {
+                        std::println("y{}_{} that satisfies condition: {}", sig_idx, n, y_next);
                         return y_next;
+                    }
                 }
 
                 y_prev = y_next;
@@ -832,64 +903,73 @@ namespace mc
         };
 
         // Основной цикл построения z_n
-        bool stop = false;
         ShuttlePointResult result;
-        for (int iter = 1; iter < maxIter + 1 && !stop; ++iter)
         {
-            if (iter % 2 != 0) // нечётный шаг, строим "возрастающую"
+            AL_PROFILE_FUNC("ShuttlePoint::<z_odd, z_event search>");
+            bool stop = false;
+            for (int iter = 1; iter < maxIter + 1 && !stop; ++iter)
             {
-                auto z1 = build_sequence(z_odd.back(), true, iter, trace_odd);
-                if (z1.has_value())
+                if (iter % 2 != 0) // нечётный шаг, строим "возрастающую"
                 {
-                    z_odd.push_back(z1.value());
-                    trace_all.writePoint(iter, *z1);
+                    system_minus->CallResetFn();
+                    std::println("z_odd back: {}", z_odd.back());
+                    auto z1 = build_sequence(z_odd.back(), true, iter, trace_odd);
+                    if (z1.has_value())
+                    {
+                        std::println("z_odd new: {}", *z1);
+                        z_odd.push_back(z1.value());
+                        trace_all.writePoint(iter, *z1);
+                    }
+                    else
+                    {
+                        std::cerr << std::format("[WARN]: the odd sequence y{}_n has no z element", iter);
+                        break;
+                    }
                 }
-                else
+                else // чётный шаг, строим "убывающую"
                 {
-                    std::cerr << std::format("[WARN]: the odd sequence y{}_n has no z element", iter);
-                    break;
+                    system_plus->CallResetFn();
+                    std::println("z_even back: {}", z_even.back());
+                    auto z2 = build_sequence(z_even.back(), false, iter, trace_even);
+                    if (z2.has_value())
+                    {
+                        std::println("z_even new: {}", *z2);
+                        z_even.push_back(z2.value());
+                        trace_all.writePoint(iter, *z2);
+                    }
+                    else
+                    {
+                        std::cerr << std::format("[WARN]: the even sequence y{}_n has no z element", iter);
+                        break;
+                    }
                 }
-            }
-            else // чётный шаг, строим "убывающую"
-            {
-                auto z2 = build_sequence(z_even.back(), false, iter, trace_even);
-                if (z2.has_value())
-                {
-                    z_even.push_back(z2.value());
-                    trace_all.writePoint(iter, *z2);
-                }
-                else
-                {
-                    std::cerr << std::format("[WARN]: the even sequence y{}_n has no z element", iter);
-                    break;
-                }
-            }
 
-            // Проверка сходимости
-            // if (!z_even.empty() && !z_odd.empty())
-            // {
-            //     const Eigen::Vector2d &a = z_even.back();
-            //     const Eigen::Vector2d &b = z_odd.back();
-            //
-            //     double dist = (a - b).norm();
-            //     if (dist < tol)
-            //     {
-            //         result.converged = true;
-            //         result.limits = {0.5 * (a + b)};
-            //         stop = true;
-            //     }
-            //     else if (z_even.size() > 2 && z_odd.size() > 2)
-            //     {
-            //         double d1 = (z_even.back() - z_even[z_even.size() - 2]).norm();
-            //         double d2 = (z_odd.back() - z_odd[z_odd.size() - 2]).norm();
-            //         if (d1 < tol && d2 < tol)
-            //         {
-            //             result.converged = true;
-            //             result.limits = {a, b};
-            //             stop = true;
-            //         }
-            //     }
-            // }
+                // Проверка сходимости
+                // if (!z_even.empty() && !z_odd.empty())
+                // {
+                //     const Eigen::Vector2d &a = z_even.back();
+                //     const Eigen::Vector2d &b = z_odd.back();
+                //
+                //     double dist = (a - b).norm();
+                //     if (dist < tol)
+                //     {
+                //         result.converged = true;
+                //         result.limits = {0.5 * (a + b)};
+                //         stop = true;
+                //     }
+                //     else if (z_even.size() > 2 && z_odd.size() > 2)
+                //     {
+                //         double d1 = (z_even.back() - z_even[z_even.size() - 2]).norm();
+                //         double d2 = (z_odd.back() - z_odd[z_odd.size() - 2]).norm();
+                //         if (d1 < tol && d2 < tol)
+                //         {
+                //             result.converged = true;
+                //             result.limits = {a, b};
+                //             stop = true;
+                //         }
+                //     }
+                // }
+            }
         }
 
         result.converged = true;

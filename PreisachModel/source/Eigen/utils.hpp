@@ -21,7 +21,7 @@ namespace Eigen
     template <typename Scalar>
     Eigen::VectorX<Scalar> from_std(const std::vector<Scalar> &src)
     {
-        return Eigen::Map<Eigen::VectorX<Scalar>>(src.data(), src.size());
+        return Eigen::VectorX<Scalar>::Map(src.data(), src.size());
     }
 
     template <typename Scalar, int R, int C>

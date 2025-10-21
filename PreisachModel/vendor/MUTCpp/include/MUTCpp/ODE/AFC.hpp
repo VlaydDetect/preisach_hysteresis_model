@@ -6,7 +6,6 @@
 
 #pragma once
 
-#include "Functions/byDelta.hpp"
 #include "DynamicSystem.hpp"
 #include "Json.hpp"
 #include "Functions/find_peaks.hpp"
@@ -58,7 +57,7 @@ namespace mc
                     const double w = freqs[k];
                     std::print("{}\n", w);
 
-                    system->Reset(x0);
+                    system->ResetTo(x0);
                     system->AddAndSetArg(freqArgName, Vote(w));
 
                     Eigen::MatrixXd traj = system->Forward(steps);
