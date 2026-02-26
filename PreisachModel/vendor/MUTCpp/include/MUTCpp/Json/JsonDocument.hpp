@@ -93,6 +93,14 @@ namespace mc
                     m_Doc[name] = Eigen::toVector2D(data);
                 }
             }
+            
+            template <typename Scalar>
+            void AddField(const std::string &name, const Eigen::ArrayX<Scalar> &data)
+            {
+                assert(m_Header.contains(name));
+                std::vector<double> vec(data.data(), data.data() + data.size());
+                m_Doc[name] = vec;
+            }
 
             void AddField(const std::string &name, const std::vector<std::unordered_map<std::string, double>> &data)
             {

@@ -12,3 +12,4 @@
 #include "ODE/AFC.hpp"
 #include "ODE/PoincareMapping.hpp"
 #include "ODE/BifurcationDiagram.hpp"
+#include "ODE/ZeroOneTest.hpp"
