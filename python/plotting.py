@@ -4,6 +4,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy
 import warnings
+
+from matplotlib.collections import LineCollection
+from matplotlib.lines import Line2D
+
 from utils import find_local_extrema
 
 from aenum import Flag, auto
@@ -27,41 +31,53 @@ def draw_axes(ax=None):
     ax.axvline(x=0, color='k')
 
 
-def plot_x(x, t, ax=None, title=""):
+def plot_x(x, t, ax=None, title="", save=None):
     if ax is None:
         ax = plt
 
     ax.plot(t, x, label='x(t)')
     draw_axes(ax)
     ax.legend()
+    # ax.grid()
+    ax.autoscale(tight=True)
     ax.xlabel("Time t")
     ax.ylabel("Position x(t)")
     ax.title(title)
     ax.show()
+    if save is not None:
+        ax.savefig(save, dpi=300)
 
 
-def plot_v(v, t, ax=None, title=""):
+def plot_v(v, t, ax=None, title="", save=None):
     if ax is None:
         ax = plt
 
     ax.plot(t, v, label='v(t)')
     draw_axes(ax)
     ax.legend()
+    # ax.grid()
+    ax.autoscale(tight=True)
     ax.xlabel("Time t")
     ax.ylabel("Velocity v(t)")
     ax.title(title)
     ax.show()
+    if save is not None:
+        ax.savefig(save, dpi=300)
 
 
-def plot_phase_portrait(x, v, ax=None, title=""):
+def plot_phase_portrait(x, v, ax=None, title="", save=None):
     if ax is None:
         ax = plt
 
     ax.plot(x, v)
     draw_axes(ax)
+    # ax.grid()
+    ax.autoscale(tight=True)
     ax.xlabel("Position x(t)")
     ax.ylabel("Velocity v(t)")
     ax.title(title)
+    if save is not None:
+        ax.savefig(save, dpi=300)
     ax.show()
 
 
@@ -174,15 +190,16 @@ def plot_epsilonLoop(data, flags: PlottingFlag = None):
         warnings.warn(f"plot_epsilonLoop: epsilonLoop not in file")
 
 
-def plot_hysteresis_loop(inputs, outputs, title=""):
+def plot_hysteresis_loop(inputs, outputs, title="", save=None):
     plt.plot(inputs, outputs, label='loop')
-
     draw_axes()
-
     plt.title(title)
+    plt.grid()
     plt.xlabel("Input x")
     plt.ylabel("Output P")
     plt.legend()
+    if save is not None:
+        plt.savefig(save, dpi=300)
     plt.show()
 
 
@@ -294,37 +311,58 @@ def plot_mLCE_diagram(mLCEs, E_vals, h_steps, title="", use_cubic_spline=False):
 
 
 def plot_preisach_derivative(time, inputs, derivatives, title=""):
-    plt.plot(time[:-1], inputs, '--', label='input')
-    plt.plot(time[:-1], derivatives, 'b', label='Derivative')
-
-    # segments = []
-    # segment = []
-    #
-    # for i in range(len(derivatives)):
-    #     # if derivatives[i] == 0:
-    #     if abs(derivatives[i]) < 0.05:
-    #         if segment:
-    #             segments.append(segment)
-    #         segment = []
-    #     else:
-    #         if not segment and i > 0:
-    #             segment.append((time[i - 1], 0))
-    #         segment.append((time[i], derivatives[i]))
-    #
-    # if segment:
-    #     segments.append(segment)
-    #
-    # for segment in segments:
-    #     sx, sy = zip(*segment)
-    #     plt.plot(sx, sy, 'b', label='Derivative')
-
-    draw_axes()
-
-    plt.title(title)
-    plt.xlabel("t")
-    plt.ylabel("D[u(t)]")
-    plt.legend()
+    time = time[:-1]
+    plt.plot(time, inputs, '--k', alpha=0.5, label='input')
+    plt.plot(time, derivatives, color='g', linestyle='-', label='derivative')
     plt.show()
+    
+    # fig, ax = plt.subplots()
+    # 
+    # # Входной сигнал
+    # input_line, = ax.plot(
+    #     time[:-1], inputs,
+    #     '--k', alpha=0.5, label='input'
+    # )
+    # 
+    # # Формируем сегменты для LineCollection
+    # segments = []
+    # current = []
+    # 
+    # for i in range(len(derivatives)):
+    #     if abs(derivatives[i]) < 0.05:
+    #         if len(current) > 1:
+    #             segments.append(np.array(current))
+    #         current = []
+    #     else:
+    #         if not current and i > 0:
+    #             current.append([time[i - 1], 0.0])
+    #         current.append([time[i], derivatives[i]])
+    # 
+    # if len(current) > 1:
+    #     segments.append(np.array(current))
+    # 
+    # # LineCollection для производной
+    # derivative_lc = LineCollection(
+    #     segments,
+    #     colors='g',
+    #     linewidths=1.0
+    # )
+    # 
+    # ax.add_collection(derivative_lc)
+    # 
+    # draw_axes(ax)
+    # ax.set_title(title)
+    # ax.set_xlabel("t")
+    # ax.set_ylabel("D[u(t)]")
+    # 
+    # # Proxy artist для легенды
+    # derivative_proxy = Line2D(
+    #     [], [], color='g', linestyle='-', label='derivative'
+    # )
+    # 
+    # ax.legend(handles=[input_line, derivative_proxy])
+    # 
+    # plt.show()
 
 
 def plot_fourier_transform(sig, N=None, dt=None):
@@ -535,3 +573,13 @@ def plot_everett_fn(x: np.ndarray, y: np.ndarray, z: np.ndarray, method='cubic',
     plt.show()
 
 
+def scientific_plot(x, y, alpha=None, linewidth=None, xlabel=None, ylabel=None, label=None, save=None, title=None):
+    fig, ax = plt.subplots()
+    ax.plot(x, y, label=label, alpha=alpha, linewidth=linewidth)
+    # ax.legend(title=title)
+    ax.set(xlabel=xlabel, ylabel=ylabel)
+    # ax.autoscale(tight=True)
+    if save is not None:
+        fig.savefig(save, dpi=300)
+    plt.show()
+    plt.close()

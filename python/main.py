@@ -1,4 +1,10 @@
 import matplotlib.pyplot as plt
+import scienceplots
+
+plt.style.use(['science', 'ieee' ,'grid'])
+# plt.rcParams.update({'figure.dpi': '100'})
+# plt.rcParams.update({'font.size': 18})
+
 import numpy as np
 import glob
 
@@ -7,160 +13,6 @@ from scipy.stats import linregress
 
 from plotting import *
 from utils import gen_steps_sequence, select_best_growth
-import server
-
-
-# def f(t, y, gamma, w02, A, w, E):
-#     x, v = y
-#     dxdt = v
-#     dvdt = -gamma * v - w02 * x + A * np.sin(w * t) + E * np.random.random()
-#     return [dxdt, dvdt]
-#
-#
-# if __name__ == '__main__':
-#     gamma = 0.1
-#     w02 = 1.0
-#     w = 1.0
-#     A = 0.5
-#     E_vals = np.linspace(0, 5, 100)
-#     y0 = [0.0, 0.0]
-#     t_eval = np.linspace(0, 100, 1000)
-#
-#     extrema = []
-#
-#     for E in E_vals:
-#         sol = solve_ivp(f, t_span=(0, 100), t_eval=t_eval, y0=y0, args=(gamma, w02, A, w, E))
-#         x1_sol = sol.y[0]
-#
-#         maxima = (np.diff(np.sign(np.diff(x1_sol))) < 0).nonzero()[0] + 1
-#         minima = (np.diff(np.sign(np.diff(x1_sol))) > 0).nonzero()[0] + 1
-#         # print(maxima)
-#         # print(minima)
-#
-#         extrema.append((E, x1_sol[maxima], x1_sol[minima]))
-#         print(len(extrema))
-#
-#         # plt.plot(A * np.ones_like(sol.y[0]), sol.y[0], 'b.', alpha=0.5)
-#
-#     for data in extrema:
-#         E_val, maxima_val, minima_val = data
-#         plt.plot([E_val] * len(maxima_val), maxima_val, 'r.', markersize=1)
-#         plt.plot([E_val] * len(minima_val), minima_val, 'b.', markersize=1)
-#
-#     plt.show()
-
-
-def read_array(file: str, arr):
-    with open(file, 'r') as f:
-        lines = f.readlines()
-        for line in lines:
-            arr.append(float(line))
-
-
-def discrete_model_chaos_test_by_step_size():
-    def gen_sequence(first, n, count):
-        result = [first]
-        for i in range(1, count):
-            first /= n
-            result.append(first)
-        return result
-
-    h_steps = gen_sequence(0.1, 2, 5)
-    for h in h_steps:
-        files = glob.glob(fr"../PreisachModel/DiscreteModelChaosTestByStepSize/*_(h={h}).txt")
-
-        E_vals = []
-        for file in files:
-            start_index = file.find('=')
-            end_index = file.find(')')
-            val = file[start_index + 1:end_index]
-            E_vals.append(float(val))
-
-        x_vals = []
-        for file in files:
-            x = []
-            read_array(file, x)
-            x_vals.append(x)
-
-        from utils import find_local_extrema_idx
-        for i in range(len(E_vals)):
-            E = E_vals[i]
-            x = np.array(x_vals[i])
-            idx_mins, idx_maxs = find_local_extrema_idx(x)
-            mins, maxs = x[idx_mins], x[idx_maxs]
-            plt.plot([E] * len(maxs), maxs, 'r.', markersize=2)
-            plt.plot([E] * len(mins), mins, 'b.', markersize=2)
-
-        plt.grid(True)
-        plt.xlabel("E", fontsize=14)
-        plt.ylabel(r'$x_{min}, x_{max}$', fontsize=14)
-
-        plt.title(f"h = {h}")
-        plt.show()
-
-
-# TODO: to type params
-def solution_behavior_research_depending_on_h(h_steps=None, auto_params=True, params=None):
-    dt = 0.01
-    t = np.arange(0, 1800, dt)
-
-    if h_steps is None:
-        h_steps = gen_steps_sequence(0.5, 2, 5)
-
-    for h in h_steps:
-        files_x = glob.glob(fr"../PreisachModel/tests/x/*_(h={h}).txt")
-        files_v = glob.glob(fr"../PreisachModel/tests/v/*_(h={h}).txt")
-
-        x_vals = []
-        for file in files_x:
-            x = []
-            read_array(file, x)
-            x_vals.append(x)
-
-        v_vals = []
-        for file in files_v:
-            v = []
-            read_array(file, v)
-            v_vals.append(v)
-
-        for i in range(len(x_vals)):
-            plot_x(x_vals[i], t, f"h = {h}, E = 1.35")
-            plot_v(v_vals[i], t, f"h = {h}, E = 1.35")
-            plot_phase_portrait(x_vals[i], v_vals[i], f"h = {h}, E = 1.35")
-
-
-def lyapunov_exponents_tests_for_oscillator():
-    gamma = 0.1
-    w02 = 1.
-    w = 1.
-    A = 0.5
-    x0 = np.array([0, 0, 0])
-    t0 = 0
-    dt = 0.01
-
-    from lyapynov import ContinuousDS
-    from lyapynov import mLCE, LCE
-
-    def f(x, t):
-        res = np.zeros_like(x)
-        res[0] = x[1]
-        res[1] = A * np.sin(w * t) - gamma * x[1] - w02 * x[0]
-        res[2] = w
-        return res
-
-    def jac(x, t):
-        res = np.zeros((x.shape[0], x.shape[0]))
-        res[0, 1] = 1
-        res[1, 0] = -w02
-        res[1, 1] = -gamma
-        res[1, 2] = A * np.cos(w * t)
-        return res
-
-    rodos = ContinuousDS(x0, t0, f, jac, dt)
-    rodos.forward(10 ** 6, False)
-
-    mLCE = mLCE(rodos, 0, 10 ** 6, False)
-    print(mLCE)
 
 
 def areal_model_test():
@@ -215,17 +67,18 @@ def just_solve_rodos():
         # ax = data["anim"]["x"]
         # ay = data["anim"]["y"]
         # aout = data["anim"]["out"]
-        plot_fourier_transform(x, dt=0.01, )
+        # plot_fourier_transform(x, dt=0.01, )
 
         # fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(12, 8))
 
-        plot_x(x[0:15000], t[0:15000])
+        path = "./article_plots"
+        plot_x(x, t)
         plot_v(v, t)
         plot_phase_portrait(x, v)
         plot_hysteresis_loop(inputs, loop)
 
-        print(loop[:10])
-        # plot_preisach_derivative(t, inputs, derivatives)
+        # k = 3000
+        # plot_preisach_derivative(t[:(k+1)], inputs[:k], derivatives[:k])
         # sim = animate_preisach_plane(inputs, ax, ay, aout, 1.)
         # import matplotlib.animation as animation
         # writer = animation.FFMpegWriter(fps=30, metadata=dict(), bitrate=1800)
@@ -563,39 +416,74 @@ def BifurcationDiagram():
     with open(f"../PreisachModel/BifurcationDiagram.json") as f:
         data = json.load(f)
         trajs = data["trajs"]
-        params = data["A"]
+        params = np.asarray(data["rho"])
+        n = len(trajs)
+        m = len(trajs[0])
+        
+        matrix = np.zeros((n, m))
+        for i in range(n):
+            x = np.asarray(trajs[i])[:, 2]
+            if 25 <= params[i] <= 30:
+                plt.plot(x[:10000])
+                plt.show()
+            matrix[i, :] = x
+        
+        plot_bifurcation_diagram(params, matrix)
 
-        bifurcation_param = []
-        bifurcation_x = []
-
-        for i in range(len(params)):
-            p = params[i]
-            research = trajs[i]
-            x = np.asarray([point[0] for point in research])
-
-            maxima = argrelextrema(x, np.greater)
-            minima = argrelextrema(x, np.less)
-            extremas_idx = np.concatenate([maxima, minima], axis=None)
-            x_peaks = x[extremas_idx]
-
-            bifurcation_param.extend([p] * len(x_peaks))
-            bifurcation_x.extend(x_peaks)
-
-        plt.figure(figsize=(10, 6))
-        plt.plot(bifurcation_param, bifurcation_x, ',k', alpha=1.)
-        plt.xlabel('A')
-        plt.ylabel('x')
-        plt.title('Бифуркационная диаграмма')
-        plt.grid(True)
-        plt.tight_layout()
-        plt.show()
-
+        # bifurcation_param = []
+        # bifurcation_x = []
+        # 
+        # bifurcation_param_max = []
+        # bifurcation_param_min = []
+        # bif_max = []
+        # bif_min = []
+        # 
+        # for i in range(len(params)):
+        #     p = params[i]
+        #     research = np.asarray(trajs[i])
+        #     x = np.asarray([point[0] for point in research])
+        # 
+        #     maxima = argrelextrema(x, np.greater)
+        #     minima = argrelextrema(x, np.less)
+        #     extremas_idx = np.concatenate([maxima, minima], axis=None)
+        #     x_peaks = x[extremas_idx]
+        #     
+        #     x_max = x[maxima]
+        #     x_min = x[minima]
+        #     bifurcation_param_max.extend([p] * len(x_max))
+        #     bifurcation_param_min.extend([p] * len(x_min))
+        #     bif_max.extend(x_max)
+        #     bif_min.extend(x_min)
+        #     
+        # 
+        #     bifurcation_param.extend([p] * len(x_peaks))
+        #     bifurcation_x.extend(x_peaks)
+        # 
+        # # plt.figure(figsize=(10, 6))
+        # plt.scatter(bifurcation_param_max, bif_max,
+        #             s=0.1, c='red', linewidths=0, rasterized=True)
+        # plt.scatter(bifurcation_param_min, bif_min,
+        #             s=0.1, c='blue', linewidths=0, rasterized=True)
+        # # plt.xlabel('$\\alpha$')
+        # plt.xlabel('$\\omega$')
+        # plt.ylabel("$x_{min}$, $x_{max}$")
+        # # plt.title('Bifurcation Diagram')
+        # # plt.grid(True)
+        # # plt.tight_layout()
+        # # plt.show()
+        # 
+        # path = "./article_plots"
+        # plt.savefig(f"{path}/biff_w.png")
+        
 
 def ShuttlePointTraj():
     with open(f"../PreisachModel/ShuttlePointTraj.json") as f:
         data = json.load(f)
         x = np.array(data["x"])
         v = np.array(data["v"])
+        
+        loop_in = np.array(data["loop"]["in"])
+        loop_out = np.array(data["loop"]["out"])
 
         plt.plot(x)
         plt.xlabel('t')
@@ -604,6 +492,10 @@ def ShuttlePointTraj():
         plt.plot(x, v)
         plt.xlabel('x')
         plt.ylabel('v')
+        plt.show()
+        plt.plot(loop_in, loop_out)
+        plt.xlabel('in')
+        plt.ylabel('out')
         plt.show()
 
 
@@ -652,216 +544,278 @@ def ShiftTest():
         plt.show()
 
 
+def ShuttlePointLog():
+    with open(f"../PreisachModel/ShuttlePointLog.json") as f:
+        data = json.load(f)
+        
+        iters = data["iters"]
+        
+        cone = data["cone"]
+        ray1 = np.asarray(cone["rays"][0])
+        ray2 = np.asarray(cone["rays"][1])
+
+        traj_z_minus = np.asarray(data["traj_z-"])
+        traj_z_plus = np.asarray(data["traj_z+"])
+        new_z_minus = np.asarray(data["new_z-"])
+        new_z_plus = np.asarray(data["new_z+"])
+
+        odd_sequences = []
+        for seq in list(data["odd_sequences"]):
+            odd_sequences.append(np.asarray(seq))
+
+        odd_initial_points = []
+        for seq in list(data["odd_initial_points"]):
+            odd_initial_points.append(np.asarray(seq))
+
+        odd_cond_points = []
+        for seq in list(data["odd_cond_points"]):
+            odd_cond_points.append(np.asarray(seq))
+
+        even_sequences = []
+        for seq in list(data["even_sequences"]):
+            even_sequences.append(np.asarray(seq))
+
+        even_initial_points = []
+        for seq in list(data["even_initial_points"]):
+            even_initial_points.append(np.asarray(seq))
+
+        even_cond_points = []
+        for seq in list(data["even_cond_points"]):
+            even_cond_points.append(np.asarray(seq))
+            
+        
+        # plt.plot(traj_z_plus[0], traj_z_plus[1], color='brown', alpha=0.3)
+        # plt.show()
+        # plt.plot(traj_z_plus[0], color='brown', alpha=0.3)
+        # plt.plot(traj_z_plus[1], color='brown', alpha=0.3)
+        # plt.show()
+
+
+        plt.figure(figsize=(12, 12))
+            
+        plt.plot([0, ray1[0]], [0, ray1[1]], color='black', label='Ray1')
+        plt.plot([0, ray2[0]], [0, ray2[1]], color='black', label='Ray2')
+        
+        plt.plot(traj_z_minus[0, 0], traj_z_minus[1, 0], 'o', color='green')
+        plt.plot(traj_z_minus[0], traj_z_minus[1], color='brown', alpha=0.3)
+        plt.plot(new_z_minus[0], new_z_minus[1], 'x', color='red')
+        plt.annotate("z-", xy=(traj_z_minus[0, 0] - 0.05, traj_z_minus[1, 0] - 0.05))
+        plt.annotate("new z-", xy=(new_z_minus[0] - 0.05, new_z_minus[1] - 0.05))
+
+        plt.plot(traj_z_plus[0, 0], traj_z_plus[1, 0], 'o', color='green')
+        plt.plot(traj_z_plus[0], traj_z_plus[1], color='brown', alpha=0.3)
+        plt.plot(new_z_plus[0], new_z_plus[1], 'x', color='red')
+        plt.annotate("z+", xy=(traj_z_plus[0, 0] + 0.05, traj_z_plus[1, 0] + 0.05))
+        plt.annotate("new z+", xy=(new_z_plus[0] - 0.05, new_z_plus[1] - 0.05))
+        
+        for i in range(1, iters + 1):
+            if i % 2 != 0 and i < len(odd_sequences):
+                j = i // 2 - i % 2 + 1
+                plt.plot(odd_sequences[j][0], odd_sequences[j][1], color='purple', label='Odd Sequence', alpha=0.3)
+                plt.plot(odd_initial_points[j][0], odd_initial_points[j][1], 'o', color='coral',
+                         label='Odd New Initial Point')
+                plt.plot(odd_cond_points[j][0], odd_cond_points[j][1], 'o', color='lime',
+                         label='Odd Cond Initial Point')
+                plt.annotate(f"{i}", xy=(odd_initial_points[j][0], odd_initial_points[j][1]))
+                plt.annotate(f"{i}", xy=(odd_cond_points[j][0], odd_cond_points[j][1]))
+            elif i % 2 == 0 and i < len(even_sequences):
+                j = i // 2 - i % 2 - 1
+                plt.plot(even_sequences[j][0], even_sequences[j][1], color='purple', label='Even Sequence', alpha=0.3)
+                plt.plot(even_initial_points[j][0], even_initial_points[j][1], 'o', color='crimson',
+                         label='Even New Initial Point')
+                plt.plot(even_cond_points[j][0], even_cond_points[j][1], 'o', color='yellowgreen',
+                         label='Even Cond Initial Point')
+                plt.annotate(f"{i}", xy=(even_initial_points[j][0], even_initial_points[j][1]))
+                plt.annotate(f"{i}", xy=(even_cond_points[j][0], even_cond_points[j][1]))
+        
+        # for i in range(len(odd_sequences)):
+        #     plt.plot(odd_sequences[i][0], odd_sequences[i][1], color='purple', label='Odd Sequence', alpha=0.3)
+        #     plt.plot(odd_initial_points[i][0], odd_initial_points[i][1], 'o', color='coral', label='Odd New Initial Point')
+        #     plt.plot(odd_cond_points[i][0], odd_cond_points[i][1], 'o', color='lime', label='Odd Cond Initial Point')
+        #     plt.annotate(f"{i + 1}", xy=(odd_initial_points[i][0], odd_initial_points[i][1]))
+        #     plt.annotate(f"{i + 1}", xy=(odd_cond_points[i][0], odd_cond_points[i][1]))
+            
+        # for i in range(len(even_sequences)):
+        #     plt.plot(even_sequences[i][0], even_sequences[i][1], color='purple', label='Even Sequence')
+        #     plt.plot(even_initial_points[i][0], even_initial_points[i][1], 'o', color='crimson', label='Even New Initial Point')
+        #     plt.plot(even_cond_points[i][0], even_cond_points[i][1], 'o', color='yellowgreen', label='Even Cond Initial Point')
+        #     plt.annotate(f"{2 * i}", xy=(even_initial_points[i][0], even_initial_points[i][1]))
+        #     plt.annotate(f"{2 * i}", xy=(even_cond_points[i][0], even_cond_points[i][1]))
+
+        plt.grid()
+        handles, labels = plt.gca().get_legend_handles_labels()
+        by_label = dict(zip(labels, handles))
+        plt.legend(by_label.values(), by_label.keys())
+        plt.show()
+
+
+def DoublePreisachModelTest():
+    with open(f"../PreisachModel/DoublePreisachModelTest.json") as f:
+        data = json.load(f)
+
+        t = np.asarray(data["t"])
+        x = np.asarray(data["x"])
+        inputs = data["loop"]["in"]
+        loop = data["loop"]["out"]
+
+        plot_x(x, t)
+        plot_hysteresis_loop(inputs, loop)
+        
+
+def article_plots():
+    with open(f"../PreisachModel/JustSolveRodos.json") as f:
+        data = json.load(f)
+
+        dt = data["dt"]
+        time = data["time"]
+        t = np.arange(0, time + dt, dt)
+
+        h = data["h"]
+        E = data["E"]
+        x = np.asarray(data["results"]["x"])
+        v = np.asarray(data["results"]["v"])
+        inputs = data["loop"]["inputs"]
+        loop = data["loop"]["outputs"]
+
+        path = "./article_plots" 
+        scientific_plot(x, v, alpha=1, linewidth=.5, xlabel="x(t)", ylabel="v(t)", save=f"{path}/discrete_x2_phase.png")
+        scientific_plot(inputs, loop, alpha=1, linewidth=1, xlabel="x(t)", ylabel="P[x(t)]", save=f"{path}/discrete_x2_loop.png")
+
+
+def OperatorDerivativeTest():
+    with open(f"../PreisachModel/OperatorDerivativeTest.json") as f:
+        data = json.load(f)
+        x = data["results"]["x"]
+        derivatives = data["results"]["derivatives"]
+        inputs = data["loop"]["inputs"]
+        loop = data["loop"]["outputs"]
+        
+        plt.plot(x)
+        plt.plot(derivatives, 'r')
+        plt.show()
+
+
+def ZeroOneTest():
+    with open(f"../PreisachModel/ZeroOneTest.json") as f:
+        data = json.load(f)
+        
+        # x = np.asarray(data["x"])[:50000]
+        # v = np.asarray(data["v"])[:50000]
+        # 
+        # plt.plot(x)
+        # plt.show()
+        # plt.plot(v)
+        # plt.show()
+        # plt.plot(x, v)
+        # plt.show()
+        
+        Ks = data["Ks"]
+        param = data["A"]
+
+        plt.plot(param, Ks)
+        plt.show()
+
+
+def plot_bifurcation_diagram(
+    bifurcation_params: np.ndarray,
+    time_series_matrix: np.ndarray,
+    title: str = "Bifurcation Diagram",
+    output_file: str = None
+):
+    """
+    Строит бифуркационную диаграмму на основе локальных экстремумов.
+
+    Args:
+        bifurcation_params: 1D массив значений параметра (N,).
+        time_series_matrix: 2D матрица (N, T), где строка i соответствует решению при params[i].
+        title: Заголовок графика.
+        output_file: Если указано, сохраняет график в файл.
+    """
+
+    # Проверка размерности
+    if time_series_matrix.shape[0] != bifurcation_params.shape[0]:
+        raise ValueError(
+            f"Несоответствие размерностей: params {bifurcation_params.shape}, matrix {time_series_matrix.shape}")
+
+    # Векторизованный поиск экстремумов
+    # Сравниваем элементы [1:-1] с их левыми [:-2] и правыми [2:] соседями
+    data_center = time_series_matrix[:, 1:-1]
+    data_left = time_series_matrix[:, :-2]
+    data_right = time_series_matrix[:, 2:]
+
+    # Логические маски для строгих локальных максимумов и минимумов
+    # Используем строгое неравенство для фильтрации плато (хотя численный шум может влиять)
+    is_max = (data_center > data_left) & (data_center > data_right)
+    is_min = (data_center < data_left) & (data_center < data_right)
+
+    # Получаем индексы строк (соответствуют параметрам) и значения экстремумов
+    rows_max, _ = np.where(is_max)
+    vals_max = data_center[is_max]
+    params_max = bifurcation_params[rows_max]
+
+    rows_min, _ = np.where(is_min)
+    vals_min = data_center[is_min]
+    params_min = bifurcation_params[rows_min]
+
+    # Визуализация
+    plt.figure(figsize=(10, 6))
+
+    # s=0.5 и alpha=0.5 позволяют видеть плотность распределения точек
+    plt.scatter(params_max, vals_max, c='red', s=0.5, alpha=0.6, label='Local Maxima', marker='.')
+    plt.scatter(params_min, vals_min, c='blue', s=0.5, alpha=0.6, label='Local Minima', marker='.')
+
+    plt.title(title)
+    plt.xlabel('Bifurcation Parameter')
+    plt.ylabel('State Variable (Extrema)')
+    plt.legend(markerscale=10)  # Увеличиваем маркеры в легенде для видимости
+    plt.grid(True, which='both', linestyle='--', alpha=0.5)
+    plt.tight_layout()
+
+    if output_file:
+        plt.savefig(output_file)
+        print(f"График сохранен в {output_file}")
+    else:
+        plt.show()
+        
+        
+def TestBiffDeidram():
+    n_params = 1000
+    n_steps = 200  # Длина временного ряда (после отсечения переходного процесса)
+    transient = 100  # Переходный процесс
+
+    r_values = np.linspace(2.5, 4.0, n_params)
+
+    matrix = np.zeros((n_params, n_steps))
+
+    # Начальное состояние для всех r
+    x = 0.5 * np.ones(n_params)
+
+    for _ in range(transient):
+        x = r_values * x * (1 - x)
+
+    for t in range(n_steps):
+        x = r_values * x * (1 - x)
+        matrix[:, t] = x
+
+    print("Построение диаграммы...")
+    plot_bifurcation_diagram(r_values, matrix)
+    
+
+
 if __name__ == '__main__':
+    # ZeroOneTest()
+    # TestBiffDeidram()
+    
+    # article_plots()
+    # ShuttlePointLog()
     # ShuttlePointTraj()
 
-    ShiftTest()
-
-    # # сетка для отображения
-    # x = np.linspace(0., 5., 1000)
-    # y = np.linspace(0., 5., 1000)
-    # X, Y = np.meshgrid(x, y)
-    # 
-    # D = Y ** 2 - 4 * X
-    # sqrtD = np.sqrt(np.maximum(D, 0))  # sqrt только для D>=0
-    # lambda1 = (-Y + sqrtD) / 2
-    # lambda2 = (-Y - sqrtD) / 2
-    # region = (D >= 0) & (lambda1 < 0) & (lambda2 < 0)
-    # 
-    # plt.figure(figsize=(12, 12))
-    # plt.contourf(X, Y, region, levels=[-1, 0, 1], colors=["white", "lightblue"], alpha=0.7)
-    # 
-    # # оси
-    # plt.axhline(0, color="black", linewidth=1)
-    # plt.axvline(0, color="black", linewidth=1)
-    # 
-    # plt.title("Область, где матрица A гурвицева")
-    # plt.xlabel("x")
-    # plt.ylabel("y")
-    # plt.gca().set_aspect("equal", adjustable="box")
-    # plt.show()
-
-    # x = np.linspace(-1, 1, 100)
-    # y = np.linspace(-1, 1, 100)
-    # X, Y = np.meshgrid(x, y)
-    # 
-    # def phi(x, a, b, c):
-    #     return (a / 2) / (1 + np.cosh((x - b) / c))
-    # 
-    # def phiphi(x, y, a, b, c):
-    #     return phi(x, a, b, c) * phi(-y, a, b, c)
-    # 
-    # 
-    # a = np.asarray([1, 0.5, 0.3])
-    # b = np.asarray([1, 0.5, 0.4])
-    # c = np.asarray([1, 1, 1])
-    # 
-    # Z = np.zeros((x.size, y.size))
-    # for i in range(len(a)):
-    #     Z += phiphi(X, Y, a[i], b[i], c[i])
-    # 
-    # Z = np.where(X < Y, Z, np.nan)
-    # 
-    # fig = plt.figure(figsize=(10, 7))
-    # ax = fig.add_subplot(111, projection='3d')
-    # surf = ax.plot_surface(X, Y, Z, cmap='viridis', edgecolor='none')
-    # 
-    # fig.colorbar(surf, shrink=0.5, aspect=5)
-    # plt.tight_layout()
-    # plt.show()
-
-    # just_solve_rodos()
-
-    # plot_everett_fn(X, Y, Z, method='linear')
-
-    # # Примеры временных рядов:
-    # # ts1: начинает с роста, затем спад;
-    # # ts2: сначала спад, затем резкий рост;
-    # # ts3: чёткий рост в начале.
-    # ts1 = np.array([1, 2, 3, 2, 1])
-    # ts2 = np.array([5, 4, 6, 7, 6])
-    # ts3 = np.array([2, 3, 4, 5, 3])
-    # 
-    # time_series_list = [ts1, ts2, ts3]
-    # best_idx, best_segment = select_best_growth(time_series_list)
-    # 
-    # if best_idx is not None:
-    #     print("Выбран временной ряд с индексом:", best_idx)
-    #     print("Отрезок роста (start, end, slope):", best_segment)
-    # else:
-    #     print("Подходящих временных рядов не найдено.")
-
-    # afc()
-    # areal_model_test()
-    # plot_lce()
-    # n_regression()
-    # TwoTrajsOnCircle()
-
-    # PoincareMapping()
     # BifurcationDiagram()
+    # OperatorDerivativeTest()
 
-    # regressionTable()
-    # two_trajs()
-    # test_trajs_circle()
+    # DoublePreisachModelTest()
 
-    # with open(f"../PreisachModel/TEST.json") as f:
-    #     data = json.load(f)
-    #     plt.plot(data["in"], data["out"])
-    #     plt.show()
+    # ShiftTest()
 
-    # dt = 0.1
-    # t = np.arange(0, 600, dt)
-    # E = 1.35
-    #
-    # x = []
-    # v = []
-    # read_array("../PreisachModel/preisach_x.txt", x)
-    # read_array("../PreisachModel/preisach_v.txt", v)
-    #
-    # inputs = []
-    # outputs = []
-    # read_array("../PreisachModel/preisach_inputs.txt", inputs)
-    # read_array("../PreisachModel/preisach_loop.txt", outputs)
-    #
-    # plot_x(x, t, E)
-    # plot_v(v, t, E)
-    # plot_phase_portrait(x, v, E)
-    # plot_hysteresis_loop(inputs, outputs, E)
-    # plot_fourier_transform(np.array(x), dt)
+    just_solve_rodos()
 
-    # dt = 0.01
-    # t = np.arange(0, 1800, dt)
-    # s = []
-    # read_array("../PreisachModel/preisach_sin.txt", s)
-    #
-    # plot_x(s, t, 0.0)
-    #
-    # sinus = 2 * np.sin(t)
-    # plt.plot(t, sinus)
-    # plt.show()
-
-    # inputs = []
-    # outputs = []
-    # read_array("../PreisachModel/preisach_inputs.txt", inputs)
-    # read_array("../PreisachModel/preisach_loop.txt", outputs)
-    # plot_hysteresis_loop(inputs, outputs, 0.0)
-
-    # x = []
-    # v = []
-    # read_array("../PreisachModel/preisach_x_E=3.0.txt", x)
-    # read_array("../PreisachModel/preisach_v_E=3.0.txt", v)
-    #
-    # plot_x(x, t, 3.0)
-    # plot_v(v, t, 3.0)
-    # plot_phase_portrait(x, v, 3.0)
-
-    # discrete_model_chaos_test_by_step_size()
-
-    # python_server = server.Server()
-    # python_server.start()
-
-    # import json
-    # from plotting import plot_mLCE_diagram
-    # h_steps = [0.1, 0.05, 0.025, 0.0125]
-    # E_vals = np.arange(0.5, 2.5, 0.1)
-    # mLCEs = []
-    # files = glob.glob(fr"../PreisachModel/tests/LCEs/*.txt")
-    # for file in files:
-    #     with open(file) as f:
-    #         text = f.read()
-    #         data = json.loads(text)
-    #         mLCEs.append(data["mLCE"])
-    # 
-    # plot_mLCE_diagram(mLCEs, E_vals, h_steps, "", True)
-
-    # import json
-    # 
-    # with open("../PreisachModel/trajs.txt") as f:
-    #     text = f.read()
-    #     data = json.loads(text)
-    # 
-    #     traj1 = data["traj1"]
-    #     traj2 = data["traj2"]
-    #     
-    #     loop1 = data["loop1"]
-    #     loop2 = data["loop2"]
-    # 
-    #     x1, y1 = [i[0] for i in traj1], [i[1] for i in traj1]
-    #     t1 = np.arange(0, len(y1) * 0.01, 0.01)
-    #     x2, y2 = [i[0] for i in traj2], [i[1] for i in traj2]
-    #     t2 = np.arange(0, len(y2) * 0.01, 0.01)
-    # 
-    #     fig, axs = plt.subplots(2)
-    #     fig.suptitle("Two close trajectories")
-    #     axs[0].plot(x1, y1, 'b')
-    #     axs[1].plot(x2, y2, 'r')
-    # 
-    #     n = 1000
-    # 
-    #     x1, y1 = x1[:n], y1[:n]
-    #     x2, y2 = x2[:n], y2[:n]
-    #     tn = t[:n]
-    # 
-    #     fig, axs = plt.subplots(2)
-    #     fig.suptitle("Two close trajectories")
-    #     # axs[0].plot(x1, y1, 'b')
-    #     # axs[1].plot(x2, y2, 'r')
-    #     axs[0].plot(x1, y1, 'b', label='Trajectory 1')
-    #     axs[1].plot(x2, y2, 'r', label='Trajectory 2')
-    #     fig.legend()
-    #     plt.show()
-    # 
-    #     # plt.plot(x1, y1, 'b')
-    #     # plt.plot(x2, y2, 'r')
-    #     plt.plot(x1, y1, 'b', label='Trajectory 1')
-    #     plt.plot(x2, y2, 'r', label='Trajectory 2')
-    #     plt.legend()
-    #     plt.show()
-
-    # fig, axs = plt.subplots(2)
-    # fig.suptitle("Two loops")
-    # axs[0].plot(loop1["in"], loop1["out"], 'b')
-    # axs[1].plot(loop2["in"], loop2["out"], 'r')
-    # plt.show()
-
-    # plot_mLCE_diagram(data["mLCEs"], data["E_vals"], data["h_steps"], data["name"])

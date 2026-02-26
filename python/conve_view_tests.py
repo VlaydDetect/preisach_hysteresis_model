@@ -632,7 +632,7 @@ if __name__ == "__main__":
 
     plt.figure(figsize=(10, 10))
     plt.plot(X[:, 0], X[:, 1], '-k', label='curve')
-    L = np.max(np.linalg.norm(rays, axis=1)) * 5
+    L = np.max(np.linalg.norm(rays, axis=1))
     for i in range(len(rays)):
         plt.plot([0, rays[i, 0] * L], [0, rays[i, 1] * L], '--', lw=2, label=f'ray{i}')
     plt.gca().set_aspect('equal', 'box')
