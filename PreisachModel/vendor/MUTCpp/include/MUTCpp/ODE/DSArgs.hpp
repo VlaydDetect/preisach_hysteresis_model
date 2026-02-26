@@ -284,7 +284,7 @@ namespace mc
             }
             case VoteDataType::Double:
             {
-                std::vector<double> data(votes.size());
+                std::vector<double> data;
                 data.reserve(votes.size());
                 for (auto &v : votes)
                     data.push_back(v.toDouble());

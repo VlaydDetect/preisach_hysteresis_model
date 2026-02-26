@@ -14,10 +14,10 @@ namespace mc
     namespace ode
     {
         inline Ref<ContinuousDS> GetRadonsSystem(double dt, const DSArgs &args, const DSArgs &nextArgs = {},
-                                                 const Eigen::Vector2d &x0 = {0.0, 0.0})
+                                                 const Eigen::Vector2d &x0 = {0.0, 0.0}, bool use_atan = false)
         {
-            DynamicalSystem::DSFunc func = [](const Eigen::VectorXd &x, const double t,
-                                              DSArgs &args) -> Eigen::VectorXd
+            DynamicalSystem::DSFunc func = [use_atan](const Eigen::VectorXd &x, const double t,
+                                                      DSArgs &args) -> Eigen::VectorXd
             {
                 AL_PROFILE_FUNC("Rodos::func");
                 double dt = args.at("dt").toDouble();
@@ -27,12 +27,18 @@ namespace mc
                 double w = args.at("w").toDouble();
                 double E = args.at("E").toDouble();
                 auto &model = args.at("model").toPreisachModel();
-
+                
                 Eigen::VectorXd res = Eigen::VectorXd::Zero(x.size());
 
+                const double a = A * sin(w * t);
+                const double g = gamma * x[1];
+                const double ww = w0 * x[0];
+                const double atan = use_atan ? args.at("eps").toDouble() * std::atan(x[0]) : 0.0;
+                const double p = E * model->P(x[0], static_cast<int>(t / dt));
+                const double v = a - g - ww + p + atan;
+
                 res[0] = x[1];
-                res[1] = A * sin(w * t) - gamma * x[1] - w0 * x[0] + E * model->P(
-                    x[0], static_cast<int>(t / dt));
+                res[1] = v;
 
                 return res;
             };

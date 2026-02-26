@@ -16,8 +16,7 @@ namespace mc
     namespace ode
     {
         inline json::JsonDocument BifurcationDiagram(Ref<DynamicalSystem> system,
-                                                     const std::pair<std::string, std::vector<Vote>> &
-                                                     bifurcationParam,
+                                                     const std::pair<std::string, std::vector<Vote>> &bifurcationParam,
                                                      double researchTime,
                                                      double timeForward)
         {

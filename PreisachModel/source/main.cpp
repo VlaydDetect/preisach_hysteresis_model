@@ -21,6 +21,7 @@
 #include "Debug/Profile.hpp"
 #include "ODE/LorenzSystem.hpp"
 #include "ODE/RadonsSystem.hpp"
+#include "ODE/ZeroOneTest.hpp"
 
 using json = nlohmann::json;
 
@@ -49,7 +50,7 @@ void OperatorDerivativeTest()
     auto [inputs2, derivatives] = model->DerivativeHistory();
     // auto [inHist, xHist, yHist, outHist] = model->GetAnimationData();
 
-    mc::json::JsonDocument message({"name", "method", "dt", "h", "times", "loop", "anim", "results"});
+    mc::json::JsonDocument message({"name", "method", "dt", "h", "times", "loop","results"});
     message.AddField("name", "OperatorDerivativeTest");
     message.AddField("method", "plot");
     message.AddField("dt", dt);
@@ -66,7 +67,7 @@ void OperatorDerivativeTest()
     // message.AddSubField({"anim", "save"}, true);
 
     // g_Server.SendDataMessage(message);
-    mc::Ref file = mc::Ref<FileWriter>::Create("ArealModelTest.json");
+    mc::Ref file = mc::Ref<FileWriter>::Create("OperatorDerivativeTest.json");
     file->Write(message.ToString());
 }
 
@@ -1119,49 +1120,19 @@ void OperatorDerivativeTest()
 
 void JustSolveRodos()
 {
-    mc::ode::DynamicalSystem::DSFunc func = [](const Eigen::VectorXd &x, const double t,
-                                               mc::ode::DSArgs &args) -> Eigen::VectorXd
-    {
-        AL_PROFILE_FUNC("Rodos::func");
-        double dt = args.at("dt").toDouble();
-        double gamma = args.at("gamma").toDouble();
-        double A = args.at("A").toDouble();
-        double w0 = args.at("w0").toDouble();
-        double w = args.at("w").toDouble();
-        double E = args.at("E").toDouble();
-        auto &model = args.at("model").toPreisachModel();
-
-        Eigen::VectorXd res = Eigen::VectorXd::Zero(x.size());
-
-        res[0] = x[1];
-        res[1] = A * mc::cos(w * t) - gamma * x[1] - mc::power(w0, 2) * x[0] + E * model->P(
-            x[0], static_cast<int>(t / dt));
-        res[2] = mc::power(w0, 2);
-
-        return res;
-    };
-
-    mc::ode::DynamicalSystem::DSFunc jac = [](const Eigen::VectorXd &x, const double t,
-                                              mc::ode::DSArgs &args) -> Eigen::MatrixXd
-    {
-        return {};
-    };
-
     double dt = 0.01;
     double time = 500.0;
-    auto steps = static_cast<uint32_t>(time / dt);
 
     double gamma = 0.1;
     double w0 = 1.0;
     double w = 1.0;
-    double A = 0.5;
+    double A = 1.5;
 
     double L = 1.0;
-    // double h = 0.05;
-    double E = 1.35;
+    double E = 1.6;
 
-    auto model = mc::Ref<mc::ArealPreisachModel>::Create(L, false, false);
-    // auto model = mc::Ref<mc::DoubleArealPreisachModel>::Create(L, 1.);
+    // auto model = mc::Ref<mc::ArealPreisachModel>::Create(L, true, false);
+    auto model = mc::Ref<mc::DoubleArealPreisachModel>::Create(L, 0.7, 1.0);
 
     mc::ode::DSArgs args = {
         {"dt", dt},
@@ -1175,10 +1146,10 @@ void JustSolveRodos()
 
     mc::ode::DSArgs args2 = {};
 
-    Eigen::Vector3d x0 = {0.0, 0.0, 0.0};
+    Eigen::Vector2d x0 = {0.0, 0.0};
 
-    mc::Ref system = mc::Ref<mc::ode::ContinuousDS>::Create(func, jac, dt, args, args2, x0);
-    auto traj = system->Forward(steps);
+    mc::Ref system = mc::ode::GetRadonsSystem(dt, args, args2, x0, false);
+    auto traj = system->Forward(time);
 
     auto [inputs1, outputs] = model->HysteresisLoop();
     // auto [inputs2, derivatives] = model->DerivativeHistory();
@@ -1664,58 +1635,15 @@ void SecondAttractor()
 void CourseWorkModelsDiff()
 {
     constexpr double L = 1.0;
-    constexpr double h1 = 0.1;
-    constexpr double h2 = 0.005;
-
+    constexpr double h1 = 0.05;
+    // constexpr double h2 = 0.005;
+    
     // auto model = mc::Ref<mc::DiscretePreisachModel>::Create(L, h1, true);
-    auto model = mc::Ref<mc::DiscretePreisachModel>::Create(L, h2, true);
-    // auto model = mc::Ref<mc::ArealPreisachModel>::Create(L, true);
-
-    mc::ode::DynamicalSystem::DSFunc func = [](const Eigen::VectorXd &x, const double t,
-                                               mc::ode::DSArgs &args) -> Eigen::VectorXd
-    {
-        AL_PROFILE_FUNC("Rodos::func");
-        double dt = args.at("dt").toDouble();
-        double gamma = args.at("gamma").toDouble();
-        double A = args.at("A").toDouble();
-        double w0 = args.at("w0").toDouble();
-        double w = args.at("w").toDouble();
-        double E = args.at("E").toDouble();
-        auto &model = args.at("model").toPreisachModel();
-
-        Eigen::VectorXd res = Eigen::VectorXd::Zero(x.size());
-
-        res[0] = x[1];
-        res[1] = A * mc::cos(w * t) - gamma * x[1] - mc::power(w0, 2) * x[0] + E * model->P(
-            x[0], static_cast<int>(t / dt));
-        res[2] = mc::power(w0, 2);
-
-        return res;
-    };
-
-    auto jac = [](Eigen::VectorXd x, double t, const mc::ode::DSArgs &args) -> Eigen::MatrixXd
-    {
-        double w0 = args.at("w0").toDouble();
-        double gamma = args.at("gamma").toDouble();
-        double E = args.at("E").toDouble();
-        auto model = args.at("model").toPreisachModel();
-        double dt = args.at("dt").toDouble();
-        double A = args.at("A").toDouble();
-
-        Eigen::MatrixXd res = Eigen::MatrixXd::Zero(x.size(), x.size());
-
-        res(0, 1) = 1.0;
-
-        res(1, 0) = -w0 + E * model->DerivativeOperator(t, dt);
-        res(1, 1) = -gamma;
-        res(1, 2) = A * mc::cos(x[2]);
-
-        return res;
-    };
+    // auto model = mc::Ref<mc::DiscretePreisachModel>::Create(L, h1, true);
+    auto model = mc::Ref<mc::ArealPreisachModel>::Create(L, true);
 
     double dt = 0.01;
     double time = 1000.0;
-    auto steps = static_cast<uint32_t>(time / dt);
 
     double gamma = 0.1;
     double w0 = 1.0;
@@ -1737,30 +1665,30 @@ void CourseWorkModelsDiff()
 
     mc::ode::DSArgs args2 = {};
 
-    mc::Ref system = mc::Ref<mc::ode::ContinuousDS>::Create(func, jac, dt, args, args2);
-    constexpr double areaCoeff = -0.9;
-    system->SetResetFn([areaCoeff, L](mc::ode::DSArgs &args, mc::ode::DSArgs &nextArgs)
-    {
-        auto model1 = mc::Ref<mc::ArealPreisachModel>::Create(L, false, false);
-        auto model2 = mc::Ref<mc::ArealPreisachModel>::Create(L, false, false);
-        if (!isnan(areaCoeff))
-        {
-            model2->P(L, -2);
-            model2->P(areaCoeff * L, -1);
-        }
-
-        args.insert_or_assign("model", mc::ode::Vote(model1));
-        nextArgs.insert_or_assign("model", mc::ode::Vote(model2));
-    });
-
-    // std::iostream::sync_with_stdio(false);
-    // auto start_bench = std::chrono::high_resolution_clock::now();
-    // auto traj = system->Forward(steps);
-    // auto stop_bench = std::chrono::high_resolution_clock::now();
+    mc::Ref system = mc::ode::GetRadonsSystem(dt, args, {}, {0.0, 0.0}, false);
+    // constexpr double areaCoeff = -0.9;
+    // system->SetResetFn([areaCoeff, L](mc::ode::DSArgs &args, mc::ode::DSArgs &nextArgs)
+    // {
+    //     auto model1 = mc::Ref<mc::ArealPreisachModel>::Create(L, false, false);
+    //     auto model2 = mc::Ref<mc::ArealPreisachModel>::Create(L, false, false);
+    //     if (!isnan(areaCoeff))
+    //     {
+    //         model2->P(L, -2);
+    //         model2->P(areaCoeff * L, -1);
+    //     }
     //
-    // auto duration = static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(stop_bench - start_bench).count()) * 1e-9;
-    // std::cout << std::fixed << duration << std::setprecision(9);
-    // std::cout << " sec\n";
+    //     args.insert_or_assign("model", mc::ode::Vote(model1));
+    //     nextArgs.insert_or_assign("model", mc::ode::Vote(model2));
+    // });
+
+    std::iostream::sync_with_stdio(false);
+    auto start_bench = std::chrono::high_resolution_clock::now();
+    auto traj = system->Forward(time);
+    auto stop_bench = std::chrono::high_resolution_clock::now();
+    
+    auto duration = static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(stop_bench - start_bench).count()) * 1e-9;
+    std::cout << std::fixed << duration << std::setprecision(9);
+    std::cout << " sec\n";
 
     // auto [mLCE, hist] = mc::ode::mLCE(system, 1, 500000);
     // std::print("{}", mLCE);
@@ -1774,34 +1702,34 @@ void CourseWorkModelsDiff()
     // file->Write(message.ToString());
 
 
+    
+    auto [inputs, outputs] = model->HysteresisLoop();
+    
+    mc::json::JsonDocument message({"name", "method", "dt", "h", "E", "time", "results", "loop"});
+    message.AddField("name", "JustSolveRodos");
+    message.AddField("method", "plot");
+    message.AddField("dt", dt);
+    message.AddField("h", h1);
+    message.AddField("E", E);
+    message.AddField("time", time);
+    message.AddSubField({"results", "x"}, traj.col(0).eval());
+    message.AddSubField({"results", "v"}, traj.col(1).eval());
+    message.AddSubField({"loop", "inputs"}, inputs);
+    message.AddSubField({"loop", "outputs"}, outputs);
+    mc::Ref file = mc::Ref<FileWriter>::Create("JustSolveRodos.json");
+    file->Write(message.ToString());
+
+    // std::unordered_map<std::string, std::vector<Eigen::MatrixXd>> trajs1, trajs2;
+    // std::vector<double> ns;
     //
-    // auto [inputs1, outputs] = model->HysteresisLoop();
+    // constexpr int M = 400;
     //
-    // mc::json::JsonDocument message({"name", "method", "dt", "h", "E", "time", "results", "loop"});
-    // message.AddField("name", "JustSolveRodos");
-    // message.AddField("method", "plot");
-    // message.AddField("dt", dt);
-    // message.AddField("h", h1);
-    // message.AddField("E", E);
-    // message.AddField("time", time);
-    // message.AddSubField({"results", "x"}, traj(traj.rSlice(), 0));
-    // message.AddSubField({"results", "v"}, traj(traj.rSlice(), 1));
-    // message.AddSubField({"loop", "inputs"}, inputs1);
-    // message.AddSubField({"loop", "outputs"}, outputs);
-    // mc::Ref file = mc::Ref<FileWriter>::Create("JustSolveRodos.json");
-    // file->Write(message.ToString());
-
-    std::unordered_map<std::string, std::vector<Eigen::MatrixXd>> trajs1, trajs2;
-    std::vector<double> ns;
-
-    constexpr int M = 400;
-
-    Eigen::VectorXd Ts = Eigen::arange(0.1, 2.35, 0.25);
-
-    auto doc = mc::ode::DivergenceDegreeRegressionData(system, 0., 1., Eigen::Vector3d(0.7, -0.7, 0.0), Ts, M, trajs1,
-                                                       trajs2, ns);
-    mc::Ref file = mc::Ref<FileWriter>::Create("RodosLCEs_Regression.json");
-    file->Write(doc.ToString());
+    // Eigen::VectorXd Ts = Eigen::arange(0.1, 2.35, 0.25);
+    //
+    // auto doc = mc::ode::DivergenceDegreeRegressionData(system, 0., 1., Eigen::Vector3d(0.7, -0.7, 0.0), Ts, M, trajs1,
+    //                                                    trajs2, ns);
+    // mc::Ref file = mc::Ref<FileWriter>::Create("RodosLCEs_Regression.json");
+    // file->Write(doc.ToString());
 
     // std::vector<mc::Matrix<double>> traj1 = {};
     // std::vector<mc::Matrix<double>> traj2 = {};
@@ -2085,7 +2013,7 @@ void BifurcationDiagram()
     {
         // const double e = mc::exp((b - x) / c);
         // return a * e / mc::power(1 + e, 2);
-        return (a / 2.) / (1 + std::cosh((x - b) / c));
+        return (a / 2.) / (1. + std::cosh((x - b) / c));
     };
 
     auto everett = [phi](double x, double y)
@@ -2104,34 +2032,37 @@ void BifurcationDiagram()
 
     constexpr double L = 1.0;
     auto model = mc::Ref<mc::ArealPreisachModel>::Create(L);
-    model->SetEverettFunction(everett);
+    // model->SetEverettFunction(everett);
 
-    mc::ode::DSArgs args = {
-        {"dt", dt},
-        {"gamma", gamma},
-        {"A", A},
-        {"w0", w0},
-        {"w", w},
-        {"E", E},
-        {"model", mc::ode::Vote(model)}
-    };
-    auto system = mc::ode::GetRadonsSystem(dt, args);
-    auto As = mc::ode::utils::VoteRange(.1, 4., 0.1);
-    auto Es = mc::ode::utils::VoteRange(0., 1.7, 0.1);
-    auto d = mc::ode::BifurcationDiagram(system, {"A", As}, 10. * mc::consts::twoPi / w, 2. * mc::consts::twoPi / w);
-
-    // double sigma = 10.0;
-    // double rho = 28.0;
-    // double beta = 8.0 / 3.0;
     // mc::ode::DSArgs args = {
-    //     {"sigma", sigma},
-    //     {"rho", rho},
-    //     {"beta", beta},
+    //     {"dt", dt},
+    //     {"gamma", gamma},
+    //     {"A", A},
+    //     {"w0", w0},
+    //     {"w", w},
+    //     {"E", E},
+    //     {"model", mc::ode::Vote(model)},
+    //     {"eps", 0.05}
     // };
-    // auto system = mc::ode::GetLorenzSystem(dt, args);
-    // auto rs = mc::ode::utils::VoteRange(0., 200., 1.);
-    // auto d = mc::ode::BifurcationDiagram(system, {"rho", rs}, 8., 100.);
-    //
+    // auto system = mc::ode::GetRadonsSystem(dt, args, {}, {0.0, 0.0}, false);
+    // auto As = mc::ode::utils::VoteRange(0.0, 4., 0.005);
+    // auto Es = mc::ode::utils::VoteRange(0., 3., 0.005);
+    // auto ws = mc::ode::utils::VoteRange(0., 2., 0.05);
+    // auto epss = mc::ode::utils::VoteRange(0., 3.0, 0.005);
+    // auto d = mc::ode::BifurcationDiagram(system, {"w", ws}, 60. * mc::consts::twoPi / w, 5. * mc::consts::twoPi / w);
+
+    double sigma = 10.0;
+    double rho = 28.0;
+    double beta = 8.0 / 3.0;
+    mc::ode::DSArgs args = {
+        {"sigma", sigma},
+        {"rho", rho},
+        {"beta", beta},
+    };
+    auto system = mc::ode::GetLorenzSystem(dt, args);
+    auto rs = mc::ode::utils::VoteRange(0., 30., 0.5);
+    auto d = mc::ode::BifurcationDiagram(system, {"rho", rs}, 50., 100.);
+    
     mc::Ref file = mc::Ref<FileWriter>::Create("BifurcationDiagram.json");
     file->Write(d.ToString());
 }
@@ -2194,12 +2125,12 @@ void RadonsShuttlePoint()
     Eigen::Vector2d b(2);
     b << 0.0, A;
 
-    const Eigen::Vector2d u0 = {0.3, 0.3};
+    const Eigen::Vector2d u0 = {-0.2, -0.2};
 
     auto p = mc::ShuttlePoint(system1, system2, mc::SolidCone2d::fromCurve(Am, b, mc::detail::Settings()),
                               u0, {-1.5, -1.1}, {1.6, 0.9}, mc::consts::twoPi / w);
 
-    std::println("z_odd: {}, z_even: {}", p.limits[0], p.limits[1]);
+    std::println("LIMITS: z_odd: {}, z_even: {}", p.limits[0], p.limits[1]);
 
 
     auto model3 = mc::Ref<mc::ArealPreisachModel>::Create(L);
@@ -2212,16 +2143,20 @@ void RadonsShuttlePoint()
         {"E", E},
         {"model", mc::ode::Vote(model2)}
     };
-    mc::Ref<mc::ode::DynamicalSystem> system3 = mc::ode::GetRadonsSystem(dt, args3, {}, p.limits[0]);
+    mc::Ref<mc::ode::DynamicalSystem> system3 = mc::ode::GetRadonsSystem(dt, args3, {}, p.limits[1]);
     auto traj = system3->Forward(500.0);
 
     Eigen::VectorXd x = traj.col(0);
     Eigen::VectorXd v = traj.col(1);
 
-    mc::json::JsonDocument message({"name", "x", "v"});
+    auto [in, out] = system3->GetArgs().at("model").toPreisachModel()->HysteresisLoop();
+
+    mc::json::JsonDocument message({"name", "x", "v", "loop"});
     message.AddField("name", "ShuttlePoint");
     message.AddField("x", x);
     message.AddField("v", v);
+    message.AddSubField({"loop", "in"}, in);
+    message.AddSubField({"loop", "out"}, out);
 
     mc::Ref file = mc::Ref<FileWriter>::Create("ShuttlePointTraj.json");
     file->Write(message.ToString());
@@ -2294,123 +2229,183 @@ void ShiftTest()
     file->Write(message.ToString());
 }
 
+void DoublePreisachModelTest()
+{
+    mc::Ref model = mc::Ref<mc::DoubleArealPreisachModel>::Create(1.0, 0.0, 0.0);
+
+    const Eigen::ArrayXd t = Eigen::ArrayXd::LinSpaced(1000, 0.0, 2. * mc::consts::twoPi);
+    Eigen::ArrayXd sinus = 2. * Eigen::sin(t);
+    
+    for (int i = 0; i < sinus.size(); ++i)
+    {
+        model->P(sinus[i], i);
+    }
+    
+    const auto& [in, out] = model->HysteresisLoop();
+    mc::json::JsonDocument message({"name", "t", "x", "loop"});
+    message.AddField("name", "DoublePreisachModelTest");
+    message.AddField("t", t);
+    message.AddField("x", sinus);
+    message.AddSubField({"loop", "in"}, in);
+    message.AddSubField({"loop", "out"}, out);
+
+    mc::Ref file = mc::Ref<FileWriter>::Create("DoublePreisachModelTest.json");
+    file->Write(message.ToString());
+}
+
+void ZeroOneRadonsTest()
+{
+    double dt = 0.01;
+
+    double gamma = 0.1;
+    double w0 = 1.0;
+    double w = 1.0;
+    double A = 1.5;
+
+    double E = 1.35;
+
+    constexpr double L = 1.0;
+    auto model = mc::Ref<mc::ArealPreisachModel>::Create(L);
+
+    mc::ode::DSArgs args = {
+        {"dt", dt},
+        {"gamma", gamma},
+        {"A", A},
+        {"w0", w0},
+        {"w", w},
+        {"E", E},
+        {"model", mc::ode::Vote(model)},
+        {"eps", 0.05}
+    };
+    auto system = mc::ode::GetRadonsSystem(dt, args, {}, {0.0, 0.0}, false);
+    auto As = mc::ode::utils::VoteRange(0.0, 4., 0.005);
+    auto Es = mc::ode::utils::VoteRange(0., 3., 0.005);
+    auto ws = mc::ode::utils::VoteRange(0., 4., 0.005);
+    auto epss = mc::ode::utils::VoteRange(0., 3.0, 0.005);
+    
+    // double sigma = 10.0;
+    // double rho = 28.0;
+    // double beta = 8.0 / 3.0;
+    // mc::ode::DSArgs args = {
+    //     {"sigma", sigma},
+    //     {"rho", rho},
+    //     {"beta", beta},
+    // };
+    // auto system = mc::ode::GetLorenzSystem(dt, args);
+    // auto rs = mc::ode::utils::VoteRange(0., 200., 1.);
+
+    std::vector<double> k_values;
+    
+    constexpr double time = 500.0;
+    const std::pair<std::string, std::vector<mc::ode::Vote>> param = {"A", As};
+    for (const auto& val : param.second)
+    {
+        std::cout << "New" << std::endl;
+        system->Reset();
+        system->SetArg(param.first, val);
+        
+        const auto traj = system->Forward(time);
+        const auto x = traj.col(0);
+        
+        const auto res = mc::ode::ZeroOneTest_Fast_New(x, 10);
+        k_values.push_back(res);
+    }
+    
+    mc::json::JsonDocument message({"name", param.first, "Ks"});
+    message.AddField("name", "ZeroOneTest");
+    mc::ode::WriteVotesToDoc(message, param.first, param.second, param.second[0].Type());
+    message.AddField("Ks", k_values);
+    
+    mc::Ref file = mc::Ref<FileWriter>::Create("ZeroOneTest.json");
+    file->Write(message.ToString());
+}
+
+void ZeroOneTest()
+{
+    double dt = 0.01;
+
+    double gamma = 0.1;
+    double w0 = 1.0;
+    double w = 1.0;
+    double A = 1.5;
+
+    double E = 1.35;
+
+    constexpr double L = 1.0;
+    auto model = mc::Ref<mc::ArealPreisachModel>::Create(L);
+
+    mc::ode::DSArgs args = {
+        {"dt", dt},
+        {"gamma", gamma},
+        {"A", A},
+        {"w0", w0},
+        {"w", w},
+        {"E", E},
+        {"model", mc::ode::Vote(model)},
+        {"eps", 0.05}
+    };
+    auto system = mc::ode::GetRadonsSystem(dt, args, {}, {0.0, 0.0}, false);
+    const double time = 20.0 * mc::consts::twoPi / w;
+    const auto traj = system->Forward(time);
+    const auto x = traj.col(0);
+    const auto len = x.size();
+    const auto skip = static_cast<Eigen::Index>(len * 0.05);
+
+    // constexpr int stride = 40;
+    // Eigen::VectorXd x_downsampled = x.tail(len - skip)(Eigen::seq(0, Eigen::last, stride));
+    // double mean = x_downsampled.mean();
+    // x_downsampled.array() -= mean;
+    
+    // mc::json::JsonDocument message({"name", "x", "v"});
+    // message.AddField("name", "ZeroOneTestTraj");
+    // message.AddField("x", x.eval());
+    // message.AddField("v", traj.col(1).eval());
+    //
+    // mc::Ref file = mc::Ref<FileWriter>::Create("ZeroOneTestTraj.json");
+    // file->Write(message.ToString());
+    
+    // Генерация тестовых данных (например, шум vs синус)
+    int N = 2000;
+    Eigen::VectorXd regular(N);
+    Eigen::VectorXd chaotic(N); // Используем random как прокси хаоса для примера
+    
+    std::mt19937 gen(42);
+    std::uniform_real_distribution<double> dist(0.0, 1.0);
+    
+    for(int i=0; i<N; ++i) {
+        regular[i] = std::sin(i * 0.1); 
+        chaotic[i] = 4.0 * dist(gen) * (1.0 - dist(gen)); // Логистическое отображение-подобное
+    }
+
+    // Рекомендуемый размер окна n_cut <= N / 10
+    int n_cut = N / 10;
+
+    double k_reg = mc::ode::ZeroOneTest_Fast_New(regular, n_cut);
+    double k_chaos = mc::ode::ZeroOneTest_Fast_New(chaotic, n_cut);
+    double k_raodns = mc::ode::ZeroOneTest_Fast_New(x);
+
+    std::cout << "Regular K (expect ~0): " << k_reg << "\n";
+    std::cout << "Chaotic K (expect ~1): " << k_chaos << "\n";
+    std::cout << "Chaotic Radons K (expect ~1): " << k_raodns << "\n";
+}
+
 int main()
 {
+    // ZeroOneTest();
+    
+    // ZeroOneRadonsTest();
+    
+    // BifurcationDiagram();
+    
+    // DoublePreisachModelTest();
+    
     // mc::run_example_2d();
 
     // RadonsShuttlePoint();
-    ShiftTest();
+    // ShiftTest();
 
 
     // CourseWorkModelsDiff();
-    // auto integrand = hep::make_integrand<double>(
-    //     square,
-    //     1,
-    //     hep::make_dist_params(100, x_min, x_max)
-    // );
-    //
-    // auto const chkpt = hep::plain(integrand, std::vector<std::size_t>(1, 1000000));
-    // auto const result = chkpt.results().back();
-    //
-    // std::cout << "integral is I = " << result.value() * (x_max - x_min) << " +- " << result.error() << "\n\n";
-
-    // SecondAttractor();
-
-    // auto model = mc::Ref<mc::DoubleArealPreisachModel>::Create(1., 1.);
-    //
-    // mc::Matrix<double> t = mc::arange(0., 7. * mc::consts::twoPi, 0.01);
-    // mc::Matrix<double> f = 4. * mc::sin(t);
-    //
-    // std::vector<double> res = {};
-    //
-    // for (int i = 0; i < f.size(); i++)
-    // {
-    //     res.push_back(model->P(f[i], i));
-    // }
-    //
-    // auto [in, out] = model->HysteresisLoop();
-    //
-    // mc::json::JsonDocument message({"name", "in", "out"});
-    // message.AddField("name", "sin");
-    // message.AddField("in", in);
-    // message.AddField("out", out);
-    // mc::Ref file = mc::Ref<FileWriter>::Create("TEST.json");
-    // file->Write(message.ToString());
-
-    // auto phi = [](double x, double a, double b, double c)
-    // {
-    //     // const double e = mc::exp((b - x) / c);
-    //     // return a * e / mc::power(1 + e, 2);
-    //     return (a / 2.) / (1 + std::cosh((x - b) / c));
-    // };
-    //
-    // auto everett1 = [phi](const hep::mc_point<double> &p)
-    // {
-    //     // return 1.;
-    //     const double x = 2. * p.point()[0] - 1.;
-    //     const double y = 2. * p.point()[1] - 1.;
-    //
-    //     if (x > y) return 0.0;
-    //     
-    //     std::vector<double> a = {0.113, 2.224e-3, 1.812e-2};
-    //     std::vector<double> b = {56.468, 30.197, 86.148};
-    //     std::vector<double> c = {6.035, 284.54, 38.842};
-    //
-    //     double integral = 0.0;
-    //     for (int i = 0; i < a.size(); i++)
-    //     {
-    //         integral += phi(x, a[i], b[i], c[i]) * phi(-y, a[i], b[i], c[i]);
-    //     }
-    //     return integral;
-    // };
-    //
-    // auto results = hep::vegas(
-    //     hep::make_integrand<double>(everett1, 2),
-    //     std::vector<std::size_t>(1, 10000)
-    //     ).results();
-    //
-    // std::cout << results.back().value() * 2. << '\n';
-    //
-    // auto interpolate_triangle = [](const mc::Vec2 &A, const mc::Vec2 &B, const mc::Vec2 &C, double u, double v)
-    // {
-    //     const double w = 1 - u - v;
-    //     return mc::Vec2(u * A.x + v * B.x + w * C.x, u * A.y + v * B.y + w * C.y);
-    // };
-    //
-    // constexpr double w = 1. / 3.;
-    // constexpr std::array<std::pair<double, double>, 3> nodes = {{
-    //     {0.5, 0.0},
-    //     {0.5, 0.5},
-    //     {0.0, 0.5}
-    // }};
-    // double sum = 0.0;
-    // for (const auto &[u, v] : nodes)
-    // {
-    //     mc::Vec2 p = interpolate_triangle(mc::Vec2(-1., -1.), mc::Vec2(-1., 1.), mc::Vec2(1., 1.), u, v);
-    //     sum += everett1(hep::mc_point(std::vector{p.x, p.y})) * w;
-    // }
-    // std::cout << sum * 2. << '\n';
-    //
-    // auto everett2 = [phi](double x, double y)
-    // {
-    //     // return 1.;
-    //     
-    //     std::vector<double> a = {0.113, 2.224e-3, 1.812e-2};
-    //     std::vector<double> b = {56.468, 30.197, 86.148};
-    //     std::vector<double> c = {6.035, 284.54, 38.842};
-    //
-    //     double integral = 0.0;
-    //     for (int i = 0; i < a.size(); i++)
-    //     {
-    //         integral += phi(x, a[i], b[i], c[i]) * phi(-y, a[i], b[i], c[i]);
-    //     }
-    //     return integral;
-    // };
-    //
-    // std::cout << mc::integrate::gaussianQuadratureTriangle(everett2, {-1., -1.}, {-1., 1.}, {1., 1.}) << '\n';
-    //
-    // std::cout << everett2(0.3, 0.7);
-
 
     // Initial duration for profiler
     // Sleep(1000);
@@ -2433,7 +2428,7 @@ int main()
     // AFC();
     // AFC_test();
 
-    // JustSolveRodos();
+    JustSolveRodos();
     // RodosLCEs();
 
     // DivergenceDegreeTable();
@@ -2457,28 +2452,5 @@ int main()
     //
     // std::future<double> task = mc.integrate();
     // // while (task.wait_for(std::chrono::seconds(1)) != std::future_status::ready)
-    // // {
-    // //     // The user must decide on a reasonable way to display the progress depending on their environment:
-    // //     display_progress(mc.progress(),
-    // //                      mc.current_error_estimate(),
-    // //                      mc.current_estimate(),
-    // //                      mc.estimated_time_to_completion());
-    // //     if (some_signal_heard())
-    // //     {
-    // //         mc.cancel();
-    // //         std::cout << "\nCancelling because this is too slow!\n";
-    // //     }
-    // // }
-    // double y = task.get();
-    // std::cout << y;
-
-    // RodosAFCs();
-
-    // SolutionBehaviorResearchDependingOnH();
-
-    // OperatorDerivativeTest();
-
-    // LyapunovExponentsTest();    
-
-    // _sleep(10000);
+    // //
 }

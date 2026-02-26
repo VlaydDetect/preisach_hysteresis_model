@@ -409,10 +409,8 @@ namespace mc
             const Eigen::Vector2d r2 = {x, y};
 
             Eigen::Matrix2d rays;
-            // rays.col(0) = r1.normalized();
-            // rays.col(1) = r2.normalized();
-            rays.col(0) = r1;
-            rays.col(1) = r2;
+            rays.col(0) = r1.normalized();
+            rays.col(1) = r2.normalized();
             return rays;
         }
     }
@@ -577,28 +575,6 @@ namespace mc
 
             const detail::CurveResult cr = detail::generate_curve(A, b, s);
             write_curve_csv("out", cr);
-            // if (cr.t.empty())
-            // {
-            //     THROW_RUNTIME_ERROR("[ERROR] No samples generated.");
-            // }
-            //
-            // if (auto tr = two_rays_by_angle_2d(cr); !tr.has_value())
-            // {
-            //     THROW_RUNTIME_ERROR("[ERROR] Cannot chose rays.");
-            // }
-            // else if (const auto trv = tr.value(); !trv.ok)
-            // {
-            //     THROW_RUNTIME_ERROR(
-            //         std::format("[ERROR] Two rays insufficient: angular span = {} rad (> pi).", trv.arc_len));
-            // }
-            // else
-            // {
-            //     std::cout << "[INFO] Two rays chosen: indices " << trv.idx1 << ", " << trv.idx2 << ", arc (rad)=" << trv
-            //         .
-            //         arc_len << "\n";
-            //     c.m_BoundaryRays.col(0) = trv.ray1;
-            //     c.m_BoundaryRays.col(1) = trv.ray2;
-            // }
 
             auto rays = detail::pick_two_support_rays_2d(cr);
             c->m_BoundaryRays = rays;
@@ -703,76 +679,6 @@ namespace mc
         {
         }
 
-        // Оценка максимального собственного значения R^T R (power method) => для шага градиента
-        // double estimate_max_eig_RtR(int max_iters = 200, double tol = 1e-9) const
-        // {
-        //     Eigen::VectorXd b = Eigen::VectorXd::Random(2);
-        //     b.normalize();
-        //     Eigen::VectorXd y(2);
-        //     for (int it = 0; it < max_iters; ++it)
-        //     {
-        //         y = m_BoundaryRays.transpose() * (m_BoundaryRays * b);
-        //         double norm_y = y.norm();
-        //         if (norm_y == 0)
-        //             return 0.0;
-        //         Eigen::VectorXd b_next = y / norm_y;
-        //         if ((b_next - b).norm() < tol)
-        //         {
-        //             return norm_y;
-        //         }
-        //         b = b_next;
-        //     }
-        //     // Rayleigh quotient
-        //     const Eigen::VectorXd Rb = m_BoundaryRays * b;
-        //     return b.dot(m_BoundaryRays.transpose() * Rb);
-        // }
-
-        // Решение NNLS: min ||R c - x||^2 s.t. c >= 0
-        // Возвращает optional вектора коэффициентов (если не сошлось, optional пуст).
-        // std::optional<Eigen::VectorXd> solve_nnls_projected_gradient(const Eigen::VectorXd &x) const
-        // {
-        //     int m = m_BoundaryRays.cols();
-        //     if (m == 0)
-        //         return std::nullopt;
-        //     // Начальная оценка: R^T x, обрезаем
-        //     Eigen::VectorXd c = m_BoundaryRays.transpose() * x;
-        //     for (int i = 0; i < m; ++i)
-        //         if (c(i) < 0)
-        //             c(i) = 0;
-        //     // Step size
-        //     double L = estimate_max_eig_RtR();
-        //     if (L <= 0)
-        //         L = 1.0;
-        //     double alpha = 1.0 / L;
-        //     Eigen::VectorXd grad(m);
-        //     for (int iter = 0; iter < m_NNLS_MaxIters; ++iter)
-        //     {
-        //         Eigen::VectorXd Rc = m_BoundaryRays * c;
-        //         grad = m_BoundaryRays.transpose() * (Rc - x); // gradient of 0.5||R c - x||^2
-        //         Eigen::VectorXd c_next = c - alpha * grad;
-        //         // projection onto nonnegatives
-        //         for (int i = 0; i < m; ++i)
-        //         {
-        //             if (c_next(i) < 0)
-        //             {
-        //                 c_next(i) = 0;
-        //             }
-        //         }
-        //         double diff = (c_next - c).norm();
-        //         c.swap(c_next);
-        //         if (diff < 1e-12)
-        //             break;
-        //         // early exit if residual small
-        //         double res = (m_BoundaryRays * c - x).norm();
-        //         if (res <= m_NNLS_Tol)
-        //             return c;
-        //     }
-        //     double final_res = (m_BoundaryRays * c - x).norm();
-        //     if (final_res <= 1e-6)
-        //         return c; // tolerant
-        //     return std::nullopt;
-        // }
-
     private:
         uint32_t m_Dimension;
         Eigen::Matrix2d m_BoundaryRays;
@@ -804,25 +710,46 @@ namespace mc
         std::vector<Eigen::Vector2d> limits = {}; // либо {A}, либо {A,B}
     };
 
-    inline ShuttlePointResult ShuttlePoint(Ref<ode::DynamicalSystem> system_minus, Ref<ode::DynamicalSystem> system_plus, const Ref<SolidCone2d> &cone,
+    inline ShuttlePointResult ShuttlePoint(Ref<ode::DynamicalSystem> system_minus,
+                                           Ref<ode::DynamicalSystem> system_plus, const Ref<SolidCone2d> &cone,
                                            const Eigen::Vector2d &u0, const Eigen::Vector2d &z_minus,
                                            const Eigen::Vector2d &z_plus, double period)
     {
         AL_PROFILE_FUNC("ShuttlePoint");
 
+        // Настройки итераций
+        constexpr int maxIter = 20;
+        constexpr int maxYIter = 50;
+        
         CSVWriter trace_even("trace_even.csv");
         CSVWriter trace_odd("trace_odd.csv");
         CSVWriter trace_all("trace_all.csv");
 
-        mc::json::JsonDocument message({"name", "z+", "z-"});
-        
+        mc::json::JsonDocument message({"name", "iters", "cone", "traj_z-", "traj_z+", "new_z-", "new_z+",
+                                        "odd_sequences", "odd_initial_points", "odd_cond_points", "even_sequences",
+                                        "even_initial_points", "even_cond_points"});
+        message.AddField("name", "ShuttlePoint");
+        message.AddField("iters", maxIter * maxYIter);
+        message.GetDoc()["cone"] = cone->ToJson();
+        std::vector<Eigen::MatrixXd> odd_sequences_log;
+        std::vector<Eigen::MatrixXd> odd_initial_points_log;
+        std::vector<Eigen::MatrixXd> odd_cond_points_log;
+
+        std::vector<Eigen::MatrixXd> even_sequences_log;
+        std::vector<Eigen::MatrixXd> even_initial_points_log;
+        std::vector<Eigen::MatrixXd> even_cond_points_log;
+
         std::println("z-: {}, z+: {}", z_minus, z_plus);
 
-        // const Eigen::Vector2d z_minus = -40.0 * u0;
-        // const Eigen::Vector2d z_plus = 40.0 * u0;
+        const Eigen::MatrixXd z_minus_traj = system_minus->ShiftTraj(z_minus, period);
+        const Eigen::MatrixXd z_plus_traj = system_plus->ShiftTraj(z_plus, period);
+        message.AddField("traj_z-", z_minus_traj);
+        message.AddField("traj_z+", z_plus_traj);
 
-        const Eigen::Vector2d z_minus_new = system_minus->Shift(z_minus, period) - z_minus - u0;
-        const Eigen::Vector2d z_plus_new = z_plus - system_plus->Shift(z_plus, period) - u0;
+        const Eigen::Vector2d z_minus_new = z_minus_traj.col(z_minus_traj.cols() - 1) - z_minus - u0;
+        const Eigen::Vector2d z_plus_new = z_plus - z_plus_traj.col(z_plus_traj.cols() - 1) - u0;
+        message.AddField("new_z-", z_minus_new);
+        message.AddField("new_z+", z_plus_new);
 
         bool cond_z_minus = cone->contains(z_minus_new);
         bool cond_z_plus = cone->contains(z_plus_new);
@@ -840,14 +767,10 @@ namespace mc
         // 3) Последовательность sigma_n
         auto sigma_n = [](int n)
         {
-            double v = 1.0 / std::pow(2.0, n);
+            double v = 1.0 / std::pow(2.0, n + 3);
             std::println("sigma_{}: {}", n, v);
             return v;
         };
-
-        // Настройки итераций
-        constexpr int maxIter = 20;
-        constexpr int maxYIter = 1000;
 
         std::vector<Eigen::Vector2d> z_odd;
         z_odd.push_back(z_minus);
@@ -855,7 +778,9 @@ namespace mc
         z_even.push_back(z_plus);
 
         // Вспомогательные последовательности
-        auto build_sequence = [maxYIter, &system_minus, &system_plus, period, sigma_n, u0, &cone](
+        auto build_sequence = [maxYIter, &system_minus, &system_plus, period, sigma_n, u0, &cone,
+                &odd_sequences_log, &odd_initial_points_log, &even_sequences_log, &even_initial_points_log,
+                &odd_cond_points_log, &even_cond_points_log](
             const Eigen::Vector2d &y0, bool add, int sig_idx, CSVWriter &trace) -> std::optional<Eigen::Vector2d>
         {
             AL_PROFILE_FUNC("ShuttlePoint::build_sequence");
@@ -866,13 +791,21 @@ namespace mc
                 Eigen::Vector2d y_next;
                 if (add)
                 {
-                    y_next = system_minus->Shift(y_prev, period);
+                    const Eigen::MatrixXd newSol = system_minus->ShiftTraj(y_prev, period);
+                    y_next = newSol.col(newSol.cols() - 1);
                     y_next += sigma_n(sig_idx) * u0;
+
+                    odd_sequences_log.push_back(newSol);
+                    odd_initial_points_log.push_back(y_next);
                 }
                 else
                 {
-                    y_next = system_plus->Shift(y_prev, period);
+                    const Eigen::MatrixXd newSol = system_plus->ShiftTraj(y_prev, period);
+                    y_next = newSol.col(newSol.cols() - 1);
                     y_next -= sigma_n(sig_idx) * u0;
+
+                    even_sequences_log.push_back(newSol);
+                    even_initial_points_log.push_back(y_next);
                 }
 
                 std::println("y{}_{}: {}", sig_idx, n, y_next);
@@ -882,7 +815,9 @@ namespace mc
                 // проверка условий выбора z
                 if (add)
                 {
-                    if (cone->contains(y_prev - y_next - sigma_n(sig_idx + 2) * u0))
+                    const Eigen::Vector2d cond_point = y_prev - y_next - sigma_n(sig_idx + 2) * u0;
+                    odd_cond_points_log.push_back(cond_point);
+                    if (cone->contains(cond_point))
                     {
                         std::println("y{}_{} that satisfies condition: {}", sig_idx, n, y_next);
                         return y_next;
@@ -890,7 +825,9 @@ namespace mc
                 }
                 else
                 {
-                    if (cone->contains(y_next - y_prev - sigma_n(sig_idx + 2) * u0))
+                    const Eigen::Vector2d cond_point = y_next - y_prev - sigma_n(sig_idx + 2) * u0;
+                    even_cond_points_log.push_back(cond_point);
+                    if (cone->contains(cond_point))
                     {
                         std::println("y{}_{} that satisfies condition: {}", sig_idx, n, y_next);
                         return y_next;
@@ -943,34 +880,18 @@ namespace mc
                         break;
                     }
                 }
-
-                // Проверка сходимости
-                // if (!z_even.empty() && !z_odd.empty())
-                // {
-                //     const Eigen::Vector2d &a = z_even.back();
-                //     const Eigen::Vector2d &b = z_odd.back();
-                //
-                //     double dist = (a - b).norm();
-                //     if (dist < tol)
-                //     {
-                //         result.converged = true;
-                //         result.limits = {0.5 * (a + b)};
-                //         stop = true;
-                //     }
-                //     else if (z_even.size() > 2 && z_odd.size() > 2)
-                //     {
-                //         double d1 = (z_even.back() - z_even[z_even.size() - 2]).norm();
-                //         double d2 = (z_odd.back() - z_odd[z_odd.size() - 2]).norm();
-                //         if (d1 < tol && d2 < tol)
-                //         {
-                //             result.converged = true;
-                //             result.limits = {a, b};
-                //             stop = true;
-                //         }
-                //     }
-                // }
             }
         }
+
+        message.AddField("odd_sequences", odd_sequences_log);
+        message.AddField("odd_initial_points", odd_initial_points_log);
+        message.AddField("odd_cond_points", odd_cond_points_log);
+        message.AddField("even_sequences", even_sequences_log);
+        message.AddField("even_initial_points", even_initial_points_log);
+        message.AddField("even_cond_points", even_cond_points_log);
+
+        mc::Ref file = mc::Ref<FileWriter>::Create("ShuttlePointLog.json");
+        file->Write(message.ToString());
 
         result.converged = true;
         result.limits = {z_odd.back(), z_even.back()};
