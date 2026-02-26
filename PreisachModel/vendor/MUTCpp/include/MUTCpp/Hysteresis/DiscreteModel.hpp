@@ -53,7 +53,7 @@ namespace mc
 
         void Init()
         {
-            m_R = Eigen::Matrix2d::Constant(m_Count, m_Count, std::numeric_limits<double>::quiet_NaN());
+            m_R = Eigen::MatrixXd::Constant(m_Count, m_Count, std::numeric_limits<double>::quiet_NaN());
 
             m_Indices.reserve(static_cast<std::size_t>(m_Count) * static_cast<std::size_t>(m_Count + 1) / 2);
 
@@ -76,7 +76,7 @@ namespace mc
         }
 
     private:
-        Eigen::Matrix2d m_R;
+        Eigen::MatrixXd m_R;
         std::vector<std::pair<int, int>> m_Indices;
         double m_H;
         int m_Count;

@@ -87,10 +87,9 @@ namespace mc
             CleanupState();
         }
 
-        void SetD(double d)
+        void SetBounds(std::array<double, 2> bounds)
         {
-            m_D = d;
-            m_Bounds = {-m_L + m_D, m_L + m_D};
+            m_Bounds = bounds;
         }
 
         virtual double GetMaxArea() const override
@@ -229,7 +228,7 @@ namespace mc
         {
             auto i = static_cast<uint32_t>(t / dt);
 
-            if (i == m_PrevIndex)
+            if (i == m_PrevIndex && m_KeepDerivative)
             {
                 return m_HistoryDerivative.back();
             }
@@ -277,15 +276,13 @@ namespace mc
         {
             double x_i = m_HistoryU[i];
 
-            if (x_i < -m_L || x_i > m_L)
+            if (x_i < m_Bounds[0] || x_i > m_Bounds[1])
                 return 0.0;
 
-            // if (m_InterfaceMax.isempty())
             if (m_InterfaceMax.empty())
-                return x_i - m_L;
-            // if (m_InterfaceMin.isempty())
+                return x_i + m_Bounds[0];
             if (m_InterfaceMin.empty())
-                return x_i + m_L;
+                return x_i + m_Bounds[1];
 
             double u = isnan(m_HistoryInterfaceMax[i]) ? m_InterfaceMax.back() : m_InterfaceMin.back();
             return x_i - u;
@@ -396,8 +393,7 @@ namespace mc
         }
 
     protected:
-        double m_D = 0.0;
-        std::array<double, 2> m_Bounds = {-m_L + m_D, m_L + m_D};
+        std::array<double, 2> m_Bounds = {-m_L, m_L};
         double m_PreviousInput = consts::nan;
         double m_PreviousOutput = consts::nan;
         std::vector<double> m_InterfaceMax{}, m_InterfaceMin{};
@@ -420,62 +416,50 @@ namespace mc
     class DoublePreisachModel : public PreisachModelBase
     {
     public:
-        DoublePreisachModel(double L, double d) :
-            PreisachModelBase(L), m_D({d, -d})
+        DoublePreisachModel(double L, double d, double k) :
+            PreisachModelBase(L), m_D({d, -d}), m_K(k)
         {
             assert(d >= 0);
 
             m_HistoryU = {};
             m_HistoryOutput = {};
-
-            // m_UpperModel = Ref<SinglePreisachModel>::Create(m_L + m_D[0], false, false);
-            // m_LowerModel = Ref<SinglePreisachModel>::Create(m_L - m_D[1], false, false);
-        }
-
-        DoublePreisachModel(double L, const std::array<double, 2> &d) :
-            PreisachModelBase(L), m_D({d[0], -d[1]})
-        {
-            assert(d[0] >= 0 && d[1] >= 0);
-
-            m_HistoryU = {};
-            m_HistoryOutput = {};
-
-            // m_UpperModel = Ref<SinglePreisachModel>::Create(m_L + m_D[0], false, false);
-            // m_LowerModel = Ref<SinglePreisachModel>::Create(m_L - m_D[1], false, false);
         }
 
         virtual double P(double u, int i = -1) override
         {
             if (i == m_PrevIndex)
             {
-                // return m_HistoryOutput.back();
                 return m_PreviousOutput;
             }
             m_PrevIndex = i;
 
             m_HistoryU.push_back(u);
-            double p = consts::nan;
-            /// TODO: если d == 1, то петли не соприкасаются из-за добавки +-d/2
-            if (u >= -m_L + m_D[0])
+            double p;
+            if (u >= m_D[0])
             {
                 double p1 = m_UpperModel->P(u, i);
                 double p2 = m_LowerModel->P(u, i);
-                p = p1 + p2 /*+ m_D[0] / 2.*/;
+                p = p1 + p2 + m_D[0] * m_K;
             }
             // m_D[1] is negative
-            else if (u <= m_L + m_D[1])
+            else if (u <= m_D[1])
             {
                 double p1 = m_UpperModel->P(u, i);
                 double p2 = m_LowerModel->P(u, i);
-                p = p1 + p2 /*+ m_D[1] / 2.*/;
+                p = p1 + p2 + m_D[1] * m_K;
             }
             else
             {
-                p = u;
+                p = m_K * u;
             }
             m_HistoryOutput.push_back(p);
             m_PreviousOutput = p;
             return p;
+        }
+    
+        virtual double DerivativeOperator(double t, double dt) override
+        {
+            return 0.0;
         }
 
     protected:
@@ -492,6 +476,7 @@ namespace mc
         Ref<SinglePreisachModel> m_LowerModel;
 
         std::array<double, 2> m_D;
+        double m_K;
 
         int32 m_PrevIndex = INT_MIN;
         double m_PreviousOutput = consts::nan;

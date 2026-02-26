@@ -17,10 +17,12 @@ namespace mc
     inline void display_progress(double progress,
                                  double error_estimate,
                                  double current_estimate,
-                                 std::chrono::duration<double> estimated_time_to_completion)
+                                 std::chrono::duration<double> estimated_time_to_completion,
+                                 int32_t iteration_index = -1)
     {
         int barWidth = 70;
 
+        std::cout << "Iteration: " << iteration_index << "  ";
         std::cout << "[";
         int pos = barWidth * progress;
         for (int i = 0; i < barWidth; ++i)
@@ -42,9 +44,10 @@ namespace mc
             << " seconds, estimate: "
             << std::setprecision(5)
             << current_estimate
-            << "     \r";
+            // << "     \r";
+            << "\n";
 
-        // std::cout.flush();
+        std::cout.flush();
     }
 
     namespace integrate
@@ -67,7 +70,7 @@ namespace mc
         }
 
         inline double monteCarloTriangle(const std::function<double(double, double)>& f, const Eigen::Vector2d& v1,
-                                         const Eigen::Vector2d& v2, const Eigen::Vector2d& v3)
+                                         const Eigen::Vector2d& v2, const Eigen::Vector2d& v3, int32_t iteration_index = -1)
         {
             AL_PROFILE_FUNC("mc::integrate::monteCarloTriangle");
             auto fn = [v1, v2, v3, f](const std::vector<double> &point) -> double
@@ -91,7 +94,8 @@ namespace mc
                 display_progress(mc.progress(),
                                  mc.current_error_estimate(),
                                  mc.current_estimate(),
-                                 mc.estimated_time_to_completion());
+                                 mc.estimated_time_to_completion(),
+                                 iteration_index);
             }
 
             double result = task.get();
@@ -99,9 +103,9 @@ namespace mc
             return result * area;
         }
 
-        inline double monteCarloTriangle(const std::function<double(double, double)> &f, const std::array<Eigen::Vector2d, 3>& triangle)
+        inline double monteCarloTriangle(const std::function<double(double, double)> &f, const std::array<Eigen::Vector2d, 3>& triangle, int32_t iteration_index = -1)
         {
-            return monteCarloTriangle(f, triangle[0], triangle[1], triangle[2]);
+            return monteCarloTriangle(f, triangle[0], triangle[1], triangle[2], iteration_index);
         }
     }
 }

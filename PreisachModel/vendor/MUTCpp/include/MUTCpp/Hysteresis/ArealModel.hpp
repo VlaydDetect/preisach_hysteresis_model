@@ -74,7 +74,7 @@ namespace mc
                                    const auto &[area, triangle] = elem;
 
                                    positive += integrate::monteCarloTriangle(
-                                       m_EverettFunction.value(), triangle);
+                                       m_EverettFunction.value(), triangle, m_PrevIndex);
                                });
             }
 
@@ -93,7 +93,7 @@ namespace mc
                                {
                                    const auto &[area, triangle] = elem;
                                    negative += integrate::monteCarloTriangle(
-                                       m_EverettFunction.value(), triangle);
+                                       m_EverettFunction.value(), triangle, m_PrevIndex);
                                });
             }
 
@@ -176,24 +176,19 @@ namespace mc
     class DoubleArealPreisachModel : public DoublePreisachModel
     {
     public:
-        DoubleArealPreisachModel(double L, double d) :
-            DoublePreisachModel(L, d)
+        DoubleArealPreisachModel(double L, double d, double k) :
+            DoublePreisachModel(L, d, k)
         {
             m_UpperModel = Ref<ArealPreisachModel>::Create(m_L);
-            m_UpperModel->SetD(m_D[0]);
+            m_UpperModel->SetBounds({d, 2. * L + d});
 
             m_LowerModel = Ref<ArealPreisachModel>::Create(m_L);
-            m_LowerModel->SetD(m_D[1]);
+            m_LowerModel->SetBounds({-2. * L - d, -d});
         }
 
-        DoubleArealPreisachModel(double L, const std::array<double, 2> &d) :
-            DoublePreisachModel(L, d)
+        virtual double GetMaxArea() const override
         {
-            m_UpperModel = Ref<ArealPreisachModel>::Create(m_L);
-            m_UpperModel->SetD(m_D[0]);
-
-            m_LowerModel = Ref<ArealPreisachModel>::Create(m_L);
-            m_LowerModel->SetD(m_D[1]);
+            return m_UpperModel->GetMaxArea() + m_LowerModel->GetMaxArea();
         }
     };
 }
