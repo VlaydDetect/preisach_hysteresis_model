@@ -58,7 +58,8 @@ namespace mc
 
                 res(1, 0) = -w0 + E * model->DerivativeOperator(t, dt);
                 res(1, 1) = -gamma;
-                res(1, 2) = A * cos(x[2]);
+                // TODO: make DynamicSystem compile-time dimention
+                // res(1, 2) = A * cos(x[2]);
 
                 return res;
             };
