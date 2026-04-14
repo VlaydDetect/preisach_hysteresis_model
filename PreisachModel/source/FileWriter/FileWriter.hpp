@@ -1,9 +1,9 @@
 ﻿#pragma once
 #include <string>
 #include <fstream>
+#include <iostream>
 #include <vector>
 #include <filesystem>
-#include <iostream>
 
 #include "MUTCpp.hpp"
 
@@ -12,7 +12,8 @@ class FileWriter : public mc::RefCounted
 public:
     FileWriter(const std::string& filePath)
     {
-        m_FilePath = std::filesystem::current_path() / filePath;
+        m_FilePath = std::filesystem::absolute(filePath);
+        std::filesystem::create_directories(m_FilePath.parent_path());
         m_File = std::ofstream(m_FilePath);
         std::cout << m_FilePath;
     }
@@ -45,6 +46,10 @@ public:
         {
             m_File << text;
             m_File.close();
+        }
+        else
+        {
+            THROW_RUNTIME_ERROR(std::format("File is not open: {}", m_FilePath.string()));
         }
     }
 
