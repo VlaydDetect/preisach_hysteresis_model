@@ -41,7 +41,7 @@ namespace mc
         {
         public:
             using DSFunc = std::function<Mat(const Vec &, double, DSArgs &)>;
-            using ResetFn = std::function<void(DSArgs &, DSArgs &)>;
+            using ResetFn = std::function<void(DSArgs &, DSArgs &, uint32_t)>;
 
         public:
             /**
@@ -64,8 +64,15 @@ namespace mc
 
             virtual ~DynamicalSystem() override = default;
 
+            /**
+             * Shifts the trajectory of the system solution to the next point.
+             */
             virtual void ShiftNext(Vec &x, double &t) = 0;
 
+            /**
+             * Shifts the trajectory of the system solution to the next point.
+             * The function is not a `const` only because it changes the state of the `model' during calculations.
+             */
             virtual Vec ShiftTrajNext(const Vec &x, double t) = 0;
 
             /// Compute the state of the system after one time step.
@@ -76,14 +83,14 @@ namespace mc
              * @param w Array of deviations vectors.
              * @return Array of deviation vectors at next time step.
              */
-            virtual Vec NextLTM(Vec w) = 0;
+            virtual Vec NextLTM(const Vec& w) = 0;
 
             /**
              * Compute the state of the given system after one time step.
              * @param w Array of system vectors.
              * @return Array of system vectors at next time step.
              */
-            virtual Vec NextTM(Vec w) = 0;
+            virtual Vec NextTM(const Vec& w) = 0;
 
             Vec Shift(const Vec &x0, double period)
             {
@@ -144,7 +151,7 @@ namespace mc
             }
 
             /**
-             * Forward the system for numSteps.
+             * Forward the system for time.
              * @param time Time of simulation to take.
              * @return Trajectory of the system of dimension (numSteps + 1, m_Dimension).
              */
@@ -178,19 +185,19 @@ namespace mc
             double GetDeltaTime() const { return m_DeltaTime; }
 
             /// Reset a system solution to x0 and time to t0
-            void Reset()
+            void Reset(uint32_t reset_idx = 0)
             {
                 m_X = m_X0;
                 m_T = m_T0;
 
                 if (m_ResetFn.has_value())
                 {
-                    m_ResetFn.value()(m_Args, m_NextArgs);
+                    m_ResetFn.value()(m_Args, m_NextArgs, reset_idx);
                 }
             }
 
             /// Update x0 and reset a system solution to x0 and time to t0
-            void ResetTo(const Vec &x0)
+            void ResetTo(const Vec &x0, uint32_t reset_idx = 0)
             {
                 m_X0 = x0;
                 m_X = m_X0;
@@ -198,7 +205,7 @@ namespace mc
 
                 if (m_ResetFn.has_value())
                 {
-                    m_ResetFn.value()(m_Args, m_NextArgs);
+                    m_ResetFn.value()(m_Args, m_NextArgs, reset_idx);
                 }
             }
 
@@ -212,17 +219,27 @@ namespace mc
                 m_ResetFn = fn;
             }
 
-            void CallResetFn()
+            void CallResetFn(uint32_t reset_idx = 0)
             {
                 if (m_ResetFn.has_value())
                 {
-                    m_ResetFn.value()(m_Args, m_NextArgs);
+                    m_ResetFn.value()(m_Args, m_NextArgs, reset_idx);
                 }
             }
 
             void ResetSystemTime()
             {
                 m_T = m_T0;
+            }
+            
+            void SetArgs(const DSArgs& args)
+            {
+                m_Args = args;
+            }
+            
+            void SetNextArgs(const DSArgs& args)
+            {
+                m_NextArgs = args;
             }
 
             void AddAndSetArg(const std::string &name, const Vote &arg)
@@ -259,6 +276,11 @@ namespace mc
             {
                 return m_X;
             }
+            
+            double GetT() const
+            {
+                return m_T;
+            }
 
         protected:
             Vec m_X0;
@@ -271,12 +293,6 @@ namespace mc
             std::optional<ResetFn> m_ResetFn;
             double m_DeltaTime;
             DSArgs m_Args, m_NextArgs;
-
-            friend std::vector<std::pair<double, int>> mLCE_DivergenceDegreeTest(DynamicalSystem *system,
-                double timeForward, double e, double T, int M, uint8_t n, bool linearize, bool useMult);
-
-            friend std::pair<double, Matrix<double>> Benettin_mLCE(DynamicalSystem *system, double timeForward,
-                                                                   double e, double T, int M, bool linearize);
         };
 
         /// Continuous dynamical system
@@ -306,13 +322,6 @@ namespace mc
             virtual void Next() override
             {
                 AL_PROFILE_FUNC("ContinuousDS::Next");
-                // auto k1 = m_Function(m_X, m_T, m_Args);
-                // auto k2 = m_Function(m_X + (m_DeltaTime / 2.0) * k1, m_T + (m_DeltaTime / 2.0), m_Args);
-                // auto k3 = m_Function(m_X + (m_DeltaTime / 2.0) * k2, m_T + (m_DeltaTime / 2.0), m_Args);
-                // auto k4 = m_Function(m_X + m_DeltaTime * k3, m_T + m_DeltaTime, m_Args);
-                // m_X += (m_DeltaTime / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4);
-                // m_T += m_DeltaTime;
-
                 m_X = detail::rk4(m_Function, m_X, m_T, m_DeltaTime, m_Args);
                 m_T += m_DeltaTime;
             }
@@ -322,7 +331,7 @@ namespace mc
              * @param w Array of deviations vectors.
              * @return Array of deviations vectors at next time step
              */
-            virtual Vec NextLTM(Vec w) override
+            virtual Vec NextLTM(const Vec& w) override
             {
                 AL_PROFILE_FUNC("ContinuousDS::NextLTM");
                 auto jac = m_Jacobian(m_X, m_T, m_Args);
@@ -334,7 +343,7 @@ namespace mc
                 return res;
             }
 
-            virtual Vec NextTM(Vec w) override
+            virtual Vec NextTM(const Vec& w) override
             {
                 AL_PROFILE_FUNC("ContinuousDS::NextTM");
                 auto k1 = m_Function(w, m_T, m_NextArgs);

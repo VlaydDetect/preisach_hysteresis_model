@@ -248,6 +248,7 @@ namespace mc
                 }
 
                 default:
+                    return;
                     THROW_RUNTIME_ERROR("Vote type is not writable to json");
                 }
             }
@@ -257,8 +258,20 @@ namespace mc
         };
 
         using DSArgs = std::unordered_map<std::string, Vote>;
+        
+        inline json::JsonDocument dsArgsToJsonDoc(const DSArgs& args)
+        {
+            json::JsonDocument doc(args | std::ranges::views::keys | std::ranges::to<std::vector>());
+            
+            for (auto &[name, value] : args)
+            {
+                value.WriteFieldToDoc(doc, name);
+            }
+            
+            return doc;
+        }
 
-        inline void WriteVotesToDoc(mc::json::JsonDocument &doc, const std::string &name,
+        inline void WriteVotesToDoc(json::JsonDocument &doc, const std::string &name,
                                     const std::vector<Vote> &votes,
                                     VoteDataType type)
         {
