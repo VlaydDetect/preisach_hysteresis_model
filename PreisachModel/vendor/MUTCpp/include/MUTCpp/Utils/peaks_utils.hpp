@@ -46,19 +46,20 @@ namespace mc
         }
 
         std::vector<Eigen::Index> mids, lefts, rights;
-        mids.reserve(signal.size() / 2);
-        lefts.reserve(signal.size() / 2);
-        rights.reserve(signal.size() / 2);
+        const Eigen::Index reserve_size = signal.size() / 2;
+        mids.reserve(reserve_size);
+        lefts.reserve(reserve_size);
+        rights.reserve(reserve_size);
 
-        const int n = static_cast<int>(signal.size());
-        int i = 1;
-        const int i_max = n - 1;
+        const Eigen::Index n = signal.size();
+        Eigen::Index i = 1;
+        const Eigen::Index i_max = n - 1;
 
         while (i < i_max)
         {
             if (signal[i - 1] < signal[i])
             {
-                int i_ahead = i + 1;
+                Eigen::Index i_ahead = i + 1;
                 while (i_ahead < i_max && signal[i_ahead] == signal[i])
                 {
                     ++i_ahead;
@@ -74,10 +75,11 @@ namespace mc
             ++i;
         }
 
-        const ArrayXI mid = Eigen::Map<ArrayXI>(mids.data(), mids.size());
-        const ArrayXI left = Eigen::Map<ArrayXI>(lefts.data(), lefts.size());
-        const ArrayXI right = Eigen::Map<ArrayXI>(rights.data(), rights.size());
-        return {mid, left, right};
+        return {
+            Eigen::Map<ArrayXI>(mids.data(), mids.size()),
+            Eigen::Map<ArrayXI>(lefts.data(), lefts.size()),
+            Eigen::Map<ArrayXI>(rights.data(), rights.size())
+        };
     }
 
     /// Parse condition arguments for `find_peaks`.
@@ -126,33 +128,25 @@ namespace mc
     inline std::tuple<ArrayXb, ArrayXd, ArrayXd> select_by_peak_threshold(
         const ArrayXd &x, const ArrayXI &peaks, double tmin, double tmax)
     {
-        ArrayXd center = x(peaks);             // x[peaks]
-        ArrayXd left   = x(peaks - 1);  // x[peaks-1]
-        ArrayXd right  = x(peaks + 1);  // x[peaks+1]
-
-        // 2 x N
-        Eigen::MatrixXd stacked_thresholds(2, peaks.size());
-        stacked_thresholds.row(0) = (center - left).matrix().transpose();
-        stacked_thresholds.row(1) = (center - right).matrix().transpose();
+        ArrayXd center = x(peaks);
+        
+        // Избегаем создания Eigen::MatrixXd. Используем нативные одномерные операции.
+        ArrayXd left_thresholds = center - x(peaks - 1);
+        ArrayXd right_thresholds = center - x(peaks + 1);
 
         ArrayXb keep = ArrayXb::Constant(peaks.size(), true);
         
         if (!isnan(tmin))
         {
-            Eigen::RowVectorXd min_thresholds = stacked_thresholds.colwise().minCoeff();
-            keep = keep && (min_thresholds.array() >= tmin);
+            // Поэлементный минимум из двух одномерных массивов
+            keep = keep && (left_thresholds.min(right_thresholds) >= tmin);
         }
         if (!isnan(tmax))
         {
-            Eigen::RowVectorXd max_thresholds = stacked_thresholds.colwise().maxCoeff();
-            keep = keep && (max_thresholds.array() <= tmax);
+            keep = keep && (left_thresholds.max(right_thresholds) <= tmax);
         }
 
-        return {
-            keep,
-            stacked_thresholds.row(0).transpose().array(),
-            stacked_thresholds.row(1).transpose().array()
-        };
+        return {keep, left_thresholds, right_thresholds};
     }
 
     /// Evaluate which peaks fulfill the distance condition.
@@ -163,29 +157,26 @@ namespace mc
     /// @return: A boolean mask evaluating to true where `peaks` fulfill the distance condition.
     inline ArrayXb select_by_peak_distance(const ArrayXI &peaks, const ArrayXd &priority, double distance)
     {
-        const int peaks_size = peaks.size();
-        if (peaks_size == 0)
-            return ArrayXb();
-        uint32 dist = static_cast<uint32>(std::ceil(distance));
+        const Eigen::Index peaks_size = peaks.size();
+        if (peaks_size == 0) return ArrayXb();
+        
+        const Eigen::Index dist = static_cast<Eigen::Index>(std::ceil(distance));
         ArrayXb keep = ArrayXb::Constant(peaks_size, true);
 
         // Create map from `i` (index for `peaks` sorted by `priority`) to `j` (index
         // for `peaks` sorted by position). This allows to iterate `peaks` and `keep`
         // with `j` by order of `priority` while still maintaining the ability to
         // step to neighbouring peaks with (`j` + 1) or (`j` - 1).
-        ArrayXI priority_to_position = Eigen::argsort(priority).array();
+        ArrayXI priority_to_position = argsort(priority);
 
-        for (const auto i : range(peaks_size - 1, -1, -1))
+        for (Eigen::Index i = peaks_size - 1; i >= 0; --i)
         {
             // "Translate" `i` to `j` which points to the current peak whose neighbors are to be evaluated
-            int j = priority_to_position[i];
-            if (keep[j] == 0)
-            {
-                // Skip evaluation for peak already marked as "don't keep"
-                continue;
-            }
+            Eigen::Index j = priority_to_position[i];
+            // Skip evaluation for peak already marked as "don't keep"
+            if (!keep[j]) continue;
 
-            int k = j - 1;
+            Eigen::Index k = j - 1;
             // Flag "earlier" peaks for removal until minimal distance is exceeded
             while (0 <= k && peaks[j] - peaks[k] < dist)
             {
@@ -237,16 +228,18 @@ namespace mc
     inline std::tuple<ArrayXd, ArrayXI, ArrayXI> peak_prominences(
         const ArrayXd &x, const ArrayXI &peaks, int32 wlen)
     {
-        const int n = peaks.size();
+        const Eigen::Index n = peaks.size();
         ArrayXd prominences(n);
         ArrayXI left_bases(n), right_bases(n);
         bool show_warning = false;
 
-        for (const auto peak_nr : range(n))
+        const Eigen::Index x_max_idx = x.size() - 1;
+
+        for (Eigen::Index peak_nr = 0; peak_nr < n; ++peak_nr)
         {
-            int32 peak = peaks[peak_nr];
-            int32 i_min = 0;
-            int32 i_max = x.size() - 1;
+            Eigen::Index peak = peaks[peak_nr];
+            Eigen::Index i_min = 0;
+            Eigen::Index i_max = x_max_idx;
             if (!all_less(i_min, peak, i_max))
             {
                 std::string errMsg = std::format("peak {} is not a valid index for `x`", peak);
@@ -258,14 +251,14 @@ namespace mc
                 // Adjust a window around the evaluated peak (within bounds);
                 // if wlen is even the resulting window length is implicitly
                 // rounded to the next odd integer
-                i_min = max(peak - wlen / 2, i_min);
-                i_max = min(peak + wlen / 2, i_max);
+                i_min = std::max<Eigen::Index>(peak - wlen / 2, i_min);
+                i_max = std::min<Eigen::Index>(peak + wlen / 2, i_max);
             }
 
             // Find the left base in an interval [i_min, peak]
             int32 i = left_bases[peak_nr] = peak;
             double left_min = x[peak];
-            while (i_min <= i and x[i] <= x[peak])
+            while (i >= i_min && x[i] <= x[peak])
             {
                 if (x[i] < left_min)
                 {
@@ -278,7 +271,7 @@ namespace mc
             // Find the right base in an interval [peak, i_max]
             i = right_bases[peak_nr] = peak;
             double right_min = x[peak];
-            while (i <= i_max and x[i] <= x[peak])
+            while (i <= i_max && x[i] <= x[peak])
             {
                 if (x[i] < right_min)
                 {
@@ -288,11 +281,8 @@ namespace mc
                 i += 1;
             }
 
-            prominences[peak_nr] = x[peak] - max(left_min, right_min);
-            if (prominences[peak_nr] == 0)
-            {
-                show_warning = true;
-            }
+            prominences[peak_nr] = x[peak] - std::max(left_min, right_min);
+            if (prominences[peak_nr] == 0) show_warning = true;
         }
 
         if (show_warning)
@@ -332,11 +322,11 @@ namespace mc
             THROW_INVALID_ARGUMENT_ERROR("arrays in `prominence_data` must have the same shape as `peaks`");
         }
 
-        for (const auto p : range(n))
+        for (Eigen::Index p = 0; p < n; ++p)
         {
-            uint32 i_min = left_bases[p];
-            uint32 i_max = right_bases[p];
-            uint32 peak = peaks[p];
+            Eigen::Index i_min = left_bases[p];
+            Eigen::Index i_max = right_bases[p];
+            Eigen::Index peak = peaks[p];
             if (!(0 <= i_min && i_min <= peak && peak <= i_max && i_max < x.size()))
             {
                 THROW_INVALID_ARGUMENT_ERROR(std::format("prominence data is invalid for peak {}", peak));

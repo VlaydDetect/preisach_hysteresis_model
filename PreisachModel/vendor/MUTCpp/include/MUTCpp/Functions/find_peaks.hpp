@@ -36,15 +36,11 @@ namespace mc
     struct PeaksProperties
     {
     public:
-        ArrayXd peak_heights = Eigen::ArrayXd::Constant(1, consts::nan);
-        ArrayXd left_thresholds = Eigen::ArrayXd::Constant(1, consts::nan),
-                right_thresholds = Eigen::ArrayXd::Constant(1, consts::nan);
-        ArrayXd prominences = Eigen::ArrayXd::Constant(1, consts::nan);
+        ArrayXd peak_heights;
+        ArrayXd left_thresholds, right_thresholds;
+        ArrayXd prominences;
         ArrayXI right_bases, left_bases;
-        ArrayXd widths = Eigen::ArrayXd::Constant(1, consts::nan),
-                width_heights = Eigen::ArrayXd::Constant(1, consts::nan),
-                left_ips = Eigen::ArrayXd::Constant(1, consts::nan),
-                right_ips = Eigen::ArrayXd::Constant(1, consts::nan);
+        ArrayXd widths, width_heights, left_ips, right_ips;
         ArrayXI plateau_sizes, left_edges, right_edges;
 
         auto as_tuple()
@@ -144,27 +140,45 @@ namespace mc
 
         auto [peaks, left_edges, right_edges] = local_maxima_1d(x);
         PeaksProperties properties;
+        
+        if (peaks.size() == 0) return {peaks, properties};
+        
+        // Вспомогательная функция для синхронизации всех активных параметров с новой маской
+        auto apply_mask = [&](const ArrayXb& keep) {
+            peaks = Eigen::mask(peaks, keep);
+            properties.foreach([&keep](auto &elem) {
+                // Маскируем только те массивы свойств, которые уже были инициализированы 
+                // и имеют актуальный размер (совпадающий с размером маски).
+                if (elem.size() == keep.size())
+                {
+                    elem = Eigen::mask(elem, keep);
+                }
+            });
+        };
 
         if (!plateau_size.empty())
         {
             // Evaluate plateau size
-            ArrayXI plateau_sizes = (right_edges - left_edges) + static_cast<uint32>(1);
+            properties.plateau_sizes = (right_edges - left_edges) + 1;
+            properties.left_edges = left_edges;
+            properties.right_edges = right_edges;
+
             auto [pmin, pmax] = unpack_condition_args(plateau_size);
-            auto keep = select_by_property(plateau_sizes.cast<double>(), pmin, pmax);
-            peaks = Eigen::mask(peaks, keep);
-            properties.plateau_sizes = Eigen::mask(plateau_sizes, keep);
-            properties.left_edges = Eigen::mask(left_edges, keep);
-            properties.right_edges = Eigen::mask(right_edges, keep);
+            auto keep = select_by_property(properties.plateau_sizes.cast<double>(), pmin, pmax);
+            
+            apply_mask(keep);
+            if (peaks.size() == 0) return {peaks, properties}; // Ранний выход
         }
 
         if (!height.empty())
         {
             // Evaluate height condition
-            ArrayXd peak_heights = x(peaks);
+            properties.peak_heights = x(peaks);
             auto [hmin, hmax] = unpack_condition_args(height);
-            auto keep = select_by_property(peak_heights, hmin, hmax);
-            peaks = Eigen::mask(peaks, keep);
-            properties.peak_heights = Eigen::mask(peak_heights, keep);
+            auto keep = select_by_property(properties.peak_heights, hmin, hmax);
+            
+            apply_mask(keep);
+            if (peaks.size() == 0) return {peaks, properties};
         }
 
         if (!threshold.empty())
@@ -172,22 +186,22 @@ namespace mc
             // Evaluate threshold condition
             auto [tmin, tmax] = unpack_condition_args(threshold);
             auto [keep, left_thresholds, right_thresholds] = select_by_peak_threshold(x, peaks, tmin, tmax);
-            peaks = Eigen::mask(peaks, keep);
-            properties.left_thresholds = Eigen::mask(left_thresholds, keep);
-            properties.right_thresholds = Eigen::mask(right_thresholds, keep);
+            
+            properties.left_thresholds = left_thresholds;
+            properties.right_thresholds = right_thresholds;
+            
+            apply_mask(keep);
+            if (peaks.size() == 0) return {peaks, properties};
         }
 
         if (!isnan(distance))
         {
             auto keep = select_by_peak_distance(peaks, x(peaks), distance);
-            peaks = Eigen::mask(peaks, keep);
-            properties.foreach([&keep](auto &elem)
-            {
-                elem = Eigen::mask(elem, keep);
-            });
+            apply_mask(keep);
+            if (peaks.size() == 0) return {peaks, properties};
         }
 
-        if (!prominence.empty() && !width.empty())
+        if (!prominence.empty() || !width.empty())
         {
             // Calculate prominence (required for both conditions)
             wlen = arg_wlen_as_expected(wlen);
@@ -202,11 +216,9 @@ namespace mc
             // Evaluate prominence condition
             auto [pmin, pmax] = unpack_condition_args(prominence);
             auto keep = select_by_property(properties.prominences, pmin, pmax);
-            peaks = Eigen::mask(peaks, keep);
-            properties.foreach([&keep](auto &elem)
-            {
-                elem = Eigen::mask(elem, keep);
-            });
+            
+            apply_mask(keep);
+            if (peaks.size() == 0) return {peaks, properties};
         }
 
         if (!width.empty())
@@ -214,18 +226,15 @@ namespace mc
             // Calculate widths
             auto [new_widths, new_width_heights, new_left_ips, new_right_ips] = peak_widths(
                 x, peaks, rel_height, properties.prominences, properties.left_bases, properties.right_bases);
+            
             properties.widths = new_widths;
             properties.width_heights = new_width_heights;
             properties.left_ips = new_left_ips;
             properties.right_ips = new_right_ips;
-            // Evaluate width condition
+            
             auto [wmin, wmax] = unpack_condition_args(width);
             auto keep = select_by_property(properties.widths, wmin, wmax);
-            peaks = Eigen::mask(peaks, keep);
-            properties.foreach([&keep](auto &elem)
-            {
-                elem = Eigen::mask(elem, keep);
-            });
+            apply_mask(keep);
         }
 
         return {peaks, properties};
