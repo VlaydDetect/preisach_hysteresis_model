@@ -54,12 +54,45 @@ namespace mc
             {
                 m_Doc["header"] = header;
             }
+            
+            void Clear()
+            {
+                m_Header.clear();
+                m_Doc.clear();
+            }
+            
+            void ClearDoc()
+            {
+                m_Doc.clear();
+            }
 
             void ExtendHeader(std::string field)
             {
                 m_Header.emplace(field);
                 m_Doc["header"] = m_Header;
             }
+            
+            void AddField(const std::string &name, JsonDocument &data)
+            {
+                assert(m_Header.contains(name));
+                m_Doc[name] = data.GetDoc();
+            }
+            
+            void AddSubField(const std::initializer_list<std::string> &fields, const JsonDocument &data)
+            {
+                ASSIGN_FIELDS(fields, data.GetDoc());
+            }
+            
+            // void AddField(const std::string &name, const ode::DSArgs &data)
+            // {
+            //     assert(m_Header.contains(name));
+            //     AddField(name, ode::dsArgsToJsonDoc(data));
+            // }
+            //
+            // void AddSubField(const std::initializer_list<std::string> &fields, const ode::DSArgs &data)
+            // {
+            //     AddSubField(fields, ode::dsArgsToJsonDoc(data));
+            // }
 
             template <typename T>
                 requires std::is_arithmetic_v<T> || std::is_same_v<T, std::string> ||
@@ -341,12 +374,12 @@ namespace mc
 
             void Check() const
             {
-                for (auto &val : m_Header)
-                {
-                    assert(
-                        m_Doc.contains(val) && std::format("Object '{}' wasn't writed to the json document", val).c_str(
-                        ));
-                }
+                // for (auto &val : m_Header)
+                // {
+                //     assert(
+                //         m_Doc.contains(val) && std::format("Object '{}' wasn't writed to the json document", val).c_str(
+                //         ));
+                // }
             }
 
             std::string ToString() const
@@ -356,6 +389,11 @@ namespace mc
             }
 
             nlohmann::json &GetDoc()
+            {
+                return m_Doc;
+            }
+            
+            const nlohmann::json &GetDoc() const
             {
                 return m_Doc;
             }

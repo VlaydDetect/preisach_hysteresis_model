@@ -271,7 +271,6 @@ namespace mc
             m_LastElemType = ElementType::Max;
         }
 
-        // TODO: need bounds?
         virtual double DerivativeOperator_Impl(uint32_t i)
         {
             double x_i = m_HistoryU[i];
@@ -423,6 +422,11 @@ namespace mc
 
             m_HistoryU = {};
             m_HistoryOutput = {};
+        }
+        
+        void SetD(double d)
+        {
+            m_D = {d, -d};
         }
 
         virtual double P(double u, int i = -1) override
