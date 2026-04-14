@@ -204,36 +204,41 @@ namespace Eigen
         const Eigen::Index n = v.size();
         std::vector<Eigen::Index> idx(n);
         std::iota(idx.begin(), idx.end(), 0);
-        mc::algo::stable_sort(idx.begin(), idx.end(), [&v](Eigen::Index i1, Eigen::Index i2) noexcept
+        
+        std::ranges::stable_sort(idx, [&v](Eigen::Index i1, Eigen::Index i2) noexcept
         {
-            return v[i1] < v[i2];
+            return v(i1) < v(i2);
         });
-        Eigen::Array<Eigen::Index, R, C> result = Eigen::Map<Eigen::Array<Eigen::Index, R, C>>(idx.data(), n);
-        return result;
+        
+        return Eigen::Map<Eigen::Array<Eigen::Index, R, C>>(idx.data(), n, 1);
     }
 
     template <typename Scalar, int R, int C>
-    Eigen::Array<Scalar, R, C> mask(const Eigen::Array<Scalar, R, C> &data, const Eigen::Array<bool, R, C> &mask)
+    Eigen::Array<Scalar, R, C> mask(const Eigen::Array<Scalar, R, C> &data, const Eigen::Array<bool, R, C> &mask_arr)
     {
-        if (data.rows() != mask.rows())
+        if (data.rows() != mask_arr.rows() || data.cols() != mask_arr.cols())
         {
-            THROW_INVALID_ARGUMENT_ERROR("mask must be the same size as data.");
+            THROW_INVALID_ARGUMENT_ERROR("Mask must be the same size as data.");
+        }
+        
+        const Eigen::Index count = mask_arr.count();
+        if (count == 0)
+        {
+            return Eigen::Array<Scalar, R, C>();
         }
 
-        std::vector<Scalar> selected;
-        selected.reserve(data.size());
+        Eigen::Array<Scalar, R, C> result(count, 1);
+        Eigen::Index idx = 0;
 
-        for (Eigen::Index i = 0; i < data.rows(); ++i)
+        for (Eigen::Index i = 0; i < data.size(); ++i)
         {
-            if (mask[i])
+            if (mask_arr(i))
             {
-                selected.push_back(data[i]);
+                result(idx++) = data(i);
             }
         }
 
-        return selected.empty()
-            ? Eigen::ArrayX<Scalar>()
-            : Eigen::Map<Eigen::ArrayX<Scalar>>(selected.data(), selected.size());
+        return result;
     }
 
     template <typename Derived>
