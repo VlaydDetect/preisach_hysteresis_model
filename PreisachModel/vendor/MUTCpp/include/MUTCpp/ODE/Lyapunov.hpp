@@ -7,13 +7,7 @@
 #pragma once
 
 #include "DynamicSystem.hpp"
-#include "Matrix.hpp"
 #include "Functions/log.hpp"
-#include "Functions/norm.hpp"
-#include "Functions/normalize.hpp"
-#include "Functions/eye.hpp"
-#include "Linalg/QRDecomposition.hpp"
-#include "Random/rand.hpp"
 #include "Random/randN.hpp"
 #include "Utils/doubleToString.hpp"
 #include "Utils/nestedLoop.hpp"
@@ -24,11 +18,38 @@ namespace mc
     {
         namespace detail
         {
+            /**
+             * @brief Ортогонализация базиса возмущений через QR-разложение.
+             * @param W Матрица векторов возмущений (in/out).
+             * @param norms Вектор для записи норм роста (out).
+             * @param n_lce Количество вычисляемых показателей.
+             */
+            inline void OrthogonalizeQR(Eigen::MatrixXd &W, Eigen::VectorXd &norms, int n_lce)
+            {
+                // Выполняем QR-разложение для первых n_lce столбцов
+                Eigen::HouseholderQR<Eigen::MatrixXd> qr(W.leftCols(n_lce));
+
+                // Q матрица содержит ортонормированный базис
+                Eigen::MatrixXd Q = qr.householderQ();
+
+                // R матрица (верхнетреугольная). Ее диагональные элементы равны длинам векторов
+                // возмущений после проекции на предыдущие орты.
+                Eigen::MatrixXd R = qr.matrixQR().triangularView<Eigen::Upper>();
+
+                for (int i = 0; i < n_lce; ++i)
+                {
+                    // Длина базисного вектора не может быть отрицательной
+                    norms(i) = std::abs(R(i, i));
+
+                    // Обновляем матрицу возмущений ортонормированными векторами
+                    W.col(i) = Q.col(i);
+                }
+            }
+
             inline std::array<double, 2> divergenceDegree(Ref<DynamicalSystem> system, double timeForward, double e,
                                                           Eigen::VectorXd v, double T, int M,
                                                           std::vector<Eigen::MatrixXd> &traj1,
-                                                          std::vector<Eigen::MatrixXd> &traj2,
-                                                          bool linearize = false)
+                                                          std::vector<Eigen::MatrixXd> &traj2)
             {
                 AL_PROFILE_FUNC("divergenceDegree");
 
@@ -49,7 +70,7 @@ namespace mc
                     auto count = static_cast<uint32>(T / system->GetDeltaTime());
                     while (count--)
                     {
-                        v = linearize ? system->NextLTM(v) : system->NextTM(v);
+                        v = system->NextTM(v);
                         traj2.push_back(v);
 
                         auto traj = system->Forward(1);
@@ -57,8 +78,7 @@ namespace mc
                     }
                     v -= system->GetX();
 
-                    auto norm_v = v.norm() / e;
-                    n += mc::log(norm_v);
+                    n += mc::log(v.norm() / e);
 
                     v.normalize();
                     v *= e;
@@ -67,6 +87,161 @@ namespace mc
                 }
 
                 return {n / M, mc::log(T)};
+            }
+        }
+
+        namespace power_law
+        {
+            /**
+             * @brief Вспомогательная функция вычисления усредненного логарифма расстояния для одного значения T.
+             */
+            inline double ComputeAvgLogDistForT(
+                Ref<ode::ContinuousDS> system,
+                const Vec &initial_dir, double eps, int T_steps, int M,
+                std::vector<Eigen::MatrixXd> traj1, std::vector<Eigen::MatrixXd> traj2)
+            {
+                AL_PROFILE_FUNC("mc::ode::ComputePowerLawExponent::ComputeAvgLogDistForT");
+                
+                Vec main_x = system->GetX();
+
+                // Возмущенная траектория в заданном направлении
+                Vec dir = initial_dir.normalized();
+                Vec pert_x = main_x + eps * dir;
+                
+                traj1.push_back(main_x);
+                traj1.push_back(pert_x);
+
+                double sum_log_dist = 0.0;
+
+                for (int m = 0; m < M; ++m)
+                {
+                    for (int k = 0; k < T_steps; ++k)
+                    {
+                        // Важно: вызываем NextTM для pert_x до сдвига самой системы,
+                        // чтобы внутреннее время m_T системы и аргументы совпадали.
+                        pert_x = system->NextTM(pert_x);
+                        system->Next();
+                        
+                        traj1.push_back(system->GetX());
+                        traj2.push_back(pert_x);
+                    }
+
+                    main_x = system->GetX();
+                    Vec delta = pert_x - main_x;
+                    double dist = delta.norm();
+
+                    if (dist > 1e-16)
+                    {
+                        sum_log_dist += std::log(dist);
+                        // Нормализация вектора возмущения "в том же направлении" 
+                        // (в направлении разошедшихся траекторий) до длины eps
+                        pert_x = main_x + delta * (eps / dist);
+                    }
+                    else
+                    {
+                        // Защита от схлопывания (деления на ноль)
+                        sum_log_dist += std::log(1e-16);
+                        pert_x = main_x + eps * dir; // Сброс в исходное направление
+                    }
+                    
+                    traj2[traj2.size() - 1] = pert_x;
+                }
+
+                // Усреднение за M периодов
+                return sum_log_dist / static_cast<double>(M);
+            }
+
+            /**
+             * @brief Вычисляет степенной показатель расхождения траекторий.
+             * Оценивает зависимость \ln||\delta x(T)|| = \nu \ln T + C через МНК.
+             * * @param system           Указатель на инстанс ContinuousDS.
+             * @param initial_dir      Вектор направления начального возмущения.
+             * @param eps              Длина начального возмущения \epsilon.
+             * @param Ts               Массив различных периодов времени T.
+             * @param M                Количество повторений нормализации для каждого T.
+             * @return PowerLawResult  Структура с коэффициентами \nu, C и историей вычислений.
+             */
+            inline mc::json::JsonDocument ComputePowerLawExponent(
+                Ref<ode::ContinuousDS> system,
+                double timeForward,
+                const Vec &initial_dir,
+                double eps,
+                const Eigen::VectorXd &Ts,
+                int M)
+            {
+                AL_PROFILE_FUNC("mc::ode::ComputePowerLawExponent");
+
+                const double dt = system->GetDeltaTime();
+                const int num_points = static_cast<int>(Ts.size());
+
+                Eigen::VectorXd X; // ln(T)
+                Eigen::VectorXd Y; // ln||delta x||
+
+                X.resize(num_points);
+                Y.resize(num_points);
+                
+                std::unordered_map<std::string, std::vector<Eigen::MatrixXd>> trajs1 = {}, trajs2 = {};
+
+                // 1. Сбор данных для каждого T
+                for (int i = 0; i < Ts.size(); ++i)
+                {
+                    const double T = Ts(i);
+                    // Сброс системы в начальное положение m_X0 для каждого измерения,
+                    // чтобы сравнивать расхождение на одной и той же части аттрактора.
+                    // (При необходимости нужно также сбрасывать состояние модели Прейзаха через ResetFn).
+                    system->Reset();
+                    system->Forward(timeForward);
+
+                    std::vector<Eigen::MatrixXd> traj1, traj2;
+                    double avg_log_d = ComputeAvgLogDistForT(system, initial_dir, eps, T / dt, M, traj1, traj2);
+                    
+                    const auto strT = mc::doubleToString(T, 2);
+                    trajs1.insert({strT, traj1});
+                    trajs2.insert({strT, traj2});
+                    
+                    X(i) = T;
+                    Y(i) = avg_log_d;
+                }
+                X = X.array().log();
+
+                // 2. Линейная регрессия (МНК)
+                double sum_x = 0.0, sum_y = 0.0, sum_xx = 0.0, sum_xy = 0.0;
+                for (int i = 0; i < num_points; ++i)
+                {
+                    sum_x += X[i];
+                    sum_y += Y[i];
+                    sum_xx += X[i] * X[i];
+                    sum_xy += X[i] * Y[i];
+                }
+
+                double nu;
+                double C;
+                
+                double denominator = num_points * sum_xx - sum_x * sum_x;
+                if (std::abs(denominator) > 1e-12)
+                {
+                    nu = (num_points * sum_xy - sum_x * sum_y) / denominator;
+                    C = (sum_xx * sum_y - sum_x * sum_xy) / denominator; // Эквивалент (sum_y - nu * sum_x) / N
+                }
+                else
+                {
+                    // Защита от вырожденного случая (например, если передано только одно значение T)
+                    nu = 0.0;
+                    C = 0.0;
+                }
+                
+                mc::json::JsonDocument message({"name", "e", "M", "Ts", "ns", "nu", "C", "trajs1", "trajs2"});
+                message.AddField("name", "DivergenceDegreeRegressionData");
+                message.AddField("e", eps);
+                message.AddField("M", M);
+                message.AddField("Ts", X);
+                message.AddField("ns", Y);
+                message.AddField("nu", nu);
+                message.AddField("C", C);
+                message.AddField("trajs1", trajs1);
+                message.AddField("trajs2", trajs2);
+
+                return message;
             }
         }
 
@@ -158,6 +333,7 @@ namespace mc
                                                                 int M = 30, bool linearize = true)
         {
             AL_PROFILE_FUNC("Benettin_mLCE");
+            system->Reset();
             system->Forward(timeForward);
 
             double mLCE = 0.0;
@@ -225,7 +401,7 @@ namespace mc
             std::unordered_map<std::string,
                                std::unordered_map<std::string, std::array<std::vector<double>, 4>>> allLoops = {};
 
-            system->SetResetFn([areaCoeff](DSArgs &args, DSArgs &nextArgs)
+            system->SetResetFn([areaCoeff](DSArgs &args, DSArgs &nextArgs, uint32_t)
             {
                 constexpr double L = 1.0;
                 auto model1 = mc::Ref<mc::ArealPreisachModel>::Create(L, false, false);
@@ -289,6 +465,145 @@ namespace mc
             doc["loops"] = allLoops;
 
             return message;
+        }
+
+        /**
+         * Детектор сингулярных точек производной оператора Прейзаха.
+         * В данном случае - это смена монотонности входа x, или смена знака производной v.
+         * @param curr_x Текущее состояние системы.
+         * @param next_x Следующее состояние системы.
+         * @return bool  True, если следующая точка сингулярная.
+         */
+        inline bool PreisachInputSingularityDetector(const Vec &curr_x, const Vec &next_x)
+        {
+            constexpr double eps = 0.001;
+            return !(std::abs(curr_x[1]) < eps) && (curr_x[1] * next_x[1] < 0.0 || std::abs(next_x[1]) < eps);
+        }
+
+        struct LCEResult
+        {
+            Eigen::VectorXd spectrum; // Итоговые показатели Ляпунова
+            Eigen::MatrixXd history; // История: строки - шаги (время), столбцы - показатели
+        };
+
+        /**
+         * @brief Вычисление спектра показателей Ляпунова (LCEs) модифицированным алгоритмом Бенеттина.
+         * Адаптировано для негладких систем.
+         * @param system             Система.
+         * @param timeForward        Пропускаемое время (время выхода на аттрактор).
+         * @param total_time         Общее время интегрирования.
+         * @param ortho_steps        Период (в шагах) классической регулярной ортогонализации (например, 10-100).
+         * @param singularity_check  Предикат-детектор пересечения поверхности сингулярности 
+         * между текущим состоянием и состоянием на следующем шаге.
+         * @param num_lce             Количество показателей Ляпунова для вычисления 
+         * (если не задано, используется размерность системы) 
+         * @return [Eigen::VectorXd, Eigen::MatrixXd]   Спектр из N показателей Ляпунова (где N - размерность системы)
+         * и вектор истории каждого из них (построчно).
+         */
+        inline LCEResult ComputeLCEs(
+            Ref<ode::DynamicalSystem> system,
+            double timeForward,
+            double total_time,
+            uint32_t ortho_steps,
+            std::optional<int> num_lce = std::nullopt,
+            const std::function<bool(const Vec &curr_x, const Vec &next_x)> &singularity_check =
+                PreisachInputSingularityDetector)
+        {
+            if (num_lce.has_value())
+            {
+                assert(*num_lce <= system->GetDimension());
+            }
+
+            AL_PROFILE_FUNC("mc::ode::ComputeLCEs");
+
+            system->Reset();
+            system->Forward(timeForward);
+
+            const int dim = system->GetDimension();
+            const int n_lce = num_lce.value_or(dim);
+            const double dt = system->GetDeltaTime();
+            const int num_iterations = static_cast<int>(total_time / dt);
+
+            LCEResult result;
+            result.spectrum = Eigen::VectorXd::Zero(n_lce);
+            result.history = Eigen::MatrixXd::Zero(ortho_steps, n_lce);
+
+            // Инициализация матрицы возмущений единичной матрицей
+            Eigen::MatrixXd W = Eigen::MatrixXd::Identity(dim, dim);
+
+            Eigen::VectorXd lce_sums = Eigen::VectorXd::Zero(n_lce);
+            Eigen::VectorXd current_norms = Eigen::VectorXd::Zero(n_lce);
+
+            const uint32_t orto_step = num_iterations / ortho_steps;
+            int32_t hist_idx = -1;
+            bool crossed_singularity = false;
+            for (int step = 1; step <= num_iterations; ++step)
+            {
+                Vec current_x = system->GetX();
+                Vec next_x = system->ShiftTrajNext(current_x, system->GetT());
+                
+                if (crossed_singularity)
+                {
+                    crossed_singularity = singularity_check(current_x, next_x);
+                    continue;
+                }
+                
+                crossed_singularity = singularity_check(current_x, next_x);
+
+                // Детекция возможного пересечения сингулярности в пределах [current_t, current_t + dt]
+                // "Заглядываем" на шаг вперёд (без изменения состояния системы), 
+                // чтобы понять, пересечем ли мы поверхность потери гладкости.
+                // Интегрирование касательного пространства (уравнений в вариациях)
+                Eigen::MatrixXd W_next(dim, dim);
+                for (int i = 0; i < n_lce; ++i)
+                {
+                    W_next.col(i) = system->NextLTM(W.col(i));
+                }
+
+                // Делаем физический шаг системы (обновляет внутренние m_X и m_T)
+                system->Next();
+
+                // Если попали на точку сингулярности ИЛИ подошло время плановой ортогонализации
+                if (crossed_singularity || (step > 0 && step % orto_step == 0))
+                {
+                    ++hist_idx;
+                    // Вызов QR-ортогонализации
+                    detail::OrthogonalizeQR(W_next, current_norms, n_lce);
+
+                    for (int i = 0; i < n_lce; ++i)
+                    {
+                        if (current_norms(i) > 1e-15)
+                        {
+                            lce_sums(i) += std::log(current_norms(i));
+                        }
+                    }
+                    W = W_next;
+                }
+                else
+                {
+                    W = W_next;
+                    continue;
+                }
+                
+                if (hist_idx >= result.history.rows())
+                {
+                    result.history.conservativeResize(static_cast<Eigen::Index>(1.5 * result.history.rows()), Eigen::NoChange);
+                }
+
+                // Запись в историю. LCE = (Сумма логарифмов) / Время
+                // Для первого шага предотвращаем деление на ноль
+                double time_divisor = (system->GetT() > 0.0) ? system->GetT() : dt;
+                for (int i = 0; i < n_lce; ++i)
+                {
+                    result.history(hist_idx, i) = lce_sums(i) / time_divisor;
+                }
+            }
+            
+            result.history.conservativeResize(hist_idx, Eigen::NoChange);
+
+            // Вычисляем итоговые показатели как предел усредненной суммы
+            result.spectrum = lce_sums / system->GetT();
+            return result;
         }
 
         //#region ------------------------------------------ Find Best Params ------------------------------------------
@@ -493,33 +808,36 @@ namespace mc
         inline double FindDivergenceDegree(const Ref<DynamicalSystem> &system, double timeForward, double e,
                                            const Eigen::VectorXd &v,
                                            double T, int M, std::vector<Eigen::MatrixXd> &traj1,
-                                           std::vector<Eigen::MatrixXd> &traj2, bool linearize = false)
+                                           std::vector<Eigen::MatrixXd> &traj2)
         {
             AL_PROFILE_FUNC("FindDivergenceDegree");
 
-            const auto [lnN, lnT] = detail::divergenceDegree(system, timeForward, e, v, T, M, traj1, traj2,
-                                                             linearize);
+            const auto [lnN, lnT] = detail::divergenceDegree(system, timeForward, e, v, T, M, traj1, traj2);
             return lnN / lnT;
         }
 
-        inline mc::json::JsonDocument DivergenceDegreeRegressionData(const Ref<DynamicalSystem> &system,
+        inline mc::json::JsonDocument DivergenceDegreeRegressionData(Ref<DynamicalSystem> system,
                                                                      double timeForward,
                                                                      double e, const Eigen::VectorXd &v,
-                                                                     const Eigen::VectorXd &Ts, int M,
-                                                                     std::unordered_map<
-                                                                         std::string, std::vector<Eigen::MatrixXd>> &
-                                                                     trajs1,
-                                                                     std::unordered_map<
-                                                                         std::string, std::vector<Eigen::MatrixXd>> &
-                                                                     trajs2,
-                                                                     std::vector<double> &ns)
+                                                                     const Eigen::VectorXd &Ts, int M)
         {
             AL_PROFILE_FUNC("FindDivergenceDegree");
+
+            system->Reset();
+
+            std::unordered_map<std::string, std::vector<Eigen::MatrixXd>>
+                trajs1 = {}, trajs2 = {};
+            std::vector<double> ns;
+
+            trajs1.reserve(Ts.size());
+            trajs2.reserve(Ts.size());
+            ns.reserve(Ts.size());
+
 
             for (const auto &T : Ts)
             {
                 std::vector<Eigen::MatrixXd> traj1, traj2;
-                const auto [n, t] = detail::divergenceDegree(system, timeForward, e, v, T, M, traj1, traj2, false);
+                const auto [n, t] = detail::divergenceDegree(system, timeForward, e, v, T, M, traj1, traj2);
 
                 const auto strT = mc::doubleToString(T, 2);
 
@@ -530,10 +848,8 @@ namespace mc
             }
 
             Eigen::VectorXd TsLog = Ts.array().log();
-            mc::json::JsonDocument message({"name", "method", "dt", "e", "M", "Ts", "ns", "trajs1", "trajs2"});
-            message.AddField("name", "RodosLCEs");
-            message.AddField("method", "plot");
-            message.AddField("dt", system->GetDeltaTime());
+            mc::json::JsonDocument message({"name", "e", "M", "Ts", "ns", "trajs1", "trajs2"});
+            message.AddField("name", "DivergenceDegreeRegressionData");
             message.AddField("e", e);
             message.AddField("M", M);
             message.AddField("Ts", TsLog);
