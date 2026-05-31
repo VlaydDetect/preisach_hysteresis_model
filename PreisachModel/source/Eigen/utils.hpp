@@ -204,12 +204,12 @@ namespace Eigen
         const Eigen::Index n = v.size();
         std::vector<Eigen::Index> idx(n);
         std::iota(idx.begin(), idx.end(), 0);
-        
+
         std::ranges::stable_sort(idx, [&v](Eigen::Index i1, Eigen::Index i2) noexcept
         {
             return v(i1) < v(i2);
         });
-        
+
         return Eigen::Map<Eigen::Array<Eigen::Index, R, C>>(idx.data(), n, 1);
     }
 
@@ -220,7 +220,7 @@ namespace Eigen
         {
             THROW_INVALID_ARGUMENT_ERROR("Mask must be the same size as data.");
         }
-        
+
         const Eigen::Index count = mask_arr.count();
         if (count == 0)
         {
@@ -300,5 +300,43 @@ namespace Eigen
         ret += "}";
 
         return ret;
+    }
+
+    struct RegressionResult
+    {
+        double slope;
+        double intercept;
+        double r;
+    };
+
+    inline RegressionResult Regression(const Eigen::Ref<const Eigen::ArrayXd> &X,
+                                       const Eigen::Ref<const Eigen::ArrayXd> &Y)
+    {
+        RegressionResult result;
+
+        const double xmean = X.mean();
+        const double ymean = Y.mean();
+
+        const double ssxm = (X - xmean).square().mean();
+        const double ssxym = ((X - xmean) * (Y - ymean)).mean();
+        const double ssym = (Y - ymean).square().mean();
+
+        if (std::abs(ssxm) < 1e-12 || std::abs(ssym) < 1e-12)
+        {
+            result.r = std::abs(ssxym) < 1e-12 ? mc::consts::nan : 0.0;
+        }
+        else
+        {
+            result.r = ssxym / std::sqrt(ssxm * ssym);
+            if (result.r > 1.0)
+                result.r = 1.0;
+            else if (result.r < -1.0)
+                result.r = -1.0;
+        }
+
+        result.slope = ssxym / ssxm;
+        result.intercept = ymean - result.slope * xmean;
+
+        return result;
     }
 }
