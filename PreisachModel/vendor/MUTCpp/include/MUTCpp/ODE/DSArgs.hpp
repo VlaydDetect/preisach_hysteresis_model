@@ -202,6 +202,7 @@ namespace mc
 
             Ref<PreisachModelBase> &toPreisachModel()
             {
+                auto p = std::get<Ref<PreisachModelBase>>(m_Value);
                 if (auto pval = std::get_if<Ref<PreisachModelBase>>(&m_Value))
                     return *pval;
                 THROW_RUNTIME_ERROR("Vote: not a PreisachModel");
