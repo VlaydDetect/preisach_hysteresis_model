@@ -83,7 +83,6 @@ namespace mc
                 Eigen::Index totalPoints = traj.rows();
                 Eigen::Index numIntersections = totalPoints / stepsPerPeriod;
     
-                // Результирующая матрица содержит только координаты X и V
                 Eigen::MatrixXd poincareMap(numIntersections, dim); 
     
                 for (Eigen::Index i = 0; i < numIntersections; ++i)
@@ -96,14 +95,30 @@ namespace mc
             }
         };
 
-        inline Eigen::MatrixXd PoincareMapping(const Eigen::MatrixXd &traj, uint32_t dim,
+        inline Eigen::MatrixXd PoincareMapping(mc::Ref<mc::ode::DynamicalSystem> system, double time, uint32_t dim,
                                                const Eigen::VectorXd &PlaneNormal, const Eigen::VectorXd &PlanePoint)
         {
+            system->ResetArgs();
+            system.Reset();
+            
+            const auto traj = system->Forward(time);
+            
+            system->ResetArgs();
+            system.Reset();
+            
             return PoincareMapGenerator::ComputeMap(traj, dim, PoincareMapGenerator::PoincareSection(PlaneNormal, PlanePoint));
         }
         
-        inline Eigen::MatrixXd PoincareStroboscopicMapping(const Eigen::MatrixXd &traj, uint32_t dim, double period, double dt)
+        inline Eigen::MatrixXd PoincareStroboscopicMapping(mc::Ref<mc::ode::DynamicalSystem> system, double periodMultiplier, uint32_t dim, double period, double dt)
         {
+            system->ResetArgs();
+            system.Reset();
+            
+            const auto traj = system->Forward(periodMultiplier * period);
+            
+            system->ResetArgs();
+            system.Reset();
+            
             return PoincareMapGenerator::ComputeStroboscopicMap(traj, dim, period, dt);
         }
     }
