@@ -87,6 +87,7 @@
 #include "Functions/eye.hpp"
 #include "Functions/fillDiagnol.hpp"
 #include "Functions/find.hpp"
+#include "Functions/find_extrema.hpp"
 #include "Functions/find_peaks.hpp"
 #include "Functions/fix.hpp"
 #include "Functions/flip.hpp"
