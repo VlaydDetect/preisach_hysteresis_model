@@ -339,4 +339,32 @@ namespace Eigen
 
         return result;
     }
+    
+    /**
+             * @brief Ортогонализация базиса возмущений через QR-разложение.
+             * @param W Матрица векторов возмущений (in/out).
+             * @param norms Вектор для записи норм роста (out).
+             * @param n_lce Количество вычисляемых показателей.
+             */
+    inline void OrthogonalizeQR(Eigen::MatrixXd &W, Eigen::VectorXd &norms, int n_lce)
+    {
+        // Выполняем QR-разложение для первых n_lce столбцов
+        Eigen::HouseholderQR<Eigen::MatrixXd> qr(W.leftCols(n_lce));
+
+        // Q матрица содержит ортонормированный базис
+        Eigen::MatrixXd Q = qr.householderQ();
+
+        // R матрица (верхнетреугольная). Ее диагональные элементы равны длинам векторов
+        // возмущений после проекции на предыдущие орты.
+        Eigen::MatrixXd R = qr.matrixQR().triangularView<Eigen::Upper>();
+
+        for (int i = 0; i < n_lce; ++i)
+        {
+            // Длина базисного вектора не может быть отрицательной
+            norms(i) = std::abs(R(i, i));
+
+            // Обновляем матрицу возмущений ортонормированными векторами
+            W.col(i) = Q.col(i);
+        }
+    }
 }

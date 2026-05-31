@@ -18,34 +18,6 @@ namespace mc
     {
         namespace detail
         {
-            /**
-             * @brief Ортогонализация базиса возмущений через QR-разложение.
-             * @param W Матрица векторов возмущений (in/out).
-             * @param norms Вектор для записи норм роста (out).
-             * @param n_lce Количество вычисляемых показателей.
-             */
-            inline void OrthogonalizeQR(Eigen::MatrixXd &W, Eigen::VectorXd &norms, int n_lce)
-            {
-                // Выполняем QR-разложение для первых n_lce столбцов
-                Eigen::HouseholderQR<Eigen::MatrixXd> qr(W.leftCols(n_lce));
-
-                // Q матрица содержит ортонормированный базис
-                Eigen::MatrixXd Q = qr.householderQ();
-
-                // R матрица (верхнетреугольная). Ее диагональные элементы равны длинам векторов
-                // возмущений после проекции на предыдущие орты.
-                Eigen::MatrixXd R = qr.matrixQR().triangularView<Eigen::Upper>();
-
-                for (int i = 0; i < n_lce; ++i)
-                {
-                    // Длина базисного вектора не может быть отрицательной
-                    norms(i) = std::abs(R(i, i));
-
-                    // Обновляем матрицу возмущений ортонормированными векторами
-                    W.col(i) = Q.col(i);
-                }
-            }
-
             inline std::array<double, 2> divergenceDegree(Ref<DynamicalSystem> system, double timeForward, double e,
                                                           Eigen::VectorXd v, double T, int M,
                                                           std::vector<Eigen::MatrixXd> &traj1,
@@ -88,8 +60,21 @@ namespace mc
 
                 return {n / M, mc::log(T)};
             }
-        }
 
+            /**
+             * Детектор сингулярных точек производной оператора Прейзаха.
+             * В данном случае - это смена монотонности входа x, или смена знака производной v.
+             * @param curr_x Текущее состояние системы.
+             * @param next_x Следующее состояние системы.
+             * @return bool  True, если следующая точка сингулярная.
+             */
+            inline bool PreisachInputSingularityDetector(const Vec &curr_x, const Vec &next_x)
+            {
+                constexpr double eps = 0.001;
+                return !(std::abs(curr_x[1]) < eps) && (curr_x[1] * next_x[1] < 0.0 || std::abs(next_x[1]) < eps);
+            }
+        }
+        
         namespace power_law
         {
             /**
@@ -98,37 +83,21 @@ namespace mc
             inline double ComputeAvgLogDistForT(
                 Ref<ode::ContinuousDS> system,
                 const Vec &initial_dir, double eps, int T_steps, int M,
-                std::vector<Eigen::MatrixXd> traj1, std::vector<Eigen::MatrixXd> traj2)
+                std::vector<Eigen::MatrixXd> &traj1, std::vector<Eigen::MatrixXd> &traj2)
             {
                 AL_PROFILE_FUNC("mc::ode::ComputePowerLawExponent::ComputeAvgLogDistForT");
-                
-                Vec main_x = system->GetX();
 
-                // Возмущенная траектория в заданном направлении
                 Vec dir = initial_dir.normalized();
-                Vec pert_x = main_x + eps * dir;
-                
-                traj1.push_back(main_x);
-                traj1.push_back(pert_x);
+                const double w02 = system->GetArgs().at("w0").toDouble();
 
-                double sum_log_dist = 0.0;
-
-                for (int m = 0; m < M; ++m)
+                const auto calc_logonormal_dist = [eps, dir, w02](
+                    const Eigen::VectorXd &main_x, Eigen::VectorXd &pert_x,
+                    double &sum_log_dist)
                 {
-                    for (int k = 0; k < T_steps; ++k)
-                    {
-                        // Важно: вызываем NextTM для pert_x до сдвига самой системы,
-                        // чтобы внутреннее время m_T системы и аргументы совпадали.
-                        pert_x = system->NextTM(pert_x);
-                        system->Next();
-                        
-                        traj1.push_back(system->GetX());
-                        traj2.push_back(pert_x);
-                    }
-
-                    main_x = system->GetX();
                     Vec delta = pert_x - main_x;
-                    double dist = delta.norm();
+                    // Используем энергетическую метрику
+                    // p(x1, x2) = sqrt(w02 / 2 * (dx)^2 + (dv)^2 / 2)
+                    double dist = mc::sqrt(w02 * mc::square(delta(0)) + mc::square(delta(1))) / mc::sqrt(2.);
 
                     if (dist > 1e-16)
                     {
@@ -143,187 +112,154 @@ namespace mc
                         sum_log_dist += std::log(1e-16);
                         pert_x = main_x + eps * dir; // Сброс в исходное направление
                     }
+                };
+
+                Vec main_x = system->GetX();
+                // Возмущенная траектория в заданном направлении
+                Vec pert_x = main_x + eps * dir;
+
+                traj1.push_back(main_x);
+                traj1.push_back(pert_x);
+
+                double sum_log_dist = 0.0;
+                
+                for (int m = 0; m < M; ++m)
+                {
+                    for (int k = 0; k < T_steps; ++k)
+                    {
+                        pert_x = system->NextTM(pert_x);
+                        system->Next();
+                        main_x = system->GetX();
+
+                        traj1.push_back(main_x);
+                        traj2.push_back(pert_x);
+                    }
                     
+                    calc_logonormal_dist(main_x, pert_x, sum_log_dist);
+
                     traj2[traj2.size() - 1] = pert_x;
                 }
 
                 // Усреднение за M периодов
                 return sum_log_dist / static_cast<double>(M);
             }
-
-            /**
-             * @brief Вычисляет степенной показатель расхождения траекторий.
-             * Оценивает зависимость \ln||\delta x(T)|| = \nu \ln T + C через МНК.
-             * * @param system           Указатель на инстанс ContinuousDS.
-             * @param initial_dir      Вектор направления начального возмущения.
-             * @param eps              Длина начального возмущения \epsilon.
-             * @param Ts               Массив различных периодов времени T.
-             * @param M                Количество повторений нормализации для каждого T.
-             * @return PowerLawResult  Структура с коэффициентами \nu, C и историей вычислений.
-             */
+            
             inline mc::json::JsonDocument ComputePowerLawExponent(
                 Ref<ode::ContinuousDS> system,
-                double timeForward,
                 const Vec &initial_dir,
                 double eps,
-                const Eigen::VectorXd &Ts,
-                int M)
+                double T_step, double additional_time = 0.0)
             {
                 AL_PROFILE_FUNC("mc::ode::ComputePowerLawExponent");
-
-                const double dt = system->GetDeltaTime();
-                const int num_points = static_cast<int>(Ts.size());
-
-                Eigen::VectorXd X; // ln(T)
-                Eigen::VectorXd Y; // ln||delta x||
-
-                X.resize(num_points);
-                Y.resize(num_points);
                 
+                const double dt = system->GetDeltaTime();
+                const double L = system->GetArgs().at("model").toPreisachModel()->GetL() + 0.1;
+                const double w02 = system->GetArgs().at("w0").toDouble();
+
+                system->SetResetFn([](mc::ode::DSArgs &args, mc::ode::DSArgs &nextArgs, uint32_t)
+                {
+                    args.at("model").toPreisachModel()->ResetState();
+                    nextArgs.at("model").toPreisachModel()->ResetState();
+                });
+                
+                system->ResetArgs();
+                system->ResetNextArgs();
+                system->Reset();
+                
+                // Считаем максимально доступное количество шагов в активной зоне
+                uint32_t max_steps = 0;
+                Eigen::VectorXd pert_x = system->GetX() + eps * initial_dir;
+
+                double prev_dist = -mc::consts::inf;
+                while (true)
+                {
+                    pert_x = system->NextTM(pert_x);
+                    system->Next();
+                    max_steps++;
+                    
+                    // Защита от зависания, если траектория застряла в аттракторе внутри зоны
+                    if (max_steps > static_cast<uint32_t>(200. / dt)) break; 
+                    
+                    bool in_bounds = std::abs(system->GetX()(0)) <= L;
+                    
+                    auto delta = system->GetX() - pert_x;
+                    double dist = mc::sqrt(w02 * mc::square(delta(0)) + mc::square(delta(1))) / mc::sqrt(2.);
+                    bool is_diverging = (dist - prev_dist) > 1e-5;
+                    prev_dist = dist;
+
+                    if (!in_bounds && !is_diverging) break;
+                }
+                
+                bool simulate = true;
+                while (simulate)
+                {
+                    pert_x = system->NextTM(pert_x);
+                    system->Next();
+                    max_steps++;
+        
+                    // Защита от зависания, если траектория застряла в аттракторе внутри зоны
+                    if (max_steps > static_cast<uint32_t>(200. / dt)) break; 
+                    
+                    simulate = std::abs(system->GetX()(0)) <= L && std::abs(pert_x(0)) <= L;
+                }
+                
+                max_steps += static_cast<uint32_t>(additional_time / dt);
+                const double max_T = static_cast<double>(max_steps) * dt;
+                
+                const Eigen::VectorXd Ts = Eigen::arange(max_T * T_step, max_T / 2., T_step);
+                
+                Eigen::ArrayXd X; // ln(T)
+                Eigen::ArrayXd Y; // ln||delta x||
+
+                X.resize(Ts.size());
+                Y.resize(Ts.size());
+
                 std::unordered_map<std::string, std::vector<Eigen::MatrixXd>> trajs1 = {}, trajs2 = {};
 
-                // 1. Сбор данных для каждого T
                 for (int i = 0; i < Ts.size(); ++i)
                 {
                     const double T = Ts(i);
-                    // Сброс системы в начальное положение m_X0 для каждого измерения,
-                    // чтобы сравнивать расхождение на одной и той же части аттрактора.
-                    // (При необходимости нужно также сбрасывать состояние модели Прейзаха через ResetFn).
+                    const uint32_t T_steps = static_cast<uint32_t>(T / dt);
+                    const int M = max_steps / T_steps;
+                    
+                    // Если T слишком велико и не влезает даже 1 раз в окно пролета - пропускаем
+                    if (M < 1) continue;
+                    
+                    system->ResetArgs();
+                    system->ResetNextArgs();
                     system->Reset();
-                    system->Forward(timeForward);
 
                     std::vector<Eigen::MatrixXd> traj1, traj2;
-                    double avg_log_d = ComputeAvgLogDistForT(system, initial_dir, eps, T / dt, M, traj1, traj2);
-                    
+                    double avg_log_d = ComputeAvgLogDistForT(system, initial_dir, eps, T_steps, M, traj1, traj2);
+
                     const auto strT = mc::doubleToString(T, 2);
                     trajs1.insert({strT, traj1});
                     trajs2.insert({strT, traj2});
-                    
+
                     X(i) = T;
                     Y(i) = avg_log_d;
                 }
                 X = X.array().log();
-
-                // 2. Линейная регрессия (МНК)
-                double sum_x = 0.0, sum_y = 0.0, sum_xx = 0.0, sum_xy = 0.0;
-                for (int i = 0; i < num_points; ++i)
-                {
-                    sum_x += X[i];
-                    sum_y += Y[i];
-                    sum_xx += X[i] * X[i];
-                    sum_xy += X[i] * Y[i];
-                }
-
-                double nu;
-                double C;
                 
-                double denominator = num_points * sum_xx - sum_x * sum_x;
-                if (std::abs(denominator) > 1e-12)
-                {
-                    nu = (num_points * sum_xy - sum_x * sum_y) / denominator;
-                    C = (sum_xx * sum_y - sum_x * sum_xy) / denominator; // Эквивалент (sum_y - nu * sum_x) / N
-                }
-                else
-                {
-                    // Защита от вырожденного случая (например, если передано только одно значение T)
-                    nu = 0.0;
-                    C = 0.0;
-                }
-                
-                mc::json::JsonDocument message({"name", "e", "M", "Ts", "ns", "nu", "C", "trajs1", "trajs2"});
+                const auto reg = Eigen::Regression(X, Y);
+
+                mc::json::JsonDocument message({"name", "e", "M", "Ts", "ns", "nu", "C", "r2", "trajs1", "trajs2"});
                 message.AddField("name", "DivergenceDegreeRegressionData");
                 message.AddField("e", eps);
-                message.AddField("M", M);
                 message.AddField("Ts", X);
                 message.AddField("ns", Y);
-                message.AddField("nu", nu);
-                message.AddField("C", C);
+                message.AddField("nu", reg.slope);
+                message.AddField("C", reg.intercept);
+                message.AddField("r2", mc::power(reg.r, 2));
                 message.AddField("trajs1", trajs1);
                 message.AddField("trajs2", trajs2);
 
+                system->ResetArgs();
+                system->ResetNextArgs();
+                system->Reset();
+
                 return message;
             }
-        }
-
-        /**
-         * Compute maximal 1-LCE.
-         * @param system Dynamical system for which we want to compute the mLCE.
-         * @param numForward Number of steps before starting the mLCE computation.
-         * @param numCompute The number of steps to compute the mLCE, can be adjusted using keep_evolution.
-         * @return Pair of Maximum 1-LCE and Evolution history of mLCE during the computation.
-         */
-        inline std::pair<double, Eigen::VectorXd> mLCE(Ref<DynamicalSystem> system, int numForward, int numCompute)
-        {
-            AL_PROFILE_FUNC("mLCE");
-            system->Forward(numForward);
-
-            double mLCE = 0.0;
-            Eigen::VectorXd w = Eigen::Rand(1, numCompute);
-            w.normalize();
-            Eigen::VectorXd history = Eigen::VectorXd::Zero(numCompute);
-
-            for (int i = 1; i < numCompute + 1; i++)
-            {
-                w = system->NextLTM(w);
-                system->Forward(1);
-                mLCE += Eigen::logonorm(w);
-                history[i - 1] = mLCE / (i * system->GetDeltaTime());
-                w.normalize();
-            }
-            mLCE /= numCompute * system->GetDeltaTime();
-
-            return {mLCE, history};
-        }
-
-        /**
-         * Compute LCEs.
-         * @param system Dynamical system for which we want to compute the mLCE.
-         * @param p Number of LCE to compute.
-         * @param numForward Number of steps before starting the mLCE computation.
-         * @param numCompute Number of steps to compute the mLCE, can be adjusted using keep_evolution.
-         * @return Pair of Lyapunov Characteristic Exponents array and Evolution history of mLCE during the computation.
-         */
-        inline std::pair<Eigen::VectorXd, Eigen::MatrixXd> LCE(Ref<DynamicalSystem> system, int p, int numForward,
-                                                               int numCompute)
-        {
-            // Forward the system before the computation of mLCE
-            system->Forward(numForward);
-
-            int dim = system->GetDimension();
-            if (p > dim)
-            {
-                printf(
-                    "WARNING: The number p (= %d) of calculated Lyapunov exponents cannot exceed the system dimension (= %d)!\n",
-                    p, system->GetDimension());
-                printf("INFO: The number of calculated exponents is set equal to the system dimension (= %d)!\n",
-                       system->GetDimension());
-                p = dim;
-            }
-
-            Eigen::MatrixXd w = Eigen::MatrixXd::Identity(dim, p);
-            Eigen::VectorXd LCE = Eigen::VectorXd::Zero(p);
-            Eigen::MatrixXd history = Eigen::MatrixXd::Zero(numCompute, p);
-
-            for (int i = 1; i < numCompute + 1; i++)
-            {
-                w = system->NextLTM(w);
-                system->Forward(1);
-                auto [Q, R] = Eigen::GramSchimidtQR(w);
-
-                for (int j = 0; j < p; j++)
-                {
-                    double val = abs(R(i, j));
-                    if (val > 0.0)
-                    {
-                        LCE[j] += log(val);
-                    }
-                    history(i - 1, j) = LCE[j] / (i * system->GetDeltaTime());
-                }
-
-                LCE /= numCompute * system->GetDeltaTime();
-            }
-
-            return {LCE, history};
         }
 
         /// Implements Benettin's mLCE computation algorithm
@@ -409,8 +345,8 @@ namespace mc
                 auto model2 = mc::Ref<mc::ArealPreisachModel>::Create(L, false, false);
                 if (!isnan(areaCoeff))
                 {
-                    model2->P(L, -2);
-                    model2->P(areaCoeff * L, -1);
+                    model2->P(L, 0.0, -2);
+                    model2->P(areaCoeff * L, 0.0, -1);
                 }
 
                 args.insert_or_assign("model", Vote(model1));
@@ -467,18 +403,6 @@ namespace mc
             return message;
         }
 
-        /**
-         * Детектор сингулярных точек производной оператора Прейзаха.
-         * В данном случае - это смена монотонности входа x, или смена знака производной v.
-         * @param curr_x Текущее состояние системы.
-         * @param next_x Следующее состояние системы.
-         * @return bool  True, если следующая точка сингулярная.
-         */
-        inline bool PreisachInputSingularityDetector(const Vec &curr_x, const Vec &next_x)
-        {
-            constexpr double eps = 0.001;
-            return !(std::abs(curr_x[1]) < eps) && (curr_x[1] * next_x[1] < 0.0 || std::abs(next_x[1]) < eps);
-        }
 
         struct LCEResult
         {
@@ -507,7 +431,7 @@ namespace mc
             uint32_t ortho_steps,
             std::optional<int> num_lce = std::nullopt,
             const std::function<bool(const Vec &curr_x, const Vec &next_x)> &singularity_check =
-                PreisachInputSingularityDetector)
+                detail::PreisachInputSingularityDetector)
         {
             if (num_lce.has_value())
             {
@@ -516,6 +440,7 @@ namespace mc
 
             AL_PROFILE_FUNC("mc::ode::ComputeLCEs");
 
+            system->ResetArgs();
             system->Reset();
             system->Forward(timeForward);
 
@@ -536,19 +461,20 @@ namespace mc
 
             const uint32_t orto_step = num_iterations / ortho_steps;
             int32_t hist_idx = -1;
-            bool crossed_singularity = false;
+            bool is_next_singularity = false;
+            bool is_singularity_now = false;
             for (int step = 1; step <= num_iterations; ++step)
             {
                 Vec current_x = system->GetX();
-                Vec next_x = system->ShiftTrajNext(current_x, system->GetT());
-                
-                if (crossed_singularity)
+                // memoize = true, потому что мы предсказываем следующую точку
+                Vec next_x = system->ShiftTrajNext(current_x, system->GetT(), true);
+
+                if (is_next_singularity)
                 {
-                    crossed_singularity = singularity_check(current_x, next_x);
-                    continue;
+                    is_singularity_now = true;
                 }
-                
-                crossed_singularity = singularity_check(current_x, next_x);
+
+                is_next_singularity = singularity_check(current_x, next_x);
 
                 // Детекция возможного пересечения сингулярности в пределах [current_t, current_t + dt]
                 // "Заглядываем" на шаг вперёд (без изменения состояния системы), 
@@ -564,11 +490,11 @@ namespace mc
                 system->Next();
 
                 // Если попали на точку сингулярности ИЛИ подошло время плановой ортогонализации
-                if (crossed_singularity || (step > 0 && step % orto_step == 0))
+                if (is_next_singularity || (!is_singularity_now && (step > 0 && step % orto_step == 0)))
                 {
                     ++hist_idx;
                     // Вызов QR-ортогонализации
-                    detail::OrthogonalizeQR(W_next, current_norms, n_lce);
+                    Eigen::OrthogonalizeQR(W_next, current_norms, n_lce);
 
                     for (int i = 0; i < n_lce; ++i)
                     {
@@ -582,12 +508,14 @@ namespace mc
                 else
                 {
                     W = W_next;
+                    is_singularity_now = false;
                     continue;
                 }
-                
+
                 if (hist_idx >= result.history.rows())
                 {
-                    result.history.conservativeResize(static_cast<Eigen::Index>(1.5 * result.history.rows()), Eigen::NoChange);
+                    result.history.conservativeResize(static_cast<Eigen::Index>(1.5 * result.history.rows()),
+                                                      Eigen::NoChange);
                 }
 
                 // Запись в историю. LCE = (Сумма логарифмов) / Время
@@ -598,11 +526,15 @@ namespace mc
                     result.history(hist_idx, i) = lce_sums(i) / time_divisor;
                 }
             }
-            
+
             result.history.conservativeResize(hist_idx, Eigen::NoChange);
 
             // Вычисляем итоговые показатели как предел усредненной суммы
             result.spectrum = lce_sums / system->GetT();
+
+            system->ResetArgs();
+            system->Reset();
+
             return result;
         }
 
@@ -805,17 +737,7 @@ namespace mc
 
         //#endregion ------------------------------------------ Find Best Params ------------------------------------------
 
-        inline double FindDivergenceDegree(const Ref<DynamicalSystem> &system, double timeForward, double e,
-                                           const Eigen::VectorXd &v,
-                                           double T, int M, std::vector<Eigen::MatrixXd> &traj1,
-                                           std::vector<Eigen::MatrixXd> &traj2)
-        {
-            AL_PROFILE_FUNC("FindDivergenceDegree");
-
-            const auto [lnN, lnT] = detail::divergenceDegree(system, timeForward, e, v, T, M, traj1, traj2);
-            return lnN / lnT;
-        }
-
+        // TODO: remove
         inline mc::json::JsonDocument DivergenceDegreeRegressionData(Ref<DynamicalSystem> system,
                                                                      double timeForward,
                                                                      double e, const Eigen::VectorXd &v,
