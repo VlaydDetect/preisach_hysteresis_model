@@ -1,18 +1,24 @@
+import json
+import os
+import shutil
+from pathlib import Path
+
 import matplotlib.pyplot as plt
 import scienceplots
 
-plt.style.use(['science', 'ieee' ,'grid'])
+from utils import TrajectoryAnalyzer, ConstrainedTrajectoryAnalyzer
+
+# plt.style.use(['science', 'ieee', 'grid'])
 # plt.rcParams.update({'figure.dpi': '100'})
 # plt.rcParams.update({'font.size': 18})
 
 import numpy as np
-import glob
+import polars as pl
 
-from scipy.signal import argrelextrema
 from scipy.stats import linregress
 
 from plotting import *
-from utils import gen_steps_sequence, select_best_growth
+from utils import gen_steps_sequence, select_best_growth, calc_fourier_transform
 
 
 def areal_model_test():
@@ -50,15 +56,13 @@ def areal_model_test():
 
 
 def just_solve_rodos():
-    with open(f"../PreisachModel/JustSolveRodos.json") as f:
+    with (open(f"../PreisachModel/JustSolveRodos.json") as f):
         data = json.load(f)
 
         dt = data["dt"]
         time = data["time"]
         t = np.arange(0, time + dt, dt)
 
-        # h = data["h"]
-        E = data["E"]
         x = np.asarray(data["results"]["x"])
         v = np.asarray(data["results"]["v"])
         # derivatives = data["results"]["derivatives"]
@@ -72,10 +76,63 @@ def just_solve_rodos():
         # fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(12, 8))
 
         path = "./article_plots"
-        plot_x(x, t)
-        plot_v(v, t)
+        # plot_x(x, t)
+        # plot_v(v, t)
         plot_phase_portrait(x, v)
-        plot_hysteresis_loop(inputs, loop)
+        # plot_hysteresis_loop(inputs, loop)
+        plot_fourier_transform(x, dt=0.01)
+
+        # scientific_plot(x, v, alpha=1, linewidth=.5, xlabel="x(t)", ylabel="v(t)")
+        # scientific_plot(inputs, loop, alpha=1, linewidth=.5, xlabel="x(t)", ylabel="P[x(t)]")
+
+        power_law = data["results"]["power_law"]
+        Ts = np.asarray(power_law["Ts"])
+        ns = np.asarray(power_law["ns"])
+        slope = power_law["nu"]
+        intercept = power_law["C"]
+
+        plt.scatter(Ts, ns, marker='.')
+        plt.plot(Ts, slope * Ts + intercept, 'r')
+        plt.title(f"Slope ($\\nu$): {slope:.4f}, Intercept (C): {intercept:.4f}.")
+        plt.xlabel("$\\log(T)$")
+        plt.ylabel("$\\log(\\nu)$")
+        plt.show()
+        print()
+        # 
+        # trajs1 = power_law["trajs1"]
+        # trajs2 = power_law["trajs2"]
+        # 
+        # timeKey = list(trajs1.keys())[-1]
+        # 
+        # traj1 = np.asarray(trajs1[timeKey])
+        # traj2 = np.asarray(trajs2[timeKey])
+        # 
+        # x1, y1 = traj1[:, 0], traj1[:, 1]
+        # x2, y2 = traj2[:, 0], traj2[:, 1]
+        # 
+        # n = 5000
+        # x11 = np.asarray(x1[:n])
+        # x22 = np.asarray(x2[:n])
+        # y11 = np.asarray(y1[:n])
+        # y22 = np.asarray(y2[:n])
+        # 
+        # plt.plot(x11, 'b')
+        # plt.plot(x22, 'r')
+        # plt.show()
+
+        # LCEs = np.asarray(data["results"]["LCEs"])
+        # LCEs_history = np.asarray(data["results"]["LCEs_history"])
+        # 
+        # plt.plot(LCEs_history[:, 0], c='red')
+        # plt.plot(LCEs_history[:, 1], c='blue')
+        # plt.xlabel("t")
+        # plt.ylabel("$\\lambda$")
+        # plt.annotate(f"{LCEs[0]:.5f}", xy=(len(LCEs_history[:, 0]), LCEs_history[-1, 0]), xytext=(400, -0.03), 
+        #              arrowprops=dict(arrowstyle="->", connectionstyle="arc3,rad=0.2"))
+        # plt.annotate(f"{LCEs[1]:.5f}", xy=(len(LCEs_history[:, 1]), LCEs_history[-1, 1]), xytext=(400, -0.09), 
+        #              arrowprops=dict(arrowstyle="->", connectionstyle="arc3,rad=-0.2"))
+        # plt.legend(["x", "$\\dot{x}$"])
+        # plt.show()
 
         # k = 3000
         # plot_preisach_derivative(t[:(k+1)], inputs[:k], derivatives[:k])
@@ -153,7 +210,6 @@ def n_regression():
 
         # ------------regression--------------
         plt.scatter(Ts, ns)
-
         slope, intercept, r_value, _, _ = linregress(Ts, ns)
 
         print(ns / Ts)
@@ -228,31 +284,127 @@ def regressionTable():
 
 
 def two_trajs():
-    with open(f"../PreisachModel/RodosLCEs_TwoTrajs.json") as f:
+    with open(f"../PreisachModel/TwoTrajs.json") as f:
+        data = json.load(f)
+        traj1 = np.asarray(data['traj1'])
+        traj1_next = np.asarray(data['traj1_next'])
+        traj2 = np.asarray(data['traj2'])
+
+        x1 = traj1[:, 0][:10000]
+        x1_next = traj1_next[:, 0][:10000]
+        x2 = traj2[:, 0][:10000]
+
+        # plt.plot(x1_next)
+        # plt.plot(x2)
+        # plt.show()
+
+        # fig, ax = plt.subplots(1, 2, figsize=(8,8))
+        # ax[0].plot(x1, 'r')
+        # ax[0].plot(x1_next, 'b')
+        # 
+        # ax[1].plot(x1, 'r')
+        # ax[1].plot(x2, 'b')
+        # 
+        # ax[0].grid(True)
+        # ax[1].grid(True)
+        # fig.show()
+
+        plt.plot(x1 - x2)
+        plt.show()
+
+        print()
+
+
+def TwoTrajsOnPhaseTrajectory():
+    with open(f"../PreisachModel/TwoTrajsOnPhaseTrajectory.json") as f:
         data = json.load(f)
 
-        e = float(data["e"])
-        M = int(data["M"])
-        T = float(data["T"])
-        dt = float(data["dt"])
-        timeForward = float(data["timeForward"]) if "timeForward" in data else 0
-        time = int(M * T / dt)
+        time = np.arange(0., float(data['time']) + 0.001, 0.001)
+        # x0s = np.asarray(data["x0s"])
+        coords = np.asarray(data["coords"])
+        # x0s = list(map(lambda x: f"[{x[0]:.3f}, {x[1]:.3f}]", x0s))
+        # times = list(map(lambda t: f"{t:.3f}", list(data['times'])))
+        trajs = dict()
+        for (i, trs) in dict(data["trajs"]).items():
+            trs = list(trs)
+            trajs[i] = [np.asarray(trs[0]), np.asarray(trs[1])]
 
-        k = int(T / dt)
+        fig1, ax1 = plt.subplots(2, 5, figsize=(20, 20))
+        fig2, ax2 = plt.subplots(2, 5, figsize=(20, 20))
 
-        traj1 = np.asarray([np.asarray(x) for x in data["traj1"]])
-        traj2 = np.asarray([np.asarray(x) for x in data["traj2"]])
+        N = 0
+        K = 10000
 
-        x1, v1 = np.asarray([i[0] for i in traj1]), np.asarray([i[1] for i in traj1])
-        x2, v2 = np.asarray([i[0] for i in traj2]), np.asarray([i[1] for i in traj2])
+        dist_list = []
+        x1_list = []
+        x2_list = []
+        for i in range(len(trajs)):
+            traj1 = trajs[i][0]
+            traj2 = trajs[i][1]
 
-        x1, v1 = x1[:10000], v1[:10000]
-        x2, v2 = x2[:(10000 - timeForward)], v2[:10000]
-        time = np.arange(0, 10000, 1)
+            x1 = traj1[:, 0][N:K]
+            x2 = traj2[:, 0][N:K]
+            v1 = traj1[:, 1][N:K]
+            v2 = traj2[:, 1][N:K]
 
-        plt.plot(time, x1, 'b')
-        plt.plot(time[timeForward:], x2, 'r')
+            dist = np.sqrt(np.square(x1 - x2) + np.square(v1 - v2))
+            dist_list.append(dist)
+            x1_list.append(x1)
+            x2_list.append(x2)
+
+        X_MIN, X_MAX = -1.0, 1.0
+
+        ta = ConstrainedTrajectoryAnalyzer(time[N:K], dist_list, x1_list, x2_list)
+        best_idx1 = ta.find_fastest_growth_integral(x_min=X_MIN, x_max=X_MAX)
+        best_idx2 = ta.find_fastest_growth_weighted(alpha=0.5, x_min=X_MIN, x_max=X_MAX)
+
+        for i in range(len(trajs)):
+            j = i // 5
+            k = i % 5
+
+            # x0 = x0s[i]
+            coord = coords[i]
+            traj1 = trajs[i][0]
+            traj2 = trajs[i][1]
+
+            x1 = x1_list[i]
+            x2 = x2_list[i]
+            t = time[N:K]
+
+            ax1[j, k].plot(t, x1, 'r')
+            ax1[j, k].plot(t, x2, 'b')
+            ax1[j, k].grid(True)
+            ax1[j, k].set(xlabel="t", ylabel="x(t)")
+            ax1[j, k].set_title(f"v = {coord}")
+
+            dist = dist_list[i]
+            if i == best_idx1:
+                ax2[j, k].plot(t, dist, 'b')
+            elif i == best_idx2:
+                ax2[j, k].plot(t, dist, 'r')
+            elif i == best_idx1 == best_idx2:
+                ax2[j, k].plot(t, dist, 'g')
+            else:
+                ax2[j, k].plot(t, dist)
+
+            ax2[j, k].grid(True)
+            ax2[j, k].set(xlabel="t", ylabel="$x_1(t) - x_2(t)$")
+            ax2[j, k].set_title(f"v = {coord}")
+
+        fig1.show()
+        fig2.show()
+
+        x1 = x1_list[4]
+        x2 = x2_list[4]
+        t = time[N:K]
+        plt.plot(t, x1, 'r')
+        plt.plot(t, x2, 'b')
+        plt.legend(["main", "perturbed"])
+        plt.xlabel("t"),
+        plt.ylabel("x(t)")
         plt.show()
+
+        print()
 
 
 def test_trajs_circle():
@@ -419,7 +571,7 @@ def BifurcationDiagram():
         params = np.asarray(data["rho"])
         n = len(trajs)
         m = len(trajs[0])
-        
+
         matrix = np.zeros((n, m))
         for i in range(n):
             x = np.asarray(trajs[i])[:, 2]
@@ -427,7 +579,7 @@ def BifurcationDiagram():
                 plt.plot(x[:10000])
                 plt.show()
             matrix[i, :] = x
-        
+
         plot_bifurcation_diagram(params, matrix)
 
         # bifurcation_param = []
@@ -474,29 +626,6 @@ def BifurcationDiagram():
         # 
         # path = "./article_plots"
         # plt.savefig(f"{path}/biff_w.png")
-        
-
-def ShuttlePointTraj():
-    with open(f"../PreisachModel/ShuttlePointTraj.json") as f:
-        data = json.load(f)
-        x = np.array(data["x"])
-        v = np.array(data["v"])
-        
-        loop_in = np.array(data["loop"]["in"])
-        loop_out = np.array(data["loop"]["out"])
-
-        plt.plot(x)
-        plt.xlabel('t')
-        plt.ylabel('x')
-        plt.show()
-        plt.plot(x, v)
-        plt.xlabel('x')
-        plt.ylabel('v')
-        plt.show()
-        plt.plot(loop_in, loop_out)
-        plt.xlabel('in')
-        plt.ylabel('out')
-        plt.show()
 
 
 def ShiftTest():
@@ -504,13 +633,13 @@ def ShiftTest():
         data = json.load(f)
         z_minus = data["z-"]
         z_plus = data["z+"]
-        
+
         x1 = np.array(z_minus["x"])
         v1 = np.array(z_minus["v"])
-        
+
         print(x1[-1], v1[-1])
 
-        x2 = np.array(z_plus["x"])        
+        x2 = np.array(z_plus["x"])
         v2 = np.array(z_plus["v"])
         # print(x2[-1], v2[-1])
 
@@ -521,7 +650,7 @@ def ShiftTest():
 
         plt.figure(figsize=(12, 12))
         plt.suptitle(f"x0 = -{x0}, T = {T}\n$\\gamma = {gamma}, \\omega_0 = {omega0}, \\omega = \\omega_0, A = 1.5$")
-        
+
         plt.subplot(121)
         plt.plot(x1, v1)
         plt.plot(-1.190174627449658, 0.13896378639632018, 'x', color='black', label='End')
@@ -547,139 +676,153 @@ def ShiftTest():
 def ShuttlePointLog():
     with open(f"../PreisachModel/ShuttlePointLog.json") as f:
         data = json.load(f)
-        
-        iters = data["iters"]
-        
-        cone = data["cone"]
+
+        shuttle = data['shuttle_logs']
+        iters = shuttle["iters"]
+
+        cone = shuttle["cone"]
         ray1 = np.asarray(cone["rays"][0])
         ray2 = np.asarray(cone["rays"][1])
 
-        traj_z_minus = np.asarray(data["traj_z-"])
-        traj_z_plus = np.asarray(data["traj_z+"])
-        new_z_minus = np.asarray(data["new_z-"])
-        new_z_plus = np.asarray(data["new_z+"])
+        traj_z_minus = np.asarray(shuttle["traj_z-"])
+        traj_z_plus = np.asarray(shuttle["traj_z+"])
+        new_z_minus = np.asarray(shuttle["new_z-"])
+        new_z_plus = np.asarray(shuttle["new_z+"])
 
         odd_sequences = []
-        for seq in list(data["odd_sequences"]):
+        for seq in list(shuttle["odd_sequences"]):
             odd_sequences.append(np.asarray(seq))
 
         odd_initial_points = []
-        for seq in list(data["odd_initial_points"]):
+        for seq in list(shuttle["odd_initial_points"]):
             odd_initial_points.append(np.asarray(seq))
 
         odd_cond_points = []
-        for seq in list(data["odd_cond_points"]):
+        for seq in list(shuttle["odd_cond_points"]):
             odd_cond_points.append(np.asarray(seq))
 
         even_sequences = []
-        for seq in list(data["even_sequences"]):
+        for seq in list(shuttle["even_sequences"]):
             even_sequences.append(np.asarray(seq))
 
         even_initial_points = []
-        for seq in list(data["even_initial_points"]):
+        for seq in list(shuttle["even_initial_points"]):
             even_initial_points.append(np.asarray(seq))
 
         even_cond_points = []
-        for seq in list(data["even_cond_points"]):
+        for seq in list(shuttle["even_cond_points"]):
             even_cond_points.append(np.asarray(seq))
-            
-        
-        # plt.plot(traj_z_plus[0], traj_z_plus[1], color='brown', alpha=0.3)
-        # plt.show()
-        # plt.plot(traj_z_plus[0], color='brown', alpha=0.3)
-        # plt.plot(traj_z_plus[1], color='brown', alpha=0.3)
-        # plt.show()
 
+
+        z_odd = []
+        for seq in list(shuttle["z_odd"]):
+            z_odd.append(np.asarray(seq))
+
+        z_even = []
+        for seq in list(shuttle["z_even"]):
+            z_even.append(np.asarray(seq))
 
         plt.figure(figsize=(12, 12))
-            
+
+        # Conus rays
         plt.plot([0, ray1[0]], [0, ray1[1]], color='black', label='Ray1')
         plt.plot([0, ray2[0]], [0, ray2[1]], color='black', label='Ray2')
-        
+
+        # z-
         plt.plot(traj_z_minus[0, 0], traj_z_minus[1, 0], 'o', color='green')
         plt.plot(traj_z_minus[0], traj_z_minus[1], color='brown', alpha=0.3)
         plt.plot(new_z_minus[0], new_z_minus[1], 'x', color='red')
         plt.annotate("z-", xy=(traj_z_minus[0, 0] - 0.05, traj_z_minus[1, 0] - 0.05))
         plt.annotate("new z-", xy=(new_z_minus[0] - 0.05, new_z_minus[1] - 0.05))
 
+        # z+
         plt.plot(traj_z_plus[0, 0], traj_z_plus[1, 0], 'o', color='green')
         plt.plot(traj_z_plus[0], traj_z_plus[1], color='brown', alpha=0.3)
         plt.plot(new_z_plus[0], new_z_plus[1], 'x', color='red')
         plt.annotate("z+", xy=(traj_z_plus[0, 0] + 0.05, traj_z_plus[1, 0] + 0.05))
         plt.annotate("new z+", xy=(new_z_plus[0] - 0.05, new_z_plus[1] - 0.05))
-        
-        for i in range(1, iters + 1):
-            if i % 2 != 0 and i < len(odd_sequences):
-                j = i // 2 - i % 2 + 1
-                plt.plot(odd_sequences[j][0], odd_sequences[j][1], color='purple', label='Odd Sequence', alpha=0.3)
-                plt.plot(odd_initial_points[j][0], odd_initial_points[j][1], 'o', color='coral',
-                         label='Odd New Initial Point')
-                plt.plot(odd_cond_points[j][0], odd_cond_points[j][1], 'o', color='lime',
-                         label='Odd Cond Initial Point')
-                plt.annotate(f"{i}", xy=(odd_initial_points[j][0], odd_initial_points[j][1]))
-                plt.annotate(f"{i}", xy=(odd_cond_points[j][0], odd_cond_points[j][1]))
-            elif i % 2 == 0 and i < len(even_sequences):
-                j = i // 2 - i % 2 - 1
-                plt.plot(even_sequences[j][0], even_sequences[j][1], color='purple', label='Even Sequence', alpha=0.3)
-                plt.plot(even_initial_points[j][0], even_initial_points[j][1], 'o', color='crimson',
-                         label='Even New Initial Point')
-                plt.plot(even_cond_points[j][0], even_cond_points[j][1], 'o', color='yellowgreen',
-                         label='Even Cond Initial Point')
-                plt.annotate(f"{i}", xy=(even_initial_points[j][0], even_initial_points[j][1]))
-                plt.annotate(f"{i}", xy=(even_cond_points[j][0], even_cond_points[j][1]))
-        
-        # for i in range(len(odd_sequences)):
-        #     plt.plot(odd_sequences[i][0], odd_sequences[i][1], color='purple', label='Odd Sequence', alpha=0.3)
-        #     plt.plot(odd_initial_points[i][0], odd_initial_points[i][1], 'o', color='coral', label='Odd New Initial Point')
-        #     plt.plot(odd_cond_points[i][0], odd_cond_points[i][1], 'o', color='lime', label='Odd Cond Initial Point')
-        #     plt.annotate(f"{i + 1}", xy=(odd_initial_points[i][0], odd_initial_points[i][1]))
-        #     plt.annotate(f"{i + 1}", xy=(odd_cond_points[i][0], odd_cond_points[i][1]))
+
+        for j in range(len(odd_sequences)):
+            plt.plot(odd_sequences[j][:, 0], odd_sequences[j][:, 1], color='purple', label='Odd Sequence', alpha=0.5)
+            plt.plot(odd_initial_points[j][0], odd_initial_points[j][1], 'o', color='coral',
+                     label='Odd New Initial Point')
+            # plt.plot(odd_cond_points[j][0], odd_cond_points[j][1], 'o', color='lime',
+            #          label='Odd Cond Initial Point')
+            plt.annotate(f"{2 * j + 1}", xy=(odd_initial_points[j][0], odd_initial_points[j][1]))
+            # plt.annotate(f"{2 * j + 1}", xy=(odd_cond_points[j][0], odd_cond_points[j][1]))
             
-        # for i in range(len(even_sequences)):
-        #     plt.plot(even_sequences[i][0], even_sequences[i][1], color='purple', label='Even Sequence')
-        #     plt.plot(even_initial_points[i][0], even_initial_points[i][1], 'o', color='crimson', label='Even New Initial Point')
-        #     plt.plot(even_cond_points[i][0], even_cond_points[i][1], 'o', color='yellowgreen', label='Even Cond Initial Point')
-        #     plt.annotate(f"{2 * i}", xy=(even_initial_points[i][0], even_initial_points[i][1]))
-        #     plt.annotate(f"{2 * i}", xy=(even_cond_points[i][0], even_cond_points[i][1]))
+        for j in range(len(even_sequences)):
+            plt.plot(even_sequences[j][:, 0], even_sequences[j][:, 1], color='pink', label='Even Sequence', alpha=0.5)
+            plt.plot(even_initial_points[j][0], even_initial_points[j][1], 'o', color='crimson',
+                     label='Even New Initial Point')
+            # plt.plot(even_cond_points[j][0], even_cond_points[j][1], 'o', color='yellowgreen',
+            #          label='Even Cond Initial Point')
+            plt.annotate(f"{2 * j + 2}", xy=(even_initial_points[j][0], even_initial_points[j][1]))
+            # plt.annotate(f"{2 * j + 2}", xy=(even_cond_points[j][0], even_cond_points[j][1]))
+
+        for j in range(1, len(z_odd)):
+            plt.plot(z_odd[j][0], z_odd[j][1], 'o', color="yellow", label='z Odd')
+            plt.annotate(f"z{2 * j - 1}", xy=(z_odd[j][0], z_odd[j][1]))
+            plt.plot(z_even[j][0], z_even[j][1], 'o', color="red", label='z Even')
+            plt.annotate(f"z{2 * j}", xy=(z_even[j][0], z_even[j][1]))
 
         plt.grid()
         handles, labels = plt.gca().get_legend_handles_labels()
         by_label = dict(zip(labels, handles))
         plt.legend(by_label.values(), by_label.keys())
         plt.show()
-
-
-def DoublePreisachModelTest():
-    with open(f"../PreisachModel/DoublePreisachModelTest.json") as f:
-        data = json.load(f)
-
-        t = np.asarray(data["t"])
-        x = np.asarray(data["x"])
-        inputs = data["loop"]["in"]
-        loop = data["loop"]["out"]
-
-        plot_x(x, t)
-        plot_hysteresis_loop(inputs, loop)
         
+        results = data["results"]
+        
+        for sol in [results["limit1"], results["limit2"]]:
+            x = np.asarray(sol["x"])
+            v = np.asarray(sol["v"])
+            loop_in = np.asarray(sol["loop"]["in"])
+            loop_out = np.asarray(sol["loop"]["out"])
+
+            plt.plot(x)
+            plt.xlabel('t')
+            plt.ylabel('x')
+            plt.show()
+            plt.plot(x, v)
+            plt.xlabel('x')
+            plt.ylabel('v')
+            plt.show()
+            plt.plot(loop_in, loop_out)
+            plt.xlabel('in')
+            plt.ylabel('out')
+            plt.show()
+
 
 def article_plots():
-    with open(f"../PreisachModel/JustSolveRodos.json") as f:
+    json_path = "../PreisachModel/JustSolveRodos.json"
+    with open(json_path) as f:
         data = json.load(f)
+
+        prefix = "double_loop_1"
+        num = "ninth"
+        name = f"{prefix}_{num}_set"
 
         dt = data["dt"]
         time = data["time"]
         t = np.arange(0, time + dt, dt)
 
-        h = data["h"]
-        E = data["E"]
         x = np.asarray(data["results"]["x"])
         v = np.asarray(data["results"]["v"])
         inputs = data["loop"]["inputs"]
         loop = data["loop"]["outputs"]
 
-        path = "./article_plots" 
-        scientific_plot(x, v, alpha=1, linewidth=.5, xlabel="x(t)", ylabel="v(t)", save=f"{path}/discrete_x2_phase.png")
-        scientific_plot(inputs, loop, alpha=1, linewidth=1, xlabel="x(t)", ylabel="P[x(t)]", save=f"{path}/discrete_x2_loop.png")
+        path = Path(f"./article_plots/{name}")
+        if not path.exists():
+            os.mkdir(path)
+
+        shutil.copy(json_path, path)
+
+        scientific_plot(t, x, alpha=1, linewidth=.5, xlabel="t", ylabel="x(t)", save=f"{path}/{name}_x.png")
+        scientific_plot(t, v, alpha=1, linewidth=.5, xlabel="t", ylabel="v(t)", save=f"{path}/{name}_v.png")
+        scientific_plot(x, v, alpha=1, linewidth=.5, xlabel="x(t)", ylabel="v(t)", save=f"{path}/{name}_phase.png")
+        scientific_plot(inputs, loop, alpha=1, linewidth=1, xlabel="x(t)", ylabel="P[x(t)]",
+                        save=f"{path}/{name}_loop.png")
 
 
 def OperatorDerivativeTest():
@@ -689,7 +832,7 @@ def OperatorDerivativeTest():
         derivatives = data["results"]["derivatives"]
         inputs = data["loop"]["inputs"]
         loop = data["loop"]["outputs"]
-        
+
         plt.plot(x)
         plt.plot(derivatives, 'r')
         plt.show()
@@ -698,7 +841,7 @@ def OperatorDerivativeTest():
 def ZeroOneTest():
     with open(f"../PreisachModel/ZeroOneTest.json") as f:
         data = json.load(f)
-        
+
         # x = np.asarray(data["x"])[:50000]
         # v = np.asarray(data["v"])[:50000]
         # 
@@ -708,7 +851,7 @@ def ZeroOneTest():
         # plt.show()
         # plt.plot(x, v)
         # plt.show()
-        
+
         Ks = data["Ks"]
         param = data["A"]
 
@@ -776,8 +919,8 @@ def plot_bifurcation_diagram(
         print(f"График сохранен в {output_file}")
     else:
         plt.show()
-        
-        
+
+
 def TestBiffDeidram():
     n_params = 1000
     n_steps = 200  # Длина временного ряда (после отсечения переходного процесса)
@@ -799,16 +942,101 @@ def TestBiffDeidram():
 
     print("Построение диаграммы...")
     plot_bifurcation_diagram(r_values, matrix)
-    
 
+
+def parse_shuttle_point_initial_values():
+    # 1. Читаем файл как сырой текст для кастомного парсинга.
+    # Предполагаем, что разделитель — ';', заголовков нет
+    raw_df = pl.read_csv(
+        "../PreisachModel/trace_zs.csv",
+        has_header=False,
+        separator=";",
+        new_columns=["u0_raw", "z_raw", "flag1", "flag2"]
+    )
+
+    # 2. Очищаем данные и приводим к нужным типам
+    # Извлекаем числа из строк вида "{0.000, 0.000}"
+    df = raw_df.with_columns([
+        # Парсим вектор u0 как список из двух Float64
+        pl.col("u0_raw")
+        .str.extract_all(r"[-+]?\d*\.\d+|\d+")
+        .cast(pl.List(pl.Float64))
+        .alias("u0"),
+
+        # Парсим вектор z как список из двух Float64
+        pl.col("z_raw")
+        .str.extract_all(r"[-+]?\d*\.\d+|\d+")
+        .cast(pl.List(pl.Float64))
+        .alias("z"),
+
+        # Приводим флаги к Boolean
+        pl.col("flag1").cast(pl.Boolean),
+        pl.col("flag2").cast(pl.Boolean)
+    ]).drop(["u0_raw", "z_raw"])
+
+    # Фильтруем (оставляем строки, где хотя бы один флаг True)
+    df_filtered = df.filter(pl.col("flag1") | pl.col("flag2"))
+
+    # Добавляем уникальный ID для каждой строки, чтобы корректно разделять их при Join
+    df_filtered = df_filtered.with_row_index("row_id")
+
+    # 2. Переводим u0 в Struct, так как по List делать Join в Polars нельзя
+    df_filtered = df_filtered.with_columns(
+        pl.col("u0").list.to_struct(fields=["u0_x", "u0_y"])
+    )
+
+    # 3. Делаем Self-Join по вектору u0 для поиска всех возможных пар
+    pairs = df_filtered.join(
+        df_filtered,
+        on="u0",
+        suffix="_right"
+    )
+
+    # 4. Фильтрация получившихся пар по вашему ТЗ
+    filtered_pairs = pairs.filter(
+        # Исключаем соединение строки самой с собой и зеркальные дубликаты (пара A-B и B-A)
+        (pl.col("row_id") < pl.col("row_id_right")) &
+        (
+            # Условие 1: Левая строка — это (True, True)
+            (pl.col("flag1") & pl.col("flag2")) |
+            # Условие 2: Правая строка — это (True, True)
+            (pl.col("flag1_right") & pl.col("flag2_right")) |
+            # Условие 3: Флаги просто различаются
+            ((pl.col("flag1") != pl.col("flag1_right")) | (pl.col("flag2") != pl.col("flag2_right")))
+        )
+    )
+
+    # 5. Собираем финальный результат
+    # Разворачиваем пары обратно в плоскую таблицу строк
+    result = pl.concat([
+        filtered_pairs.select(["u0", "z", "flag1", "flag2"]),
+        filtered_pairs.select([
+            pl.col("u0"),
+            pl.col("z_right").alias("z"),
+            pl.col("flag1_right").alias("flag1"),
+            pl.col("flag2_right").alias("flag2")
+        ])
+    ]).unique()  # unique() уберет пересечения, если одна строка вошла в несколько разных пар
+
+    result = result.sort("u0")
+
+    # 6. Возвращаем u0 исходный тип List[Float64]
+    result = result.with_columns(
+        pl.concat_list([pl.col("u0").struct.field("u0_x"), pl.col("u0").struct.field("u0_y")]).alias("u0")
+    )
+    
+    print(result)
 
 if __name__ == '__main__':
+    # TwoTrajsOnPhaseTrajectory()
+    # two_trajs()
+    # ComplexRadonsResearch()
     # ZeroOneTest()
     # TestBiffDeidram()
-    
+
     # article_plots()
-    # ShuttlePointLog()
-    # ShuttlePointTraj()
+    # parse_shuttle_point_initial_values()
+    ShuttlePointLog()
 
     # BifurcationDiagram()
     # OperatorDerivativeTest()
@@ -817,5 +1045,67 @@ if __name__ == '__main__':
 
     # ShiftTest()
 
-    just_solve_rodos()
+    # just_solve_rodos()
 
+    # eps = 0.5
+    # TF = 50.0
+    # with (open(f"./pl/PowerLaw_{eps}_{TF}.json") as f):
+    #     data = json.load(f)
+    #     data = data['results']
+    #     powerLaw = {
+    #         "e": float(data["LCEs"]["power_law"]["e"]),
+    #         "M": int(data["LCEs"]["power_law"]["M"]),
+    #         "Ts": np.asarray(data["LCEs"]["power_law"]["Ts"]),
+    #         "ns": np.asarray(data["LCEs"]["power_law"]["ns"]),
+    #         "r2": np.asarray(data["LCEs"]["power_law"]["r2"]),
+    #         "nu": float(data["LCEs"]["power_law"]["nu"]),
+    #         "C": float(data["LCEs"]["power_law"]["C"]),
+    #         "trajs1": dict((name, np.asarray(traj)) for (name, traj) in dict(data["LCEs"]["power_law"]["trajs1"]).items()),
+    #         "trajs2": dict((name, np.asarray(traj)) for (name, traj) in dict(data["LCEs"]["power_law"]["trajs2"]).items()),
+    #     }
+    # 
+    #     fig, ax = plt.subplots(2,2, figsize=(8,8))
+    #     ax[0, 0].scatter(powerLaw["Ts"], powerLaw["ns"])
+    #     slope, intercept, r_value, _, _ = linregress(powerLaw["Ts"], powerLaw["ns"])
+    #     ax[0, 0].plot(powerLaw["Ts"], slope * powerLaw["Ts"] + intercept, 'r')
+    #     ax[0, 0].plot(powerLaw["Ts"], powerLaw['nu'] * powerLaw["Ts"] + powerLaw['C'], 'b')
+    #     ax[0, 0].set(xlabel="T", ylabel="$\\nu$")
+    #     ax[0, 0].set_title(f"$\\nu$ = {powerLaw['nu']},\n C = {powerLaw['C']},\n $R^2$ = {powerLaw['r2']}")
+    #     ax[0, 0].grid(True)
+    # 
+    #     print(f"nu: {powerLaw['nu']}, C: {powerLaw['C']}, r2: {powerLaw['r2']}")
+    # 
+    #     for (i, T) in enumerate(['1.00', '4.00', '2.50']):
+    #         j = (i + 1) // 2
+    #         k = (j + i + 1) % 2
+    # 
+    #         traj1 = powerLaw['trajs1'][T][:, 0]
+    #         traj2 = powerLaw['trajs2'][T][:, 0]
+    #         ax[j, k].plot(traj1[:1000], 'r')
+    #         ax[j, k].plot(traj2[:1000], 'b')
+    #         ax[j, k].legend(['main traj', 'perturbed traj'])
+    #         ax[j, k].set_title(f"T = {T}")
+    #         ax[j, k].grid(True)
+    # 
+    #     fig.savefig(f"./pl/fig2_tf.png", dpi=300)
+    #         
+    # 
+    #     fig, ax = plt.subplots(2, 2, figsize=(8, 8))
+    #     for (i, T) in enumerate(['1.00', '4.00', '2.50']):
+    #         j = (i + 1) // 2
+    #         k = (j + i + 1) % 2
+    # 
+    #         traj1 = powerLaw['trajs1'][T][:, 0]
+    #         traj2 = powerLaw['trajs2'][T][:, 0]
+    # 
+    #         freq, fourier = calc_fourier_transform(traj1, dt=0.01) 
+    #         ax[j, k].plot(freq[:300], fourier[:300], '-r')
+    #         freq, fourier = calc_fourier_transform(traj2, dt=0.01)
+    #         ax[j, k].plot(freq[:300], fourier[:300], '--b')
+    #         ax[j, k].legend(['main traj', 'perturbed traj'])
+    # 
+    #         ax[j, k].set_title(f"T = {T}")
+    #         ax[j, k].grid(True)
+    # 
+    #     fig.suptitle(f"$\\varepsilon$ = {eps}")
+    #     fig.savefig(f"./pl/fig_f2_tf.png", dpi=300)

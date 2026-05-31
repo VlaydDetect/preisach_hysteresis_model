@@ -73,8 +73,8 @@ def plot_phase_portrait(x, v, ax=None, title="", save=None):
     draw_axes(ax)
     # ax.grid()
     ax.autoscale(tight=True)
-    ax.xlabel("Position x(t)")
-    ax.ylabel("Velocity v(t)")
+    ax.xlabel("x(t)")
+    ax.ylabel("$\\dot{x}(t)$")
     ax.title(title)
     if save is not None:
         ax.savefig(save, dpi=300)
@@ -195,8 +195,8 @@ def plot_hysteresis_loop(inputs, outputs, title="", save=None):
     draw_axes()
     plt.title(title)
     plt.grid()
-    plt.xlabel("Input x")
-    plt.ylabel("Output P")
+    plt.xlabel("x(t)")
+    plt.ylabel("P[x(t)]")
     plt.legend()
     if save is not None:
         plt.savefig(save, dpi=300)
@@ -375,7 +375,7 @@ def plot_fourier_transform(sig, N=None, dt=None):
         xLabel = 'samples'
     else:
         t = np.arange(0, sig.shape[-1]) * dt
-        xLabel = 'freq'
+        xLabel = '$\\omega$'
 
     if N % 2 != 0:
         warnings.warn("signal preferred to be even in size, autoFixing it...")
@@ -387,11 +387,11 @@ def plot_fourier_transform(sig, N=None, dt=None):
     sig_w_FFT = scipy.fft.fft(sig[0:N] * w)
     freq = scipy.fft.fftfreq(N, dt)[1:N // 2]
 
-    plt.plot(freq[1:N // 2][:300], 2. / N * np.abs(sigFFT[1:N // 2 - 1])[:300], '-b')
+    plt.plot(freq[1:N // 2][:300], 2. / N * np.abs(sigFFT[1:N // 2 - 1])[:300], '-k')
     # plt.semilogy(freq, 2. / N * np.abs(sig_w_FFT[1:N//2]), '-r')
     # plt.legend(["FFT", "FFT w. window"])
     plt.xlabel(xLabel)
-    plt.ylabel("fft")
+    plt.ylabel("FFT")
     plt.grid()
     plt.show()
 
@@ -582,4 +582,4 @@ def scientific_plot(x, y, alpha=None, linewidth=None, xlabel=None, ylabel=None, 
     if save is not None:
         fig.savefig(save, dpi=300)
     plt.show()
-    plt.close()
+    plt.close(fig)
