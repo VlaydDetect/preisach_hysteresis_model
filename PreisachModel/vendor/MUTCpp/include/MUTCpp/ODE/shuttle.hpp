@@ -116,8 +116,7 @@ namespace mc
 
             Eigen::Vector2d operator()(double t) const
             {
-                const Eigen::Matrix2d At = m_A * t;
-                const Eigen::Matrix2d expAt = At.exp();
+                const Eigen::Matrix2d expAt = (m_A * t).exp();
                 return expAt * m_b;
             }
         };
@@ -358,7 +357,7 @@ namespace mc
             const double x0 = data[idx][0];
             const double y0 = data[idx][1];
 
-            double m = 0.0;
+            double m;
 
             if (idx > 0 && idx < n - 1)
             {
@@ -708,10 +707,10 @@ namespace mc
     {
         bool converged = false;
         std::vector<Eigen::Vector2d> limits = {}; // либо {A}, либо {A,B}
+        mc::json::JsonDocument doc;
     };
 
-    inline ShuttlePointResult ShuttlePoint(Ref<ode::DynamicalSystem> system_minus,
-                                           Ref<ode::DynamicalSystem> system_plus, const Ref<SolidCone2d> &cone,
+    inline ShuttlePointResult ShuttlePoint(Ref<ode::DynamicalSystem> system, const Ref<SolidCone2d> &cone,
                                            const Eigen::Vector2d &u0, const Eigen::Vector2d &z_minus,
                                            const Eigen::Vector2d &z_plus, double period)
     {
@@ -719,8 +718,8 @@ namespace mc
 
         // Настройки итераций
         constexpr int maxIter = 20;
-        constexpr int maxYIter = 50;
-        
+        constexpr int maxYIter = 150;
+
         CSVWriter trace_even("trace_even.csv");
         CSVWriter trace_odd("trace_odd.csv");
         CSVWriter trace_all("trace_all.csv");
@@ -732,17 +731,17 @@ namespace mc
         message.AddField("iters", maxIter * maxYIter);
         message.GetDoc()["cone"] = cone->ToJson();
         std::vector<Eigen::MatrixXd> odd_sequences_log;
-        std::vector<Eigen::MatrixXd> odd_initial_points_log;
-        std::vector<Eigen::MatrixXd> odd_cond_points_log;
+        std::vector<Eigen::Vector2d> odd_initial_points_log;
+        std::vector<Eigen::Vector2d> odd_cond_points_log;
 
         std::vector<Eigen::MatrixXd> even_sequences_log;
-        std::vector<Eigen::MatrixXd> even_initial_points_log;
-        std::vector<Eigen::MatrixXd> even_cond_points_log;
+        std::vector<Eigen::Vector2d> even_initial_points_log;
+        std::vector<Eigen::Vector2d> even_cond_points_log;
 
         std::println("z-: {}, z+: {}", z_minus, z_plus);
 
-        const Eigen::MatrixXd z_minus_traj = system_minus->ShiftTraj(z_minus, period);
-        const Eigen::MatrixXd z_plus_traj = system_plus->ShiftTraj(z_plus, period);
+        const Eigen::MatrixXd z_minus_traj = system->ShiftTraj(z_minus, period);
+        const Eigen::MatrixXd z_plus_traj = system->ShiftTraj(z_plus, period);
         message.AddField("traj_z-", z_minus_traj);
         message.AddField("traj_z+", z_plus_traj);
 
@@ -767,7 +766,7 @@ namespace mc
         // 3) Последовательность sigma_n
         auto sigma_n = [](int n)
         {
-            double v = 1.0 / std::pow(2.0, n + 3);
+            double v = 1.0 / mc::power(2.0, n + 3);
             std::println("sigma_{}: {}", n, v);
             return v;
         };
@@ -778,79 +777,55 @@ namespace mc
         z_even.push_back(z_plus);
 
         // Вспомогательные последовательности
-        auto build_sequence = [maxYIter, &system_minus, &system_plus, period, sigma_n, u0, &cone,
-                &odd_sequences_log, &odd_initial_points_log, &even_sequences_log, &even_initial_points_log,
-                &odd_cond_points_log, &even_cond_points_log](
-            const Eigen::Vector2d &y0, bool add, int sig_idx, CSVWriter &trace) -> std::optional<Eigen::Vector2d>
+        auto build_sequence = [maxYIter, period, sigma_n, u0, &cone](
+            const Eigen::Vector2d &y0, Ref<ode::DynamicalSystem> &system, bool add, int sig_idx, CSVWriter &trace,
+            std::vector<Eigen::MatrixXd> &sequences_log, std::vector<Eigen::Vector2d> &initial_points_log,
+            std::vector<Eigen::Vector2d> &cond_points_log) -> std::optional<Eigen::Vector2d>
         {
             AL_PROFILE_FUNC("ShuttlePoint::build_sequence");
-            Eigen::Vector2d y_prev = y0;
-            std::println("y{}_0: {}", sig_idx, y_prev);
+            Eigen::Vector2d y_current = y0;
+            std::println("y{}_0: {}", sig_idx, y_current);
             for (int n = 1; n < maxYIter; ++n)
             {
-                Eigen::Vector2d y_next;
-                if (add)
+                system->ResetTo(y_current);
+                const Eigen::MatrixXd newSol = system->Forward(period);
+                Eigen::Vector2d y_shifted = newSol.row(newSol.rows() - 1).transpose();
+
+                initial_points_log.push_back(y_current);
+                sequences_log.push_back(newSol);
+
+                // проверка условий выбора z для ТЕКУЩЕГО элемента
+
+                const Eigen::Vector2d cond_point = add
+                    ? (y_current - y_shifted - sigma_n(sig_idx + 2) * u0)
+                    : (y_shifted - y_current - sigma_n(sig_idx + 2) * u0);
+                cond_points_log.push_back(cond_point);
+                if (cone->contains(cond_point))
                 {
-                    const Eigen::MatrixXd newSol = system_minus->ShiftTraj(y_prev, period);
-                    y_next = newSol.col(newSol.cols() - 1);
-                    y_next += sigma_n(sig_idx) * u0;
-
-                    odd_sequences_log.push_back(newSol);
-                    odd_initial_points_log.push_back(y_next);
-                }
-                else
-                {
-                    const Eigen::MatrixXd newSol = system_plus->ShiftTraj(y_prev, period);
-                    y_next = newSol.col(newSol.cols() - 1);
-                    y_next -= sigma_n(sig_idx) * u0;
-
-                    even_sequences_log.push_back(newSol);
-                    even_initial_points_log.push_back(y_next);
-                }
-
-                std::println("y{}_{}: {}", sig_idx, n, y_next);
-
-                trace.writePoint(n, y_next);
-
-                // проверка условий выбора z
-                if (add)
-                {
-                    const Eigen::Vector2d cond_point = y_prev - y_next - sigma_n(sig_idx + 2) * u0;
-                    odd_cond_points_log.push_back(cond_point);
-                    if (cone->contains(cond_point))
-                    {
-                        std::println("y{}_{} that satisfies condition: {}", sig_idx, n, y_next);
-                        return y_next;
-                    }
-                }
-                else
-                {
-                    const Eigen::Vector2d cond_point = y_next - y_prev - sigma_n(sig_idx + 2) * u0;
-                    even_cond_points_log.push_back(cond_point);
-                    if (cone->contains(cond_point))
-                    {
-                        std::println("y{}_{} that satisfies condition: {}", sig_idx, n, y_next);
-                        return y_next;
-                    }
+                    std::println("y{}_{} that satisfies condition: {}", sig_idx, n, y_current);
+                    return y_current;
                 }
 
-                y_prev = y_next;
+                y_current += add ? (sigma_n(sig_idx) * u0) : (-sigma_n(sig_idx) * u0); 
+
+                std::println("y{}_{}: {}", sig_idx, n, y_current);
+
+                trace.writePoint(n, y_current);
             }
             return std::nullopt;
         };
 
         // Основной цикл построения z_n
-        ShuttlePointResult result;
         {
             AL_PROFILE_FUNC("ShuttlePoint::<z_odd, z_event search>");
             bool stop = false;
             for (int iter = 1; iter < maxIter + 1 && !stop; ++iter)
             {
-                if (iter % 2 != 0) // нечётный шаг, строим "возрастающую"
+                if (iter % 2 == 1) // нечётный шаг, строим "возрастающую"
                 {
-                    system_minus->CallResetFn();
                     std::println("z_odd back: {}", z_odd.back());
-                    auto z1 = build_sequence(z_odd.back(), true, iter, trace_odd);
+                    auto z1 = build_sequence(z_odd.back(), system, true, iter, trace_odd, odd_sequences_log,
+                                             odd_initial_points_log, odd_cond_points_log);
                     if (z1.has_value())
                     {
                         std::println("z_odd new: {}", *z1);
@@ -865,9 +840,9 @@ namespace mc
                 }
                 else // чётный шаг, строим "убывающую"
                 {
-                    system_plus->CallResetFn();
                     std::println("z_even back: {}", z_even.back());
-                    auto z2 = build_sequence(z_even.back(), false, iter, trace_even);
+                    auto z2 = build_sequence(z_even.back(), system, false, iter, trace_even, even_sequences_log,
+                                             even_initial_points_log, even_cond_points_log);
                     if (z2.has_value())
                     {
                         std::println("z_even new: {}", *z2);
@@ -880,6 +855,22 @@ namespace mc
                         break;
                     }
                 }
+
+                if (iter > 2)
+                {
+                    const auto z1 = z_odd.back();
+                    const auto z11 = z_odd[z_odd.size() - 2];
+
+                    const auto z2 = z_even.back();
+                    const auto z22 = z_even[z_even.size() - 2];
+
+                    if (z1.isApprox(z2, 0.001) || (z1.isApprox(z11, 0.001) && z2.isApprox(z22, 0.001)))
+                    {
+                        stop = true;
+                        z_odd.erase(z_odd.end() - 1);
+                        z_even.erase(z_even.end() - 1);
+                    } 
+                }
             }
         }
 
@@ -889,12 +880,14 @@ namespace mc
         message.AddField("even_sequences", even_sequences_log);
         message.AddField("even_initial_points", even_initial_points_log);
         message.AddField("even_cond_points", even_cond_points_log);
+        message.AddField("z_odd", z_odd);
+        message.AddField("z_even", z_even);
 
-        mc::Ref file = mc::Ref<FileWriter>::Create("ShuttlePointLog.json");
-        file->Write(message.ToString());
-
-        result.converged = true;
-        result.limits = {z_odd.back(), z_even.back()};
+        ShuttlePointResult result = {
+            .converged = true,
+            .limits = {z_odd.back(), z_even.back()},
+            .doc = std::move(message),
+        };
 
         if (!result.converged)
             std::cerr << "[WARN] ShuttlePoint did not converge.\n";
