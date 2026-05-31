@@ -72,13 +72,6 @@ namespace mc
             other.m_Instance = nullptr;
         }
 
-        static Ref<T> CopyWithoutIncrement(const Ref<T> &other)
-        {
-            Ref<T> result = nullptr;
-            result->m_Instance = other.m_Instance;
-            return result;
-        }
-
         ~Ref()
         {
             DecRef();
