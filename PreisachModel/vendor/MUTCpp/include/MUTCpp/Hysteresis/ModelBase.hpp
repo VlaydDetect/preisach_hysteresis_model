@@ -26,6 +26,7 @@ namespace mc
             m_HistoryU = {};
             m_HistoryOutput = {};
             m_HistoryDerivative = {};
+            m_InputDerivativeHistory = {};
         }
 
         void ResetState()
@@ -33,6 +34,7 @@ namespace mc
             m_HistoryU = {};
             m_HistoryOutput = {};
             m_HistoryDerivative = {};
+            m_InputDerivativeHistory = {};
             ResetImpl();
         }
 
@@ -42,7 +44,7 @@ namespace mc
         // virtual ~PreisachModelBase() override = default;
 
         // std::array<Matrix<double>, 2> HysteresisLoop() const
-        std::array<std::vector<double>, 2> HysteresisLoop() const
+        std::tuple<std::vector<double>, std::vector<double>> HysteresisLoop() const
         {
             return {m_HistoryU, m_HistoryOutput};
         }
@@ -60,7 +62,7 @@ namespace mc
 
         virtual double GetMaxArea() const = 0;
 
-        virtual double P(double u, int i = -1) = 0;
+        virtual double P(double u, double v, int i = -1) = 0;
 
         virtual double DerivativeOperator(double t, double dt) = 0;
 
@@ -70,7 +72,7 @@ namespace mc
     protected:
         double m_L;
 
-        std::vector<double> m_HistoryU{}, m_HistoryOutput{}, m_HistoryDerivative{};
+        std::vector<double> m_HistoryU{}, m_InputDerivativeHistory{}, m_HistoryOutput{}, m_HistoryDerivative{};
     };
 
     class SinglePreisachModel : public PreisachModelBase
@@ -97,7 +99,7 @@ namespace mc
             return 2 * utils::power(m_L, 2);
         }
 
-        virtual double P(const double u, const int i = -1) override
+        virtual double P(const double u, const double, const int i = -1) override
         {
             AL_PROFILE_FUNC("PreisachModelBase::P");
             if (i == m_PrevIndex)
@@ -217,7 +219,6 @@ namespace mc
 
             if (m_KeepDerivative)
             {
-                // m_HistoryDerivative = append(m_HistoryDerivative, {DerivativeOperator(i)});
                 m_HistoryDerivative.push_back(DerivativeOperator(i));
             }
 
@@ -232,7 +233,6 @@ namespace mc
             {
                 return m_HistoryDerivative.back();
             }
-            // m_PrevIndex = i;
 
             if (m_KeepDerivative)
             {
@@ -243,9 +243,25 @@ namespace mc
             return DerivativeOperator(i);
         }
 
-        double DerivativeOperator(uint32_t i)
+        double DerivativeOperator(const int32_t i) const
         {
-            return DerivativeOperator_Impl(i);
+            if (i < 0)
+            {
+                return 0.0;
+            }
+            
+            double x_i = m_HistoryU[i];
+
+            if (x_i < m_Bounds[0] || x_i > m_Bounds[1])
+                return 0.0;
+
+            if (m_InterfaceMax.empty())
+                return x_i + m_Bounds[0];
+            if (m_InterfaceMin.empty())
+                return x_i + m_Bounds[1];
+
+            double u = isnan(m_HistoryInterfaceMax[i]) ? m_InterfaceMax.back() : m_InterfaceMin.back();
+            return x_i - u;
         }
 
         void CleanupState()
@@ -269,22 +285,6 @@ namespace mc
             m_FirstElemType = ElementType::Max;
             m_PrevElemType = ElementType::Max;
             m_LastElemType = ElementType::Max;
-        }
-
-        virtual double DerivativeOperator_Impl(uint32_t i)
-        {
-            double x_i = m_HistoryU[i];
-
-            if (x_i < m_Bounds[0] || x_i > m_Bounds[1])
-                return 0.0;
-
-            if (m_InterfaceMax.empty())
-                return x_i + m_Bounds[0];
-            if (m_InterfaceMin.empty())
-                return x_i + m_Bounds[1];
-
-            double u = isnan(m_HistoryInterfaceMax[i]) ? m_InterfaceMax.back() : m_InterfaceMin.back();
-            return x_i - u;
         }
 
         void CleanupInterfacesByMax(const double u)
@@ -397,7 +397,7 @@ namespace mc
         double m_PreviousOutput = consts::nan;
         std::vector<double> m_InterfaceMax{}, m_InterfaceMin{};
         bool m_KeepDerivative = false, m_KeepAnimation = false;
-        uint32 m_PrevIndex = INT_MIN;
+        int32 m_PrevIndex = INT_MIN;
 
         std::vector<double> m_HistoryInterfaceMin{}, m_HistoryInterfaceMax{};
 
@@ -415,13 +415,19 @@ namespace mc
     class DoublePreisachModel : public PreisachModelBase
     {
     public:
-        DoublePreisachModel(double L, double d, double k) :
-            PreisachModelBase(L), m_D({d, -d}), m_K(k)
+        DoublePreisachModel(double L, double d, double k, bool keepDerivative = false) :
+            PreisachModelBase(L), m_D({d, -d}), m_K(k), m_KeepDerivative(keepDerivative)
         {
             assert(d >= 0);
 
             m_HistoryU = {};
             m_HistoryOutput = {};
+            m_WhatRegionAt = {};
+        }
+        
+        double GetD() const
+        {
+            return m_D[0];
         }
         
         void SetD(double d)
@@ -429,7 +435,7 @@ namespace mc
             m_D = {d, -d};
         }
 
-        virtual double P(double u, int i = -1) override
+        virtual double P(double u, double v, int i = -1) override
         {
             if (i == m_PrevIndex)
             {
@@ -441,21 +447,42 @@ namespace mc
             double p;
             if (u >= m_D[0])
             {
-                double p1 = m_UpperModel->P(u, i);
-                double p2 = m_LowerModel->P(u, i);
+                double p1 = m_UpperModel->P(u, 0.0, i);
+                double p2 = m_LowerModel->P(u, 0.0, i);
                 p = p1 + p2 + m_D[0] * m_K;
+                
+                if (i >= 0)
+                {
+                    m_WhatRegionAt.emplace_back(WorkingRegion::UpperModel);
+                }
             }
             // m_D[1] is negative
             else if (u <= m_D[1])
             {
-                double p1 = m_UpperModel->P(u, i);
-                double p2 = m_LowerModel->P(u, i);
+                double p1 = m_UpperModel->P(u, 0.0, i);
+                double p2 = m_LowerModel->P(u, 0.0, i);
                 p = p1 + p2 + m_D[1] * m_K;
+                
+                if (i >= 0)
+                {
+                    m_WhatRegionAt.emplace_back(WorkingRegion::LowerModel);
+                }
             }
             else
             {
+                m_UpperModel->P(u, 0.0, i);
+                m_LowerModel->P(u, 0.0, i);
+                
                 p = m_K * u;
+                m_WhatRegionAt.emplace_back(WorkingRegion::Linear);
             }
+            
+            if (m_KeepDerivative)
+            {
+                m_InputDerivativeHistory.push_back(v);
+                m_HistoryDerivative.push_back(DerivativeOperator(i));
+            }
+            
             m_HistoryOutput.push_back(p);
             m_PreviousOutput = p;
             return p;
@@ -463,16 +490,44 @@ namespace mc
     
         virtual double DerivativeOperator(double t, double dt) override
         {
-            return 0.0;
+            auto i = static_cast<uint32_t>(t / dt);
+            
+            if (i == m_PrevIndex && m_KeepDerivative)
+            {
+                return m_HistoryDerivative.back();
+            }
+            
+            if (m_KeepDerivative)
+            {
+                return m_HistoryDerivative[i];
+            }
+            
+            return DerivativeOperator(i);
+        }
+        
+        double DerivativeOperator(int32_t i)
+        {
+            if (i < 0)
+            {
+                return 0.0;
+            }
+            
+            switch (m_WhatRegionAt[i])
+            {
+                case WorkingRegion::UpperModel: return m_UpperModel->DerivativeOperator(i);
+                case WorkingRegion::LowerModel: return m_LowerModel->DerivativeOperator(i);
+                case WorkingRegion::Linear: return m_InputDerivativeHistory[i];
+            }
         }
 
     protected:
         virtual void ResetImpl() override
         {
-            m_UpperModel.Reset();
-            m_LowerModel.Reset();
+            m_UpperModel->ResetState();
+            m_LowerModel->ResetState();
             m_PrevIndex = INT_MIN;
             m_PreviousOutput = consts::nan;
+            m_WhatRegionAt = {};
         }
 
     protected:
@@ -484,5 +539,17 @@ namespace mc
 
         int32 m_PrevIndex = INT_MIN;
         double m_PreviousOutput = consts::nan;
+        
+        bool m_KeepDerivative;
+        
+        enum class WorkingRegion
+        {
+            UpperModel = 0,
+            Linear = 1,
+            LowerModel = 2,
+        };
+        
+        // Says what region returns value of Preisach model at index
+        std::vector<WorkingRegion> m_WhatRegionAt;
     };
 }

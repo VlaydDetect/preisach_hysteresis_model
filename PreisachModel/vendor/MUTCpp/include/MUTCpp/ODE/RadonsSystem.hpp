@@ -34,7 +34,7 @@ namespace mc
                 const double g = gamma * x[1];
                 const double ww = w0 * x[0];
                 const double atan = use_atan ? args.at("eps").toDouble() * std::atan(x[0]) : 0.0;
-                const double p = E * model->P(x[0], static_cast<int>(t / dt));
+                const double p = E * model->P(x[0], x[1], static_cast<int>(t / dt));
                 const double v = a - g - ww + p + atan;
 
                 res[0] = x[1];

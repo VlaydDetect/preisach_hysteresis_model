@@ -126,12 +126,9 @@ namespace mc
                 k--;
             }
 
-            // const auto O = Point(-m_L, -m_L);
-            // const auto O = Point(m_Bounds[0], m_Bounds[0]);
             const auto Mf = first
                 ? Eigen::Vector2d(m_Bounds[0], m_InterfaceMax[0])
                 : Eigen::Vector2d(m_InterfaceMin[0], m_Bounds[1]);
-            // res.push_back(O);
             res.push_back(Mf);
 
             for (uint32 m = 1; m < k; m++)
@@ -154,8 +151,6 @@ namespace mc
             }
 
             const auto Ml = last
-                // ? Point(m_InterfaceMax[-1], m_InterfaceMax[-1])
-                // : Point(m_InterfaceMin[-1], m_InterfaceMin[-1]);
                 ? Eigen::Vector2d(m_InterfaceMax.back(), m_InterfaceMax.back())
                 : Eigen::Vector2d(m_InterfaceMin.back(), m_InterfaceMin.back());
             res.push_back(Ml);
@@ -176,13 +171,13 @@ namespace mc
     class DoubleArealPreisachModel : public DoublePreisachModel
     {
     public:
-        DoubleArealPreisachModel(double L, double d, double k) :
-            DoublePreisachModel(L, d, k)
+        DoubleArealPreisachModel(double L, double d, double k, bool keepDerivative = false) :
+            DoublePreisachModel(L, d, k, keepDerivative)
         {
-            m_UpperModel = Ref<ArealPreisachModel>::Create(m_L);
+            m_UpperModel = Ref<ArealPreisachModel>::Create(m_L, keepDerivative);
             m_UpperModel->SetBounds({d, 2. * L + d});
 
-            m_LowerModel = Ref<ArealPreisachModel>::Create(m_L);
+            m_LowerModel = Ref<ArealPreisachModel>::Create(m_L, keepDerivative);
             m_LowerModel->SetBounds({-2. * L - d, -d});
         }
 
