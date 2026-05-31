@@ -16,34 +16,37 @@ namespace mc
 {
     struct GaussAreaResult
     {
-        double total_area;
+        double total_area = 0.0;
         std::vector<std::tuple<double, std::array<Eigen::Vector2d, 3>>> areas_n_triangles;
     };
 
-    inline GaussAreaResult gauss_area(const std::vector<Eigen::Vector2d> &points,
-                                      const Eigen::Vector2d &pivot = Eigen::Vector2d::Zero())
+    inline GaussAreaResult gauss_area(const std::vector<Eigen::Vector2d> &points, const Eigen::Vector2d &pivot)
     {
         AL_PROFILE_FUNC("mc::utils::gauss_area");
-
-        const uint32 n = points.size();
-        double s = 0.;
-        std::vector<std::tuple<double, std::array<Eigen::Vector2d, 3>>> areas_n_triangles;
-
-        for (uint32 i = 0; i < n - 1; i++)
+        
+        GaussAreaResult result;
+        const size_t n = points.size();
+            
+        if (n < 2) return result;
+        
+        result.areas_n_triangles.reserve(n - 1);
+        
+        // 2. СОВРЕМЕННЫЙ C++23: std::views::adjacent<2> элегантно выдает пары (p1, p2)
+        // по ссылкам, исключая ручное управление индексами массива
+        for (const auto& [p1, p2] : points | std::views::adjacent<2>)
         {
-            const Eigen::Vector2d &p1 = points[i];
-            const Eigen::Vector2d &p2 = points[i + 1];
-
-            std::array triangle = {pivot, p1, p2};
-            Eigen::Matrix2d M;
-            M.col(0) = pivot - p1;
-            M.col(1) = pivot - p2;
-            double area = abs(M.determinant()) / 2.;
-
-            s += area;
-            areas_n_triangles.push_back({area, triangle});
+            // 3. ОПТИМИЗАЦИЯ МАТЕМАТИКИ: Вместо инстанцирования Eigen::Matrix2d и вызова .determinant(),
+            // мы напрямую вычисляем 2D псевдо-скалярное произведение (косое произведение).
+            const double cross_product = (p1.x() - pivot.x()) * (p2.y() - pivot.y()) - 
+                                         (p1.y() - pivot.y()) * (p2.x() - pivot.x());
+            
+            const double area = std::abs(cross_product) * 0.5;
+            result.total_area += area;
+            // 4. Используем emplace_back для создания tuple и array in-place
+            result.areas_n_triangles.emplace_back(area, std::array{pivot, p1, p2});
         }
 
-        return GaussAreaResult(s, areas_n_triangles);
+        // NRVO (Named Return Value Optimization), копирования структуры не будет
+        return result;
     }
 }
