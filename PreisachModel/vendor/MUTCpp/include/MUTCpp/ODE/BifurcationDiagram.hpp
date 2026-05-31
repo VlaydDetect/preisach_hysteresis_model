@@ -6,8 +6,7 @@
 
 #pragma once
 
-#include <unordered_map>
-
+#include "Functions/find_extrema.hpp"
 #include "DSArgs.hpp"
 #include "Json/JsonDocument.hpp"
 
@@ -54,29 +53,24 @@ namespace mc
                 result.min_params.reserve(estimated_capacity);
                 result.min_values.reserve(estimated_capacity);
 
-                // Однопроходный поиск экстремумов
+                // Используем унифицированный безопасный метод для каждой строки
                 for (Eigen::Index i = 0; i < num_params; ++i)
                 {
                     const double current_param = bifurcation_params[i].toDouble();
-                    const auto time_series_row = time_series_matrix.row(i);
 
-                    for (Eigen::Index j = 1; j < time_steps - 1; ++j)
+                    // Передаем строку как Eigen::Ref (без копирования)
+                    auto [maxima, minima] = mc::find_extrema_1d(time_series_matrix.row(i));
+
+                    for (const Eigen::Index idx : maxima)
                     {
-                        const double center = time_series_row(j);
-                        const double left = time_series_row(j - 1);
-                        const double right = time_series_row(j + 1);
+                        result.max_params.push_back(current_param);
+                        result.max_values.push_back(time_series_matrix(i, idx));
+                    }
 
-                        // Логика строгих локальных максимумов и минимумов
-                        if (center > left && center > right)
-                        {
-                            result.max_params.push_back(current_param);
-                            result.max_values.push_back(center);
-                        }
-                        else if (center < left && center < right)
-                        {
-                            result.min_params.push_back(current_param);
-                            result.min_values.push_back(center);
-                        }
+                    for (const Eigen::Index idx : minima)
+                    {
+                        result.min_params.push_back(current_param);
+                        result.min_values.push_back(time_series_matrix(i, idx));
                     }
                 }
 
@@ -96,6 +90,7 @@ namespace mc
                                                      double timeForward,
                                                      uint32_t var_idx = 0)
         {
+            system->ResetArgs();
             system->Reset();
 
             const auto &[param_name, param_value] = bifurcationParam;
@@ -105,19 +100,21 @@ namespace mc
 
             WriteVotesToDoc(message, param_name, param_value, param_value[0].Type());
 
-            Eigen::MatrixXd trajs = Eigen::MatrixXd::Zero(param_value.size(), researchTime / system->GetDeltaTime() + 1);
+            Eigen::MatrixXd trajs =
+                detail::MatrixRowMajor::Zero(param_value.size(),
+                                             static_cast<Eigen::Index>(researchTime / system->GetDeltaTime()) + 1);
 
             for (int i = 0; i < param_value.size(); ++i)
             {
                 system->Reset();
                 system->SetArg(param_name, param_value[i]);
-                
+
                 system->Forward(timeForward);
 
                 const auto traj = system->Forward(researchTime);
                 trajs.row(i) = traj.col(var_idx);
             }
-            
+
             const auto biff_data = detail::extract_bifurcation_extrema(param_value, trajs);
             message.AddField("max_params", biff_data.max_params);
             message.AddField("max_values", biff_data.max_values);
@@ -126,6 +123,9 @@ namespace mc
 
             // message.AddField("trajs", trajs);
 
+            system->ResetArgs();
+            system->Reset();
+            
             return message;
         }
     }
