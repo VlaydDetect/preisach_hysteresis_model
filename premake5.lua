@@ -1,7 +1,7 @@
 include "Dependencies.lua"
 
 workspace "PreisachModel"
-	configurations { "Debug", "Release" }
+	configurations { "Debug", "ReleaseWithInfo", "Release" }
 	startproject "PreisachModel"
 	conformancemode "On"
 
@@ -44,9 +44,13 @@ workspace "PreisachModel"
     filter {"system:windows"}
         flags {"NoRuntimeChecks", "NoIncrementalLink"}
 
-    filter "configurations:Release"
+    filter "configurations:ReleaseWithInfo"
         optimize "On"
         symbols "Default"
+
+    filter "configurations:Release"
+        optimize "Full"
+        symbols "Off"
 
     filter "system:windows"
         buildoptions {"/EHsc", "/Zc:preprocessor", "/Zc:__cplusplus"}

@@ -50,12 +50,17 @@ project "PreisachModel"
 
 	filter "configurations:Debug"
 		symbols "On"
-		defines { "_DEBUG", "ACL_ON_ASSERT_ABORT", }
+		defines { "AL_DEBUG", "_DEBUG", "ACL_ON_ASSERT_ABORT", }
 		ProcessDependencies("Debug")
+
+	filter "configurations:ReleaseWithInfo"
+        optimize "On"
+        symbols "Default"
 	
 	filter "configurations:Release"
         optimize "On"
         vectorextensions "AVX2"
         isaextensions { "BMI", "POPCNT", "LZCNT", "F16C" }
+		defines { "AL_RELEASE", }
         
         ProcessDependencies("Release")
