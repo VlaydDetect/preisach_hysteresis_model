@@ -806,7 +806,7 @@ namespace mc
                     return y_current;
                 }
 
-                y_current += add ? (sigma_n(sig_idx) * u0) : (-sigma_n(sig_idx) * u0); 
+                y_current = y_shifted + (add ? (sigma_n(sig_idx) * u0) : (-sigma_n(sig_idx) * u0)); 
 
                 std::println("y{}_{}: {}", sig_idx, n, y_current);
 
