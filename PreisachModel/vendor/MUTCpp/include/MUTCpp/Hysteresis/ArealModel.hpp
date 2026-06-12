@@ -39,7 +39,7 @@ namespace mc
             return 2 * utils::power(m_L, 2);
         }
 
-    private:
+    protected:
         virtual double P_Impl(double u) override
         {
             AL_PROFILE_FUNC("ArealPreisachModel::P_Impl");
@@ -58,6 +58,7 @@ namespace mc
             return IntegrateEverett();
         }
 
+    private:
         double IntegrateEverett() const
         {
             double positive = 0.0;
@@ -162,9 +163,7 @@ namespace mc
         double m_PreviousArea = 0.0;
         bool m_IsDownZero = false;
         Matrix<double> m_D = {0.0, 0.0};
-
-        Matrix<double> m_V1 = {-1., -1.}, m_V2 = {1., 1.}, m_V3 = {-1., 1.};
-
+        
         std::optional<std::function<double(double, double)>> m_EverettFunction = std::nullopt;
     };
 

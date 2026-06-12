@@ -40,16 +40,12 @@ namespace mc
 
         PreisachModelBase(const PreisachModelBase &) = delete;
         PreisachModelBase &operator=(const PreisachModelBase &) = delete;
-
-        // virtual ~PreisachModelBase() override = default;
-
-        // std::array<Matrix<double>, 2> HysteresisLoop() const
+        
         std::tuple<std::vector<double>, std::vector<double>> HysteresisLoop() const
         {
             return {m_HistoryU, m_HistoryOutput};
         }
 
-        // std::array<Matrix<double>, 2> DerivativeHistory() const
         std::array<std::vector<double>, 2> DerivativeHistory() const
         {
             return {m_HistoryU, m_HistoryDerivative};
@@ -112,10 +108,7 @@ namespace mc
             // The first input is x0
             if (m_HistoryU.empty())
             {
-                // m_InterfaceMax = append(m_InterfaceMax, {u});
                 m_InterfaceMax.push_back(u);
-                // m_HistoryInterfaceMax = append(m_HistoryInterfaceMax, {u});
-                // m_HistoryInterfaceMin = append(m_HistoryInterfaceMin, {consts::nan});
                 m_HistoryInterfaceMax.push_back(u);
                 m_HistoryInterfaceMin.push_back(consts::nan);
                 m_PreviousInput = u;
@@ -133,11 +126,9 @@ namespace mc
 
                 m_PreviousInput = m_Bounds[0];
                 m_PrevElemType = m_LastElemType;
-                // m_HistoryOutput = append(m_HistoryOutput, {m_Bounds[0]});
 
                 if (m_KeepDerivative)
                 {
-                    // m_HistoryDerivative = append(m_HistoryDerivative, {DerivativeOperator(i)});
                     m_HistoryDerivative.push_back(DerivativeOperator(i));
                 }
 
@@ -153,11 +144,9 @@ namespace mc
 
                 m_PreviousInput = m_Bounds[1];
                 m_PrevElemType = m_LastElemType;
-                // m_HistoryOutput = append(m_HistoryOutput, {m_Bounds[1]});
 
                 if (m_KeepDerivative)
                 {
-                    // m_HistoryDerivative = append(m_HistoryDerivative, {DerivativeOperator(i)});
                     m_HistoryDerivative.push_back(DerivativeOperator(i));
                 }
 
@@ -168,13 +157,11 @@ namespace mc
             }
 
             // ----------- Simplest cleanup -----------
-            // if (!m_InterfaceMax.isempty() && m_FirstElemType == ElementType::Max && u > m_InterfaceMax[0])
             if (!m_InterfaceMax.empty() && m_FirstElemType == ElementType::Max && u > m_InterfaceMax[0])
             {
                 AL_PROFILE_SCOPE("PreisachModelBase::P::MaxOnly");
                 KeepMaxOnly(u);
             }
-            // else if (!m_InterfaceMin.isempty() && m_FirstElemType == ElementType::Min && u < m_InterfaceMin[0])
             else if (!m_InterfaceMin.empty() && m_FirstElemType == ElementType::Min && u < m_InterfaceMin[0])
             {
                 AL_PROFILE_SCOPE("PreisachModelBase::P::MinOnly");
@@ -187,10 +174,7 @@ namespace mc
             {
                 AL_PROFILE_SCOPE("PreisachModelBase::P::Max");
                 CleanupInterfacesByMax(u);
-
-                // m_InterfaceMax = append(m_InterfaceMax, {u});
-                // m_HistoryInterfaceMax = append(m_HistoryInterfaceMax, {u});
-                // m_HistoryInterfaceMin = append(m_HistoryInterfaceMin, {consts::nan});
+                
                 m_HistoryInterfaceMax.push_back(u);
                 m_HistoryInterfaceMin.push_back(consts::nan);
                 m_LastElemType = ElementType::Max;
@@ -199,10 +183,7 @@ namespace mc
             {
                 AL_PROFILE_SCOPE("PreisachModelBase::P::Min");
                 CleanupInterfacesByMin(u);
-
-                // m_InterfaceMin = append(m_InterfaceMin, {u});
-                // m_HistoryInterfaceMin = append(m_HistoryInterfaceMin, {u});
-                // m_HistoryInterfaceMax = append(m_HistoryInterfaceMax, {consts::nan});
+                
                 m_HistoryInterfaceMin.push_back(u);
                 m_HistoryInterfaceMax.push_back(consts::nan);
                 m_LastElemType = ElementType::Min;
@@ -214,7 +195,6 @@ namespace mc
 
             m_PreviousInput = u;
             m_PrevElemType = m_LastElemType;
-            // m_HistoryOutput = append(m_HistoryOutput, {p});
             m_HistoryOutput.push_back(p);
 
             if (m_KeepDerivative)
@@ -239,7 +219,6 @@ namespace mc
                 return m_HistoryDerivative[i];
             }
 
-            // return consts::nan;
             return DerivativeOperator(i);
         }
 
@@ -294,11 +273,6 @@ namespace mc
             {
             case ElementType::Max:
             {
-                // const auto pos = std::distance(m_InterfaceMax.begin(), std::ranges::lower_bound(m_InterfaceMax, u, std::greater<double>()));
-                // m_InterfaceMax = insert(m_InterfaceMax, pos, u);
-                // m_InterfaceMax = m_InterfaceMax[Slice(0, pos + 1)];
-                // m_InterfaceMin = m_InterfaceMin[Slice(0, pos)];
-
                 const auto pos = std::distance(m_InterfaceMax.begin(),
                                                std::ranges::lower_bound(m_InterfaceMax, u, std::greater<double>()));
                 m_InterfaceMax.insert(m_InterfaceMax.begin() + pos, u);
@@ -309,11 +283,6 @@ namespace mc
             }
             case ElementType::Min:
             {
-                // const auto pos = std::distance(m_InterfaceMax.begin(), std::ranges::lower_bound(m_InterfaceMax, u, std::greater<double>()));
-                // m_InterfaceMax = insert(m_InterfaceMax, pos, u);
-                // m_InterfaceMax = m_InterfaceMax[Slice(0, pos + 1)];
-                // m_InterfaceMin = m_InterfaceMin[Slice(0, pos + 1)];
-
                 const auto pos = std::distance(m_InterfaceMax.begin(),
                                                std::ranges::lower_bound(m_InterfaceMax, u, std::greater<double>()));
                 m_InterfaceMax.insert(m_InterfaceMax.begin() + pos, u);
@@ -332,11 +301,6 @@ namespace mc
             {
             case ElementType::Max:
             {
-                // const auto pos = std::distance(m_InterfaceMin.begin(), std::ranges::lower_bound(m_InterfaceMin, u));
-                // m_InterfaceMin = insert(m_InterfaceMin, pos, u);
-                // m_InterfaceMax = m_InterfaceMax[Slice(0, pos + 1)];
-                // m_InterfaceMin = m_InterfaceMin[Slice(0, pos + 1)];
-
                 const auto pos = std::distance(m_InterfaceMin.begin(), std::ranges::lower_bound(m_InterfaceMin, u));
                 m_InterfaceMin.insert(m_InterfaceMin.begin() + pos, u);
                 m_InterfaceMax.erase(m_InterfaceMax.begin() + pos + 1, m_InterfaceMax.end());
@@ -346,11 +310,6 @@ namespace mc
             }
             case ElementType::Min:
             {
-                // const auto pos = std::distance(m_InterfaceMin.begin(), std::ranges::lower_bound(m_InterfaceMin, u));
-                // m_InterfaceMin = insert(m_InterfaceMin, pos, u);
-                // m_InterfaceMax = m_InterfaceMax[Slice(0, pos)];
-                // m_InterfaceMin = m_InterfaceMin[Slice(0, pos + 1)];
-
                 const auto pos = std::distance(m_InterfaceMin.begin(), std::ranges::lower_bound(m_InterfaceMin, u));
                 m_InterfaceMin.insert(m_InterfaceMin.begin() + pos, u);
                 m_InterfaceMax.erase(m_InterfaceMax.begin() + pos, m_InterfaceMax.end());
@@ -363,12 +322,9 @@ namespace mc
 
         void KeepMaxOnly(double u)
         {
-            // m_InterfaceMin = mc::empty<double>();
             m_InterfaceMin = {};
             m_InterfaceMax = {u};
-
-            // m_HistoryInterfaceMax = append(m_HistoryInterfaceMax, {u});
-            // m_HistoryInterfaceMin = append(m_HistoryInterfaceMin, {consts::nan});
+            
             m_HistoryInterfaceMax.push_back(u);
             m_HistoryInterfaceMin.push_back(consts::nan);
             m_FirstElemType = ElementType::Max;
@@ -378,13 +334,9 @@ namespace mc
         void KeepMinOnly(double u)
         {
             m_InterfaceMin = {u};
-            // m_InterfaceMax = mc::empty<double>();
             m_InterfaceMax = {};
 
-            // m_InterfaceMin = append(m_InterfaceMin, {u});
             m_InterfaceMin.push_back(u);
-            // m_HistoryInterfaceMin = append(m_HistoryInterfaceMin, {u});
-            // m_HistoryInterfaceMax = append(m_HistoryInterfaceMax, {consts::nan});
             m_HistoryInterfaceMin.push_back(u);
             m_HistoryInterfaceMax.push_back(consts::nan);
             m_FirstElemType = ElementType::Min;
