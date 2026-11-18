@@ -20,6 +20,7 @@
 #include "Functions/expm1.hpp"
 #include "Utils/essentiallyEqual.hpp"
 #include "Core/Types.hpp"
+#include "Json/Eigen.hpp"
 #include "Json/JsonDocument.hpp"
 
 namespace mc
@@ -58,95 +59,22 @@ namespace mc
             // and is filled with NaN.
             Eigen::MatrixXd z;
 
-            mc::json::JsonDocument toJSON()
+            mc::json::JsonDocument toJSON() const
             {
-                // mc::json::JsonDocument doc({"x", "y", "E"});
-                //  doc.AddField("x", x);
-                //  doc.AddField("y", y);
-                //  doc.AddField("E", z);
-                //  return doc;
-
-                if (this->z.rows() != this->y.size() ||
-                    this->z.cols() != this->x.size())
+                if (z.rows() != y.size() || z.cols() != x.size())
                 {
                     throw std::invalid_argument(
                         "EverettSurfaceData: z dimensions do not match x/y");
                 }
 
-                nlohmann::json x = nlohmann::json::array();
-                nlohmann::json y = nlohmann::json::array();
-                nlohmann::json z = nlohmann::json::array();
-
-                // x
-                for (Eigen::Index i = 0; i < this->x.size(); ++i)
-                {
-                    const double value = this->x(i);
-
-                    if (!std::isfinite(value))
-                    {
-                        throw std::invalid_argument(
-                            "EverettSurfaceData: x contains non-finite value");
-                    }
-
-                    x.push_back(value);
-                }
-
-                // y
-                for (Eigen::Index i = 0; i < this->y.size(); ++i)
-                {
-                    const double value = this->y(i);
-
-                    if (!std::isfinite(value))
-                    {
-                        throw std::invalid_argument(
-                            "EverettSurfaceData: y contains non-finite value");
-                    }
-
-                    y.push_back(value);
-                }
-
-                /*
-                 * Flatten z in row-major logical order:
-                 *
-                 * z[row * cols + col] = this->z(row, col)
-                 *
-                 * Note:
-                 * Eigen::MatrixXd is column-major internally by default,
-                 * but that does not matter because we index explicitly.
-                 */
-                for (Eigen::Index row = 0; row < this->z.rows(); ++row)
-                {
-                    for (Eigen::Index col = 0; col < this->z.cols(); ++col)
-                    {
-                        const double value = this->z(row, col);
-
-                        if (std::isfinite(value))
-                        {
-                            z.push_back(value);
-                        }
-                        else
-                        {
-                            // x > y region -> JSON null
-                            z.push_back(nullptr);
-                        }
-                    }
-                }
-
-                nlohmann::json result = nlohmann::json::object();
-
-                result["type"] = "everett_surface";
-
-                result["rows"] =
-                    static_cast<std::int64_t>(this->z.rows());
-
-                result["cols"] =
-                    static_cast<std::int64_t>(this->z.cols());
-
-                result["x"] = std::move(x);
-                result["y"] = std::move(y);
-                result["z"] = std::move(z);
-
-                return result;
+                return nlohmann::json{
+                    {"type", "everett_surface"},
+                    {"rows", z.rows()},
+                    {"cols", z.cols()},
+                    {"x", json::EncodeVector(x)},
+                    {"y", json::EncodeVector(y)},
+                    {"z", json::EncodeVector(z.reshaped<Eigen::RowMajor>(), json::NonFinite::AsNull)}
+                };
             }
         };
 

@@ -14,14 +14,21 @@ namespace mc
 {
     namespace ode
     {
-        inline std::unique_ptr<ContinuousDS<3>> GetLorenzSystem(double dt, const DSArgs &args, const DSArgs &nextArgs = {},
+        struct LorenzParams
+        {
+            double sigma;
+            double rho;
+            double beta;
+        };
+
+        inline std::unique_ptr<ContinuousDS<3, LorenzParams>> GetLorenzSystem(double dt, const LorenzParams &args, const std::optional<LorenzParams> &nextArgs = {},
                                                  const Eigen::Vector3d &x0 = {1.5, -1.5, 20.0})
         {
-            auto func = [](const Eigen::Vector3d &x, double, const DSArgs &args) -> Eigen::Vector3d
+            auto func = [](const Eigen::Vector3d &x, double, const LorenzParams &args) -> Eigen::Vector3d
             {
-                double sigma = args.at("sigma").toDouble();
-                double rho = args.at("rho").toDouble();
-                double beta = args.at("beta").toDouble();
+                double sigma = args.sigma;
+                double rho = args.rho;
+                double beta = args.beta;
 
                 Eigen::Vector3d res;
                 res[0] = sigma * (x[1] - x[0]);
@@ -30,11 +37,11 @@ namespace mc
                 return res;
             };
 
-            auto jac = [](const Eigen::Vector3d &x, double, const DSArgs &args) -> Eigen::Matrix3d
+            auto jac = [](const Eigen::Vector3d &x, double, const LorenzParams &args) -> Eigen::Matrix3d
             {
-                double sigma = args.at("sigma").toDouble();
-                double rho = args.at("rho").toDouble();
-                double beta = args.at("beta").toDouble();
+                double sigma = args.sigma;
+                double rho = args.rho;
+                double beta = args.beta;
 
                 Eigen::Matrix3d res = Eigen::Matrix3d::Zero();
                 res(0, 0) = -sigma;
@@ -48,14 +55,14 @@ namespace mc
                 return res;
             };
 
-            return std::make_unique<ContinuousDS<3>>(func, jac, dt, args, nextArgs, x0);
+            return std::make_unique<ContinuousDS<3, LorenzParams>>(func, jac, dt, args, nextArgs, x0);
         }
 
         template <typename Derived>
-        std::unique_ptr<ContinuousDS<3>> GetLorenzSystem(double dt, const DSArgs &args, const DSArgs &nextArgs,
+        std::unique_ptr<ContinuousDS<3, LorenzParams>> GetLorenzSystem(double dt, const LorenzParams &args, const std::optional<LorenzParams> &nextArgs,
                                                          const Eigen::MatrixBase<Derived> &x0)
         {
-            return GetLorenzSystem(dt, args, nextArgs, DynamicalSystem<3>::CheckedState(x0));
+            return GetLorenzSystem(dt, args, nextArgs, DynamicalSystem<3, LorenzParams>::CheckedState(x0));
         }
     }
 }

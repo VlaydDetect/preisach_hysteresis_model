@@ -31,74 +31,107 @@ def draw_axes(ax=None):
     ax.axvline(x=0, color='k')
 
 
-def plot_x(x, t, ax=None, title="", save=None):
+def plot_x(x, t, ax=None, title="", save=None, *, x_label="Time t", y_label="Position x(t)", show=True):
     if ax is None:
-        ax = plt
+        ax = plt.gca()
 
     ax.plot(t, x, label='x(t)')
     draw_axes(ax)
     ax.legend()
     # ax.grid()
     ax.autoscale(tight=True)
-    ax.xlabel("Time t")
-    ax.ylabel("Position x(t)")
-    ax.title(title)
-    ax.show()
+    ax.set(xlabel=x_label, ylabel=y_label, title=title)
+    if show:
+        plt.show()
     if save is not None:
-        ax.savefig(save, dpi=300)
+        ax.figure.savefig(save, dpi=300)
 
 
-def plot_v(v, t, ax=None, title="", save=None):
+def plot_v(v, t, ax=None, title="", save=None, *, x_label="Time t", y_label="Velocity v(t)", show=True):
     if ax is None:
-        ax = plt
+        ax = plt.gca()
 
     ax.plot(t, v, label='v(t)')
     draw_axes(ax)
     ax.legend()
     # ax.grid()
     ax.autoscale(tight=True)
-    ax.xlabel("Time t")
-    ax.ylabel("Velocity v(t)")
-    ax.title(title)
-    ax.show()
+    ax.set(xlabel=x_label, ylabel=y_label, title=title)
+    if show:
+        plt.show()
     if save is not None:
-        ax.savefig(save, dpi=300)
+        ax.figure.savefig(save, dpi=300)
 
 
-def plot_phase_portrait(x, v, ax=None, title="", save=None):
+def plot_phase_portrait(x, v, ax=None, title="", save=None, *, x_label="x(t)", y_label="$\\dot{x}(t)$", show=True):
     if ax is None:
-        ax = plt
+        ax = plt.gca()
 
     ax.plot(x, v)
     draw_axes(ax)
     # ax.grid()
     ax.autoscale(tight=True)
-    ax.xlabel("x(t)")
-    ax.ylabel("$\\dot{x}(t)$")
-    ax.title(title)
+    ax.set(xlabel=x_label, ylabel=y_label, title=title)
     if save is not None:
-        ax.savefig(save, dpi=300)
-    ax.show()
+        ax.figure.savefig(save, dpi=300)
+    if show:
+        plt.show()
 
 
-def plot_mLCE_regression(ns, Ts, ax=None, title=""):
+def plot_mLCE_regression(ns, Ts, ax=None, title="", *, x_label=None, y_label=None, show=False):
     is_plt = False
     if ax is None:
         is_plt = True
         ax = plt
 
-    ax.scatter(Ts, ns)
+    Ts, ns = np.asarray(Ts), np.asarray(ns)
+    finite = np.isfinite(Ts) & np.isfinite(ns)
+    ax.scatter(Ts[finite], ns[finite])
 
-    model = np.polyfit(Ts, ns, 1)
-    predict = np.poly1d(model)
-    x_reg = np.linspace(-2., 1.5)
-
-    ax.plot(x_reg, predict(x_reg), 'r')
+    if np.unique(Ts[finite]).size >= 2:
+        model = np.polyfit(Ts[finite], ns[finite], 1)
+        predict = np.poly1d(model)
+        x_reg = np.linspace(-2., 1.5)
+        ax.plot(x_reg, predict(x_reg), 'r')
+        title = f"{title}\n Slope (k): {model[0]:.4f}, Intercept (b): {model[1]:.4f}"
 
     if is_plt:
-        ax.title(f"{title}\n Slope (k): {model[0]:.4f}, Intercept (b): {model[1]:.4f}")
+        ax.title(title)
     else:
-        ax.set_title(f"{title}\n Slope (k): {model[0]:.4f}, Intercept (b): {model[1]:.4f}")
+        ax.set_title(title)
+    if x_label is not None:
+        (ax.xlabel if is_plt else ax.set_xlabel)(x_label)
+    if y_label is not None:
+        (ax.ylabel if is_plt else ax.set_ylabel)(y_label)
+    if show:
+        plt.show()
+
+
+def plot_phase_pair(primary, perturbed, ax, title="", *, x_label="x(t)", y_label="$\\dot{x}(t)$", show=True):
+    ax.plot(primary[:, 0], primary[:, 1], label="Primary")
+    ax.plot(perturbed[:, 0], perturbed[:, 1], label="Perturbed")
+    draw_axes(ax)
+    ax.set(title=title, xlabel=x_label, ylabel=y_label)
+    ax.legend()
+    if show:
+        plt.show()
+
+
+def plot_zero_one(amplitudes, ks, ax, title="", *, x_label="A", y_label="K", show=True):
+    ax.plot(amplitudes, ks)
+    ax.set(title=title, xlabel=x_label, ylabel=y_label)
+    if show:
+        plt.show()
+
+
+def plot_bifurcation_extrema(max_params, max_values, min_params, min_values, ax, title="",
+                            *, x_label="A", y_label="$x_{min}, x_{max}$", show=True):
+    ax.scatter(max_params, max_values, c="red", s=0.2, alpha=0.6, label="Local Maxima", marker=".")
+    ax.scatter(min_params, min_values, c="blue", s=0.2, alpha=0.6, label="Local Minima", marker=".")
+    ax.set(title=title, xlabel=x_label, ylabel=y_label)
+    ax.legend(markerscale=10)
+    if show:
+        plt.show()
 
 
 def plot_areaCoeffsLoop(data, flags: PlottingFlag = None):
@@ -190,18 +223,19 @@ def plot_epsilonLoop(data, flags: PlottingFlag = None):
         warnings.warn(f"plot_epsilonLoop: epsilonLoop not in file")
 
 
-def plot_hysteresis_loop(inputs, outputs, title="", save=None):
-    plt.plot(inputs, outputs, label='loop')
-    draw_axes()
-    plt.title(title)
-    plt.grid()
-    plt.xlabel("x(t)")
-    plt.ylabel("P[x(t)]")
+def plot_hysteresis_loop(inputs, outputs, title="", save=None, *, ax=None, x_label="x(t)", y_label="P[x(t)]", show=True):
+    if ax is None:
+        ax = plt.gca()
+    ax.plot(inputs, outputs, label='loop')
+    draw_axes(ax)
+    ax.set(xlabel=x_label, ylabel=y_label, title=title)
+    ax.grid()
     # plt.xlim([-2, 2])
-    plt.legend()
+    ax.legend()
     if save is not None:
-        plt.savefig(save, dpi=300)
-    plt.show()
+        ax.figure.savefig(save, dpi=300)
+    if show:
+        plt.show()
 
 
 def animate_preisach_plane(uHist, xHist, yHist, outHist, L):
@@ -366,7 +400,9 @@ def plot_preisach_derivative(time, inputs, derivatives, title=""):
     # plt.show()
 
 
-def plot_fourier_transform(sig, N=None, dt=None):
+def plot_fourier_transform(sig, N=None, dt=None, *, ax=None, title="", x_label=None, y_label="FFT", show=True):
+    if ax is None:
+        ax = plt.gca()
     if N is None:
         N = sig.shape[0] - 1
 
@@ -388,13 +424,13 @@ def plot_fourier_transform(sig, N=None, dt=None):
     sig_w_FFT = scipy.fft.fft(sig[0:N] * w)
     freq = scipy.fft.fftfreq(N, dt)[1:N // 2]
 
-    plt.plot(freq[1:N // 2][:300], 2. / N * np.abs(sigFFT[1:N // 2 - 1])[:300], '-k')
+    ax.plot(freq[1:N // 2][:300], 2. / N * np.abs(sigFFT[1:N // 2 - 1])[:300], '-k')
     # plt.semilogy(freq, 2. / N * np.abs(sig_w_FFT[1:N//2]), '-r')
     # plt.legend(["FFT", "FFT w. window"])
-    plt.xlabel(xLabel)
-    plt.ylabel("FFT")
-    plt.grid()
-    plt.show()
+    ax.set(xlabel=xLabel if x_label is None else x_label, ylabel=y_label, title=title)
+    ax.grid()
+    if show:
+        plt.show()
 
     # sigFFT = np.fft.fft(sig) / t.shape[0]  # Divided by size t for coherent magnitude
     # 

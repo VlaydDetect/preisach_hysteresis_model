@@ -10,8 +10,8 @@
 
 #include "MUTCpp/Utils/Eigen.hpp"
 
-#include "FileWriter/FileWriter.hpp"
-#include "Server/Server.hpp"
+#include "FileWriter/ExperimentArchive.hpp"
+#include "Server/Client.hpp"
 #include "Utils/Math.hpp"
 #include "Utils/doubleToString.hpp"
 
@@ -27,7 +27,92 @@
 
 using json = nlohmann::json;
 
-static Net::Server g_Server(8888, "127.0.0.1");
+static bool g_SendResults = false;
+
+static void PublishResult(Experiment::Archive &archive)
+{
+    const auto path = archive.Publish();
+    std::println("Saved experiment archive: {}", path.string());
+    if (g_SendResults)
+    {
+        try
+        {
+            Net::SendArchive(path);
+            std::println("Python accepted archive: {}", path.string());
+        }
+        catch (const std::exception &error)
+        {
+            throw std::runtime_error(std::format("Delivery failed for saved archive {}: {}", path.string(), error.what()));
+        }
+    }
+}
+
+static json StoreTimes(Experiment::Archive &archive, Eigen::Index samples, double dt)
+{
+    Eigen::VectorXd times(samples);
+    for (Eigen::Index i = 0; i < times.size(); ++i)
+    {
+        times(i) = i * dt;
+    }
+    return archive.AddArray("time", times, {"sample"});
+}
+
+static void StoreRadonsPlots(Experiment::Archive &archive,
+                             const mc::ode::RadonsSystem::Trajectory &trajectory, double dt,
+                             const std::vector<double> &inputs, const std::vector<double> &outputs)
+{
+    StoreTimes(archive, trajectory.rows(), dt);
+    archive.AddArray("x", trajectory.col(0), {"sample"});
+    archive.AddArray("v", trajectory.col(1), {"sample"});
+    archive.AddSeries("loop_inputs", inputs, "sample");
+    archive.AddSeries("loop_outputs", outputs, "sample");
+    archive.AddPlot({{"kind", "displacement"}});
+    archive.AddPlot({{"kind", "velocity"}});
+    archive.AddPlot({{"kind", "phase_portrait"}, {"title", "Radons phase portrait"},
+                     {"x_label", "Displacement x(t)"}, {"y_label", "Velocity v(t)"}});
+    archive.AddPlot({{"kind", "hysteresis_loop"}, {"title", "Preisach hysteresis loop"}});
+    archive.AddPlot({{"kind", "fourier_spectrum"}});
+}
+
+template <int N>
+static json StoreTrajectory(Experiment::Archive &archive, const std::string &name,
+                            const std::vector<Eigen::Vector<double, N>> &trajectory)
+{
+    Eigen::Matrix<double, Eigen::Dynamic, N, Eigen::RowMajor> samples(trajectory.size(), N);
+    for (Eigen::Index i = 0; i < samples.rows(); ++i)
+    {
+        samples.row(i) = trajectory[i].transpose();
+    }
+    return archive.AddArray(name, samples, {"sample", "coordinate"});
+}
+
+template <int N>
+static json StoreTrajectoryMap(Experiment::Archive &archive, const std::string &prefix,
+                               const mc::ode::DivergenceTrajectories<N> &trajectories)
+{
+    auto entries = json::object();
+    for (const auto &[interval, trajectory] : trajectories)
+    {
+        entries[interval] = StoreTrajectory(archive, std::format("{}_{}", prefix, entries.size()), trajectory);
+    }
+    return entries;
+}
+
+static json StorePowerLaw(Experiment::Archive &archive, const mc::ode::power_law::PowerLawResult &result)
+{
+    using mc::json::EncodeNumber;
+    using mc::json::NonFinite;
+    return {
+        {"name", "DivergenceDegreeRegressionData"}, {"e", result.epsilon},
+        {"nu", EncodeNumber(result.exponent, NonFinite::AsNull)},
+        {"C", EncodeNumber(result.intercept, NonFinite::AsNull)},
+        {"r2", EncodeNumber(result.r_squared, NonFinite::AsNull)},
+        {"Ts", archive.AddArray("power_log_times", result.log_times, {"interval"})},
+        {"ns", archive.AddArray("power_mean_log_distances", result.mean_log_distances, {"interval"})},
+        {"trajs1", StoreTrajectoryMap(archive, "power_primary", result.primary)},
+        {"trajs2", StoreTrajectoryMap(archive, "power_perturbed", result.perturbed)}
+    };
+}
 
 void OperatorDerivativeTest()
 {
@@ -52,57 +137,49 @@ void OperatorDerivativeTest()
     auto [inputs2, derivatives] = model->DerivativeHistory();
     // auto [inHist, xHist, yHist, outHist] = model->GetAnimationData();
 
-    mc::json::JsonDocument message({"name", "method", "dt", "h", "times", "loop", "results"});
-    message.AddField("name", "OperatorDerivativeTest");
-    message.AddField("method", "plot");
-    message.AddField("dt", dt);
-    message.AddField("h", h);
-    message.AddField("times", t);
-    message.AddSubField({"results", "x"}, u);
-    message.AddSubField({"results", "derivatives"}, derivatives);
-    message.AddSubField({"loop", "inputs"}, u);
-    message.AddSubField({"loop", "outputs"}, outputs);
-    // message.AddSubField({"anim", "in"}, inHist);
-    // message.AddSubField({"anim", "x"}, xHist);
-    // message.AddSubField({"anim", "y"}, yHist);
-    // message.AddSubField({"anim", "out"}, outHist);
-    // message.AddSubField({"anim", "save"}, true);
-
-    // g_Server.SendDataMessage(message);
-    FileWriter file("OperatorDerivativeTest.json");
-    file.Write(message.ToString());
+    Experiment::Archive archive("results", "operator_derivative_test");
+    archive.Parameters() = {{"dt", dt}, {"h", h}, {"L", L}};
+    const auto input = archive.AddSeries("x", u, "sample");
+    archive.Results() = {
+        {"name", "OperatorDerivativeTest"}, {"method", "plot"}, {"dt", dt}, {"h", h},
+        {"times", archive.AddSeries("time", t, "sample")},
+        {"loop", {{"inputs", input}, {"outputs", archive.AddSeries("loop_outputs", outputs, "sample")}}},
+        {"results", {{"x", input}, {"derivatives", archive.AddSeries("derivative", derivatives, "sample")}}}
+    };
+    archive.AddPlot({{"kind", "displacement"}, {"title", "Operator derivative input"}});
+    PublishResult(archive);
 }
 
 mc::json::JsonDocument DoubleLoopBiffurcationDiagram(
-    mc::ode::ContinuousDS<2> &system,
-    std::vector<mc::ode::Vote> ds,
+    mc::ode::RadonsSystem &system,
+    std::vector<double> ds,
     double researchTime,
     double timeForward,
     uint32_t var_idx = 0
     )
 {
     const auto model = std::dynamic_pointer_cast<mc::DoublePreisachModel>(
-        system.GetArgs().at("model").toPreisachModel());
+        system.GetArgs().model);
     if (!model)
     {
         THROW_INVALID_ARGUMENT_ERROR("Double-loop bifurcation requires a double Preisach model");
     }
     const double mem_d = model->GetD();
 
-    system.SetResetFn([ds](mc::ode::DSArgs &args, mc::ode::DSArgs &, uint32_t reset_idx)
+    system.SetResetFn([ds](mc::ode::RadonsContext &args, std::optional<mc::ode::RadonsContext> &, uint32_t reset_idx)
     {
-        const auto model = std::dynamic_pointer_cast<mc::DoublePreisachModel>(args.at("model").toPreisachModel());
+        const auto model = std::dynamic_pointer_cast<mc::DoublePreisachModel>(args.model);
         if (!model)
         {
             THROW_INVALID_ARGUMENT_ERROR("Double-loop bifurcation requires a double Preisach model");
         }
         model->ResetState();
-        model->SetD(ds[reset_idx].toDouble());
+        model->SetD(ds[reset_idx]);
     });
 
     mc::json::JsonDocument message({"name", "d", "max_params", "max_values", "min_params", "min_values"});
     message.AddField("name", "BifurcationDiagram");
-    mc::ode::WriteVotesToDoc(message, "d", ds, mc::ode::VoteDataType::Double);
+    message.AddField("d", ds);
 
     Eigen::MatrixXd trajs = Eigen::MatrixXd::Zero(ds.size(), researchTime / system.GetDeltaTime() + 1);
     for (uint32_t i = 0; i < ds.size(); ++i)
@@ -144,19 +221,12 @@ void JustSolveRodos()
     // auto model = std::make_shared<mc::DoubleArealPreisachModel>(L, 1.0, 1.0, false);
     // auto next_model = std::make_shared<mc::DoubleArealPreisachModel>(L, 1.0, 1.0, false);
 
-    mc::ode::DSArgs args = {
-        {"dt", dt},
-        {"gamma", gamma},
-        {"A", A},
-        {"w0", w0},
-        {"w", w},
-        {"E", E},
-        {"model", mc::ode::Vote(model)},
-        {"phi", 0.0},
+    mc::ode::RadonsContext args{
+        {.dt = dt, .gamma = gamma, .A = A, .w0 = w0, .w = w, .E = E, .phi = 0.0}, model
     };
 
-    mc::ode::DSArgs nextArgs = args;
-    nextArgs.at("model") = mc::ode::Vote(next_model);
+    mc::ode::RadonsContext nextArgs = args;
+    nextArgs.model = next_model;
 
     // Eigen::Vector2d x0 = {0.0, 0.0};
 
@@ -201,42 +271,27 @@ void JustSolveRodos()
     //                                                              -0.9);
     const auto doc = mc::ode::power_law::ComputePowerLawExponent(*system, coords[4], 0.1, 0.1, 0.);
 
-    // mc::json::JsonDocument message({"name", "method", "dt", "h", "E", "time", "loop", "anim", "results"});
-    mc::json::JsonDocument message({"name", "method", "dt", "time", "results", "loop"});
-    message.AddField("name", "JustSolveRodos");
-    message.AddField("method", "plot");
-    message.AddField("dt", dt);
-    message.AddField("time", time);
-    message.AddSubField({"results", "x"}, Eigen::VectorXd(traj.col(0)));
-    message.AddSubField({"results", "v"}, Eigen::VectorXd(traj.col(1)));
-    message.AddSubField({"results", "power_law"}, doc);
-    message.AddSubField({"results", "derivatives"}, derivatives);
-    message.AddSubField({"results", "derivatives"}, derivatives);
-    message.AddSubField({"loop", "inputs"}, inputs1);
-    message.AddSubField({"loop", "outputs"}, outputs);
-
-    // message.AddSubField({"anim", "in"}, inHist);
-    // message.AddSubField({"anim", "x"}, xHist);
-    // message.AddSubField({"anim", "y"}, yHist);
-    // message.AddSubField({"anim", "out"}, outHist);
-
-    // g_Server.SendDataMessage(message);
-    FileWriter file("JustSolveRodos.json");
-    file.Write(message.ToString());
+    Experiment::Archive archive("results", "just_solve_rodos");
+    archive.Parameters() = {{"dt", dt}, {"duration", time}, {"gamma", gamma}, {"w0", w0},
+                            {"w", w}, {"A", A}, {"L", L}, {"E", E}, {"x0", mc::json::EncodeVector(x0)}};
+    StoreRadonsPlots(archive, traj, dt, inputs1, outputs);
+    archive.AddSeries("derivative", derivatives, "sample");
+    archive.Results()["power_law"] = StorePowerLaw(archive, doc);
+    PublishResult(archive);
 }
 
 void TestTrajsCircle()
 {
-    auto func = [](const Eigen::Vector3d &x, double t, mc::ode::DSArgs &args) -> Eigen::Vector3d
+    auto func = [](const Eigen::Vector3d &x, double t, const mc::ode::RadonsContext &args) -> Eigen::Vector3d
     {
         AL_PROFILE_FUNC("Rodos::func");
-        double dt = args.at("dt").toDouble();
-        double gamma = args.at("gamma").toDouble();
-        double A = args.at("A").toDouble();
-        double w0 = args.at("w0").toDouble();
-        double w = args.at("w").toDouble();
-        double E = args.at("E").toDouble();
-        auto &model = args.at("model").toPreisachModel();
+        double dt = args.params.dt;
+        double gamma = args.params.gamma;
+        double A = args.params.A;
+        double w0 = args.params.w0;
+        double w = args.params.w;
+        double E = args.params.E;
+        auto &model = args.model;
 
         Eigen::Vector3d res;
 
@@ -248,7 +303,7 @@ void TestTrajsCircle()
         return res;
     };
 
-    auto jac = [](const Eigen::Vector3d &, double, mc::ode::DSArgs &) -> Eigen::Matrix3d
+    auto jac = [](const Eigen::Vector3d &, double, const mc::ode::RadonsContext &) -> Eigen::Matrix3d
     {
         return Eigen::Matrix3d::Zero();
     };
@@ -266,32 +321,18 @@ void TestTrajsCircle()
     double h = 0.05;
     double E = 1.35;
 
-    mc::ode::DSArgs args = {
-        {"dt", dt},
-        {"gamma", gamma},
-        {"A", A},
-        {"beta", beta},
-        {"w0", w0},
-        {"w", w},
-        {"E", E},
-        // {"model", model}
+    mc::ode::RadonsContext args{
+        {.dt = dt, .gamma = gamma, .A = A, .w0 = w0, .w = w, .E = E}, std::make_shared<mc::ArealPreisachModel>(L, false, false)
     };
-    mc::ode::DSArgs args2 = {
-        {"dt", dt},
-        {"gamma", gamma},
-        {"A", A},
-        {"beta", beta},
-        {"w0", w0},
-        {"w", w},
-        {"E", E},
-        // {"model", model2}
+    mc::ode::RadonsContext args2{
+        {.dt = dt, .gamma = gamma, .A = A, .w0 = w0, .w = w, .E = E}, std::make_shared<mc::ArealPreisachModel>(L, false, false)
     };
 
     double areaCoeff = -0.9;
     double time = 3.0;
 
-    auto system = std::make_unique<mc::ode::ContinuousDS<3>>(func, jac, dt, args, args2);
-    system->SetResetFn([areaCoeff, L](mc::ode::DSArgs &args, mc::ode::DSArgs &nextArgs, uint32_t)
+    auto system = std::make_unique<mc::ode::ContinuousDS<3, mc::ode::RadonsContext>>(func, jac, dt, args, args2);
+    system->SetResetFn([areaCoeff, L](mc::ode::RadonsContext &args, std::optional<mc::ode::RadonsContext> &nextArgs, uint32_t)
     {
         auto model1 = std::make_shared<mc::ArealPreisachModel>(L, false, false);
         auto model2 = std::make_shared<mc::ArealPreisachModel>(L, false, false);
@@ -301,27 +342,27 @@ void TestTrajsCircle()
             model2->P(areaCoeff * L, 0.0, -1);
         }
 
-        args.insert_or_assign("model", mc::ode::Vote(model1));
-        nextArgs.insert_or_assign("model", mc::ode::Vote(model2));
+        args.model = std::move(model1);
+        nextArgs->model = std::move(model2);
     });
 
     // std::vector<double> es = mc::arange(0.05, 1.05, 0.05).toFlattenVector();
     const auto es = Eigen::arange(0., 1.1, 0.1);
-    std::vector<mc::ode::Vote> e_range;
-    std::ranges::transform(es, std::back_inserter(e_range), [](const double e) { return mc::ode::Vote(e); });
+    std::vector<mc::ode::CandidateValue> e_range;
+    std::ranges::transform(es, std::back_inserter(e_range), [](const double e) { return mc::ode::CandidateValue(e); });
 
     const Eigen::VectorXd angels = Eigen::arange(0., mc::consts::twoPi, 0.5);
-    std::vector<mc::ode::Vote> coords;
+    std::vector<mc::ode::CandidateValue> coords;
     coords.reserve(angels.size());
     for (const auto &angel : angels)
     {
         Eigen::Vector3d m = {std::cos(angel), std::sin(angel), 0.};
-        coords.emplace_back(m);
+        coords.emplace_back(Eigen::MatrixXd(m));
     }
 
     // mc::Matrix<double> x0_step = mc::arange(0.0, 0.2, 0.05);
-    // std::vector<mc::ode::Vote> x0_step_range;
-    // std::ranges::transform(x0_step, std::back_inserter(x0_step_range), [](const double e) { return mc::ode::Vote(e); });
+    // std::vector<mc::ode::CandidateValue> x0_step_range;
+    // std::ranges::transform(x0_step, std::back_inserter(x0_step_range), [](const double e) { return mc::ode::CandidateValue(e); });
 
     auto gen_random_points = [](int n, double side, uint32_t &seed_out)
     {
@@ -349,15 +390,14 @@ void TestTrajsCircle()
     std::println("seed: {}", seed);
     std::println("random points: {}", points);
 
-    std::vector<mc::ode::Vote> x0s;
+    std::vector<mc::ode::CandidateValue> x0s;
     std::ranges::transform(points, std::back_inserter(x0s),
-                           [](const Eigen::VectorXd &point) { return mc::ode::Vote(point); });
+                           [](const Eigen::VectorXd &point) { return mc::ode::CandidateValue(Eigen::MatrixXd(point)); });
 
-    auto div_solution_fn = [time](mc::ode::DynamicalSystem<3> &system,
-                                  const std::unordered_map<mc::ode::DSArgs::key_type, mc::ode::Vote> &args)
+    auto div_solution_fn = [time](mc::ode::DynamicalSystem<3, mc::ode::RadonsContext> &system,
+                                  const mc::ode::DivergenceCandidate<3> &candidate)
     {
-        double e = args.at("e").toDouble();
-        const auto v = mc::ode::DynamicalSystem<3>::CheckedState(args.at("v").toVector());
+        const auto &[e, v] = candidate;
         // mc::Matrix<double> x0 = args.at("x0").toMatrix();
         // system.SetX0(x0);
         // double x0_step = args.at("x0_step").toDouble();
@@ -400,12 +440,11 @@ void TestTrajsCircle()
         // {"x0_step", mc::ode::CandidateParams(x0_step_range, std::nullopt)},
     };
 
-    auto res = mc::ode::FindBestParams(*system, div_solution_fn, params);
+    auto res = mc::ode::FindBestParams(*system, mc::ode::DecodeDivergenceCandidate<3>, div_solution_fn, params);
 
     for (const auto &param : res)
     {
-        double best_e = param.params.at("e").toDouble();
-        Eigen::VectorXd best_v = param.params.at("v").toVector();
+        const auto [best_e, best_v] = mc::ode::DecodeDivergenceCandidate<3>(param.params);
         // mc::Matrix<double> best_x0 = param.params.at("x0").toMatrix();
         // double best_x0_step = param.params.at("x0_step").toDouble();
         auto best_metric = param.metric;
@@ -459,8 +498,17 @@ void TestTrajsCircle()
         // message.AddField("ns", ns);
         // message.AddField("trajs1", trajs1);
         // message.AddField("trajs2", trajs2);
-        FileWriter file("RodosLCEs_Regression.json");
-        file.Write(doc.ToString());
+        Experiment::Archive archive("results", "divergence_regression");
+        archive.Parameters() = {{"dt", dt}, {"e", doc.epsilon}, {"M", doc.repetitions}};
+        archive.Results() = {
+            {"name", "DivergenceDegreeRegressionData"}, {"e", doc.epsilon}, {"M", doc.repetitions},
+            {"Ts", archive.AddArray("log_times", doc.log_times, {"interval"})},
+            {"ns", archive.AddSeries("mean_log_distances", doc.mean_log_distances, "interval")},
+            {"trajs1", StoreTrajectoryMap(archive, "primary", doc.primary)},
+            {"trajs2", StoreTrajectoryMap(archive, "perturbed", doc.perturbed)}
+        };
+        archive.AddPlot({{"kind", "divergence_regression"}, {"title", "Divergence regression"}});
+        PublishResult(archive);
     }
 
     // mc::Matrix<double> es = {0.};
@@ -508,49 +556,32 @@ void TestEverettFunction()
     b << 1.5;
     c << 0.2;
     mc::SzaboEverett Everett(a, b, c);
-    auto surface = Everett.GetoMeasureSurfaceData(model->GetBounds()[0], model->GetBounds()[1], 501).toJSON();
+    const auto surface = Everett.GetoMeasureSurfaceData(model->GetBounds()[0], model->GetBounds()[1], 501);
     model->SetEverettFunction([Everett = std::move(Everett)](double x, double y) -> double
     {
         return Everett(x, y);
     });
     // model->SetEverettFunction(uniformEverett);
 
-    mc::ode::DSArgs args = {
-        {"dt", dt},
-        {"gamma", gamma},
-        {"A", A},
-        {"w0", w0},
-        {"w", w},
-        {"E", E},
-        {"model", mc::ode::Vote(model)},
-        {"phi", 0.0}
+    mc::ode::RadonsContext args{
+        {.dt = dt, .gamma = gamma, .A = A, .w0 = w0, .w = w, .E = E, .phi = 0.0}, model
     };
 
-    mc::ode::DSArgs args2 = {};
-
-    auto system = mc::ode::GetRadonsSystem(dt, args, args2);
+    auto system = mc::ode::GetRadonsSystem(dt, args);
     auto traj = system->Forward(steps);
 
     auto [inputs1, outputs] = model->HysteresisLoop();
     auto [inputs2, derivatives] = model->DerivativeHistory();
 
-    mc::json::JsonDocument message({"name", "method", "dt", "h", "E", "time", "loop", "everett", "anim", "results"});
-    message.AddField("name", "JustSolveRodos");
-    message.AddField("method", "plot");
-    message.AddField("dt", dt);
-    message.AddField("h", h);
-    message.AddField("E", E);
-    message.AddField("time", time);
-    message.AddField("everett", surface);
-    message.AddSubField({"results", "x"}, traj.col(0).eval());
-    message.AddSubField({"results", "v"}, traj.col(1).eval());
-    message.AddSubField({"results", "derivatives"}, derivatives);
-    message.AddSubField({"loop", "inputs"}, inputs1);
-    message.AddSubField({"loop", "outputs"}, outputs);
-
-    // g_Server.SendDataMessage(message);
-    FileWriter file("JustSolveRodos.json");
-    file.Write(message.ToString());
+    Experiment::Archive archive("results", "just_solve_rodos");
+    archive.Parameters() = {{"dt", dt}, {"duration", time}, {"gamma", gamma}, {"w0", w0},
+                            {"w", w}, {"A", A}, {"L", L}, {"E", E}, {"h", h}};
+    StoreRadonsPlots(archive, traj, dt, inputs1, outputs);
+    archive.AddSeries("derivative", derivatives, "sample");
+    archive.AddArray("everett_x", surface.x, {"alpha"});
+    archive.AddArray("everett_y", surface.y, {"beta"});
+    archive.AddArray("everett_z", surface.z, {"beta", "alpha"});
+    PublishResult(archive);
 }
 
 void TwoTrajsOnCircle()
@@ -571,24 +602,19 @@ void TwoTrajsOnCircle()
 
     double E = 1.35;
 
-    mc::ode::DSArgs args = {
-        {"dt", dt},
-        {"gamma", gamma},
-        {"A", A},
-        {"w0", w0},
-        {"w", w},
-        {"E", E},
-        {"model", mc::ode::Vote(model)}
+    mc::ode::RadonsContext args{
+        {.dt = dt, .gamma = gamma, .A = A, .w0 = w0, .w = w, .E = E}, model
     };
 
-    mc::ode::DSArgs args2 = {};
-
+    auto args2 = args;
+    args2.model = std::make_shared<mc::ArealPreisachModel>(L, false, false);
     auto system = mc::ode::GetRadonsSystem(dt, args, args2);
     constexpr double areaCoeff = -0.9;
 
-    mc::json::JsonDocument message({"name", "coords", "time", "trajs"});
-    message.AddField("name", "TrajsCircle");
-    message.AddField("time", time);
+    Experiment::Archive archive("results", "two_trajs_on_circle");
+    archive.Parameters() = {{"dt", dt}, {"duration", time}, {"e", 0.01}};
+    auto &results = archive.Results();
+    results = {{"name", "TrajsCircle"}, {"time", time}, {"trajs", json::object()}, {"loops", json::object()}};
 
     std::vector<Eigen::Vector3d> coords = {
         {1., 0., 0.},
@@ -605,12 +631,7 @@ void TwoTrajsOnCircle()
     {
         return mc::doubleToString(elem, 4);
     });
-    message.AddField("coords", coordsStr);
-
-    std::unordered_map<std::string,
-                       std::array<std::vector<std::vector<double>>, 2>> trajs = {};
-
-    std::unordered_map<std::string, std::array<std::vector<double>, 4>> loops = {};
+    results["coords"] = coordsStr;
 
     for (const auto v : coords)
     {
@@ -619,7 +640,7 @@ void TwoTrajsOnCircle()
 
         Eigen::Vector2d v1 = system->GetX() + v.head<2>().normalized() * 0.01;
 
-        system->SetResetFn([v1, L](mc::ode::DSArgs &args, mc::ode::DSArgs &nextArgs, uint32_t)
+        system->SetResetFn([v1, L](mc::ode::RadonsContext &args, std::optional<mc::ode::RadonsContext> &nextArgs, uint32_t)
         {
             auto model1 = std::make_shared<mc::ArealPreisachModel>(L, false, false);
             auto model2 = std::make_shared<mc::ArealPreisachModel>(L, false, false);
@@ -629,41 +650,48 @@ void TwoTrajsOnCircle()
                 model2->P(v1[0], 0.0, -1);
             }
 
-            args.insert_or_assign("model", mc::ode::Vote(model1));
-            nextArgs.insert_or_assign("model", mc::ode::Vote(model2));
+            args.model = std::move(model1);
+            nextArgs->model = std::move(model2);
         });
         system->CallResetFn();
 
-        std::vector<std::vector<double>> mainTraj = {};
-        mainTraj.push_back(Eigen::to_std(system->GetX()));
+        std::vector<Eigen::Vector2d> mainTraj{system->GetX()};
 
-        std::vector<std::vector<double>> secondTraj = {};
-        secondTraj.push_back(Eigen::to_std(v1));
+        std::vector<Eigen::Vector2d> secondTraj{v1};
 
         auto count = static_cast<mc::uint32>(time / system->GetDeltaTime());
         while (count--)
         {
             auto traj = system->Forward(1);
-            mainTraj.push_back(Eigen::to_std(system->GetX()));
+            mainTraj.push_back(system->GetX());
 
             v1 = system->NextTM(v1);
-            secondTraj.push_back(Eigen::to_std(v1));
+            secondTraj.push_back(v1);
         }
 
-        auto [in1, out1] = system->GetArgs().at("model").toPreisachModel()->HysteresisLoop();
-        auto [in2, out2] = system->GetNextArgs().at("model").toPreisachModel()->HysteresisLoop();
+        auto [in1, out1] = system->GetArgs().model->HysteresisLoop();
+        auto [in2, out2] = system->GetNextArgs().model->HysteresisLoop();
 
-        trajs.insert({mc::doubleToString(v, 4), {mainTraj, secondTraj}});
-        loops.insert({mc::doubleToString(v, 4), {in1, out1, in2, out2}});
+        const auto key = mc::doubleToString(v, 4);
+        const auto id = std::to_string(results["trajs"].size());
+        if (!results.contains("sample_times"))
+        {
+            results["sample_times"] = StoreTimes(archive, mainTraj.size(), dt);
+        }
+        results["trajs"][key] = json::array({
+            StoreTrajectory(archive, "primary_" + id, mainTraj),
+            StoreTrajectory(archive, "perturbed_" + id, secondTraj)
+        });
+        results["loops"][key] = json::array({
+            archive.AddSeries("in_primary_" + id, in1, "sample"),
+            archive.AddSeries("out_primary_" + id, out1, "sample"),
+            archive.AddSeries("in_perturbed_" + id, in2, "sample"),
+            archive.AddSeries("out_perturbed_" + id, out2, "sample")
+        });
     }
 
-    auto &doc = message.GetDoc();
-
-    doc["trajs"] = trajs;
-    doc["loops"] = loops;
-
-    FileWriter file("TwoTrajsOnCircle.json");
-    file.Write(message.ToString());
+    archive.AddPlot({{"kind", "directional_phase_pair"}, {"title", "Primary and perturbed trajectories"}});
+    PublishResult(archive);
 }
 
 // void PoincareMapping()
@@ -725,7 +753,7 @@ void TwoTrajsOnCircle()
 //
 //         mc::ode::DSArgs args2 = {};
 //
-//         auto system = std::make_unique<mc::ode::ContinuousDS<3>>(func, jac, dt, args, args2);
+//         auto system = std::make_unique<mc::ode::ContinuousDS<3, mc::ode::RadonsContext>>(func, jac, dt, args, args2);
 //
 //         radonsPM = mc::ode::PoincareMapping(system, mc::consts::twoPi / w, 200);
 //     }
@@ -837,23 +865,15 @@ void BifurcationDiagram()
         return Everett(x, y);
     });
 
-    mc::ode::DSArgs args = {
-        {"dt", dt},
-        {"gamma", gamma},
-        {"A", A},
-        {"w0", w0},
-        {"w", w},
-        {"E", E},
-        {"model", mc::ode::Vote(model)},
-        {"eps", 0.05},
-        {"phi", 0.0}
+    mc::ode::RadonsContext args{
+        {.dt = dt, .gamma = gamma, .A = A, .w0 = w0, .w = w, .E = E, .phi = 0.0, .eps = 0.05}, model
     };
     auto system = mc::ode::GetRadonsSystem(dt, args, {}, {0.0, 0.0}, false);
-    auto As = mc::ode::utils::VoteRange(0.0, 4., 0.005);
-    auto Es = mc::ode::utils::VoteRange(0., 3., 0.01);
-    auto ws = mc::ode::utils::VoteRange(0., 3., 0.005);
+    const Eigen::VectorXd Es = Eigen::arange(0., 3., 0.01);
     // auto epss = mc::ode::utils::VoteRange(0., 3.0, 0.005);
-    auto d = mc::ode::BifurcationDiagram(*system, {"E", Es}, 30. * mc::consts::twoPi / w, 5. * mc::consts::twoPi / w);
+    auto d = mc::ode::BifurcationDiagram(*system, "E", std::span(Es.data(), static_cast<std::size_t>(Es.size())),
+        [](mc::ode::RadonsContext &context, double value) { context.params.E = value; },
+        30. * mc::consts::twoPi / w, 5. * mc::consts::twoPi / w);
 
     // double sigma = 10.0;
     // double rho = 28.0;
@@ -867,8 +887,18 @@ void BifurcationDiagram()
     // auto rs = mc::ode::utils::VoteRange(0., 30., 0.5);
     // auto d = mc::ode::BifurcationDiagram(*system, {"rho", rs}, 50., 100.);
 
-    FileWriter file("BifurcationDiagram.json");
-    file.Write(d.ToString());
+    Experiment::Archive archive("results", "bifurcation_diagram");
+    archive.Parameters()["parameter"] = d.parameter_name;
+    archive.Results() = {
+        {"name", "BifurcationDiagram"},
+        {d.parameter_name, archive.AddSeries("parameter_values", d.parameter_values, "parameter")},
+        {"max_params", archive.AddSeries("max_params", d.extrema.max_params, "extremum")},
+        {"max_values", archive.AddSeries("max_values", d.extrema.max_values, "extremum")},
+        {"min_params", archive.AddSeries("min_params", d.extrema.min_params, "extremum")},
+        {"min_values", archive.AddSeries("min_values", d.extrema.min_values, "extremum")}
+    };
+    archive.AddPlot({{"kind", "bifurcation"}, {"title", "Bifurcation diagram"}, {"x_label", d.parameter_name}});
+    PublishResult(archive);
 }
 
 #include "MUTCpp/ODE/shuttle.hpp"
@@ -886,35 +916,23 @@ void FindShuttlePointInitialValues()
 
     auto model1 = std::make_shared<mc::ArealPreisachModel>(L);
     // model1->P(L, 0.0, -1);
-    mc::ode::DSArgs args1 = {
-        {"dt", dt},
-        {"gamma", gamma},
-        {"A", A},
-        {"w0", w0},
-        {"w", w},
-        {"E", E},
-        {"model", mc::ode::Vote(model1)}
+    mc::ode::RadonsContext args1{
+        {.dt = dt, .gamma = gamma, .A = A, .w0 = w0, .w = w, .E = E}, model1
     };
     auto system_minus = mc::ode::GetRadonsSystem(dt, args1);
-    system_minus->SetResetFn([](mc::ode::DSArgs &args, mc::ode::DSArgs &, uint32_t)
+    system_minus->SetResetFn([](mc::ode::RadonsContext &args, std::optional<mc::ode::RadonsContext> &, uint32_t)
     {
-        args.at("model").toPreisachModel()->ResetState();
+        args.model->ResetState();
     });
 
     auto model2 = std::make_shared<mc::ArealPreisachModel>(L);
-    mc::ode::DSArgs args2 = {
-        {"dt", dt},
-        {"gamma", gamma},
-        {"A", A},
-        {"w0", w0},
-        {"w", w},
-        {"E", E},
-        {"model", mc::ode::Vote(model2)}
+    mc::ode::RadonsContext args2{
+        {.dt = dt, .gamma = gamma, .A = A, .w0 = w0, .w = w, .E = E}, model2
     };
-    auto system_plus = mc::ode::GetRadonsSystem(dt, args1);
-    system_plus->SetResetFn([](mc::ode::DSArgs &args, mc::ode::DSArgs &, uint32_t)
+    auto system_plus = mc::ode::GetRadonsSystem(dt, args2);
+    system_plus->SetResetFn([](mc::ode::RadonsContext &args, std::optional<mc::ode::RadonsContext> &, uint32_t)
     {
-        args.at("model").toPreisachModel()->ResetState();
+        args.model->ResetState();
     });
 
     const auto xs = Eigen::arange(-1.8, 1.9, 0.2);
@@ -1169,20 +1187,13 @@ void RadonsShuttlePoint()
     for (const double phi : phis)
     {
         std::cout << "phi = " << phi << "\n";
-        mc::ode::DSArgs args1 = {
-            {"dt", dt},
-            {"gamma", gamma},
-            {"A", A},
-            {"w0", w0},
-            {"w", w},
-            {"E", E},
-            {"phi", phi},
-            {"model", mc::ode::Vote(model)}
+        mc::ode::RadonsContext args1{
+            {.dt = dt, .gamma = gamma, .A = A, .w0 = w0, .w = w, .E = E, .phi = phi}, model
         };
         auto system = mc::ode::GetRadonsSystem(dt, args1);
-        system->SetResetFn([](mc::ode::DSArgs &args, mc::ode::DSArgs &, uint32_t)
+        system->SetResetFn([](mc::ode::RadonsContext &args, std::optional<mc::ode::RadonsContext> &, uint32_t)
         {
-            args.at("model").toPreisachModel()->ResetState();
+            args.model->ResetState();
         });
 
         Eigen::Matrix2d M(2, 2);
@@ -1244,21 +1255,10 @@ void ZeroOneRadonsTest()
     constexpr double L = 1.0;
     auto model = std::make_shared<mc::ArealPreisachModel>(L);
 
-    mc::ode::DSArgs args = {
-        {"dt", dt},
-        {"gamma", gamma},
-        {"A", A},
-        {"w0", w0},
-        {"w", w},
-        {"E", E},
-        {"model", mc::ode::Vote(model)},
-        {"eps", 0.05}
+    mc::ode::RadonsContext args{
+        {.dt = dt, .gamma = gamma, .A = A, .w0 = w0, .w = w, .E = E, .eps = 0.05}, model
     };
     auto system = mc::ode::GetRadonsSystem(dt, args, {}, {0.0, 0.0}, false);
-    auto As = mc::ode::utils::VoteRange(0.0, 4., 0.005);
-    auto Es = mc::ode::utils::VoteRange(0., 3., 0.005);
-    auto ws = mc::ode::utils::VoteRange(0., 4., 0.005);
-    auto epss = mc::ode::utils::VoteRange(0., 3.0, 0.005);
 
     // double sigma = 10.0;
     // double rho = 28.0;
@@ -1274,12 +1274,13 @@ void ZeroOneRadonsTest()
     std::vector<double> k_values;
 
     constexpr double time = 500.0;
-    const std::pair<std::string, std::vector<mc::ode::Vote>> param = {"A", As};
-    for (const auto &val : param.second)
+    const Eigen::VectorXd amplitudes = Eigen::arange(0., 4., 0.005);
+    for (double amplitude : amplitudes)
     {
         std::cout << "New" << std::endl;
         system->Reset();
-        system->SetArg(param.first, val);
+        args.params.A = amplitude;
+        system->SetArgs(args);
 
         const auto traj = system->Forward(time);
         const auto x = traj.col(0);
@@ -1288,13 +1289,14 @@ void ZeroOneRadonsTest()
         k_values.push_back(res);
     }
 
-    mc::json::JsonDocument message({"name", param.first, "Ks"});
-    message.AddField("name", "ZeroOneTest");
-    mc::ode::WriteVotesToDoc(message, param.first, param.second, param.second[0].Type());
-    message.AddField("Ks", k_values);
-
-    FileWriter file("ZeroOneTest.json");
-    file.Write(message.ToString());
+    Experiment::Archive archive("results", "zero_one_test");
+    archive.Parameters() = {{"parameter", "A"}, {"dt", dt}, {"duration", time}};
+    archive.Results() = {
+        {"name", "ZeroOneTest"}, {"A", archive.AddArray("amplitudes", amplitudes, {"parameter"})},
+        {"Ks", archive.AddSeries("ks", k_values, "parameter")}
+    };
+    archive.AddPlot({{"kind", "zero_one"}, {"title", "0-1 test"}, {"x_label", "A"}});
+    PublishResult(archive);
 }
 
 void ZeroOneTest()
@@ -1311,15 +1313,8 @@ void ZeroOneTest()
     constexpr double L = 1.0;
     auto model = std::make_shared<mc::ArealPreisachModel>(L);
 
-    mc::ode::DSArgs args = {
-        {"dt", dt},
-        {"gamma", gamma},
-        {"A", A},
-        {"w0", w0},
-        {"w", w},
-        {"E", E},
-        {"model", mc::ode::Vote(model)},
-        {"eps", 0.05}
+    mc::ode::RadonsContext args{
+        {.dt = dt, .gamma = gamma, .A = A, .w0 = w0, .w = w, .E = E, .eps = 0.05}, model
     };
     auto system = mc::ode::GetRadonsSystem(dt, args, {}, {0.0, 0.0}, false);
     const double time = 20.0 * mc::consts::twoPi / w;
@@ -1414,13 +1409,6 @@ void ComplexRadonsResearch()
     constexpr double researchTime = 100.;
     constexpr double timeForward = 50.;
     constexpr double poincarePeriodMultiplier = 50.0;
-    const auto As = mc::ode::utils::VoteRange(0., 4., 0.01);
-    const auto Es = mc::ode::utils::VoteRange(0., 3., 0.01);
-    const auto ws = mc::ode::utils::VoteRange(0., 2.5, 0.01);
-    const auto ds = [](const mc::ode::DSArgs &args)
-    {
-        return mc::ode::utils::VoteRange(0., args.at("A").toDouble() / args.at("w").toDouble() + 1.5, 0.01);
-    };
 
     constexpr uint32_t M = 500;
     constexpr double e = 0.5;
@@ -1444,121 +1432,51 @@ void ComplexRadonsResearch()
         // {"double_loop_0.7", {model3, next_model3}},
     };
 
-    const auto resetFn = [](mc::ode::DSArgs &args, mc::ode::DSArgs &, uint32_t)
+    const auto resetFn = [](mc::ode::RadonsContext &args, std::optional<mc::ode::RadonsContext> &, uint32_t)
     {
-        auto &model = args.at("model").toPreisachModel();
+        auto &model = args.model;
         model->ResetState();
     };
-
-    auto system = mc::ode::GetRadonsSystem(dt, {}, {}, {0.0, 0.0}, false);
-
-    mc::json::JsonDocument message({"name", "params", "results"});
 
     for (const auto &[model_name, models] : models)
     {
         auto &[model, next_model] = models;
 
-        mc::ode::DSArgs first_set = {
-            {"dt", dt},
-            {"gamma", 0.1},
-            {"A", 1.5},
-            {"w0", 1.0},
-            {"w", 1.0},
-            {"E", 1.35},
-            {"model", mc::ode::Vote(model)}
+        mc::ode::RadonsContext first_set{
+            {.dt = dt, .gamma = 0.1, .A = 1.5, .w0 = 1.0, .w = 1.0, .E = 1.35}, model
         };
-        mc::ode::DSArgs second_set = {
-            {"dt", dt},
-            {"gamma", 0.5},
-            {"A", 1.5},
-            {"w0", 1.0},
-            {"w", 1.0},
-            {"E", 1.35},
-            {"model", mc::ode::Vote(model)}
+        mc::ode::RadonsContext second_set{
+            {.dt = dt, .gamma = 0.5, .A = 1.5, .w0 = 1.0, .w = 1.0, .E = 1.35}, model
         };
-        mc::ode::DSArgs third_set = {
-            {"dt", dt},
-            {"gamma", 0.1},
-            {"A", 1.5},
-            {"w0", 1.0},
-            {"w", 1.0},
-            {"E", 1.6},
-            {"model", mc::ode::Vote(model)}
+        mc::ode::RadonsContext third_set{
+            {.dt = dt, .gamma = 0.1, .A = 1.5, .w0 = 1.0, .w = 1.0, .E = 1.6}, model
         };
-        mc::ode::DSArgs fourth_set = {
-            {"dt", dt},
-            {"gamma", 0.1},
-            {"A", 1.5},
-            {"w0", 1.0},
-            {"w", 1.0},
-            {"E", 1.5},
-            {"model", mc::ode::Vote(model)}
+        mc::ode::RadonsContext fourth_set{
+            {.dt = dt, .gamma = 0.1, .A = 1.5, .w0 = 1.0, .w = 1.0, .E = 1.5}, model
         };
-        mc::ode::DSArgs fifth_set = {
-            {"dt", dt},
-            {"gamma", 0.1},
-            {"A", 1.0},
-            {"w0", 1.0},
-            {"w", 1.0},
-            {"E", 1.35},
-            {"model", mc::ode::Vote(model)}
+        mc::ode::RadonsContext fifth_set{
+            {.dt = dt, .gamma = 0.1, .A = 1.0, .w0 = 1.0, .w = 1.0, .E = 1.35}, model
         };
-        mc::ode::DSArgs sixth_set = {
-            {"dt", dt},
-            {"gamma", 0.1},
-            {"A", 0.5},
-            {"w0", 1.0},
-            {"w", 1.0},
-            {"E", 1.35},
-            {"model", mc::ode::Vote(model)}
+        mc::ode::RadonsContext sixth_set{
+            {.dt = dt, .gamma = 0.1, .A = 0.5, .w0 = 1.0, .w = 1.0, .E = 1.35}, model
         };
-        mc::ode::DSArgs seventh_set = {
-            {"dt", dt},
-            {"gamma", 0.1},
-            {"A", 0.5},
-            {"w0", 0.5},
-            {"w", 1.0},
-            {"E", 1.35},
-            {"model", mc::ode::Vote(model)}
+        mc::ode::RadonsContext seventh_set{
+            {.dt = dt, .gamma = 0.1, .A = 0.5, .w0 = 0.5, .w = 1.0, .E = 1.35}, model
         };
-        mc::ode::DSArgs eighth_set = {
-            {"dt", dt},
-            {"gamma", 0.1},
-            {"A", 0.5},
-            {"w0", 1.0},
-            {"w", 0.5},
-            {"E", 1.35},
-            {"model", mc::ode::Vote(model)}
+        mc::ode::RadonsContext eighth_set{
+            {.dt = dt, .gamma = 0.1, .A = 0.5, .w0 = 1.0, .w = 0.5, .E = 1.35}, model
         };
-        mc::ode::DSArgs ninth_set = {
-            {"dt", dt},
-            {"gamma", 0.0},
-            {"A", 0.5},
-            {"w0", 1.0},
-            {"w", 1.0},
-            {"E", 1.35},
-            {"model", mc::ode::Vote(model)}
+        mc::ode::RadonsContext ninth_set{
+            {.dt = dt, .gamma = 0.0, .A = 0.5, .w0 = 1.0, .w = 1.0, .E = 1.35}, model
         };
-        mc::ode::DSArgs tenth_set = {
-            {"dt", dt},
-            {"gamma", 0.1},
-            {"A", 0.5},
-            {"w0", 1.3},
-            {"w", 1.0},
-            {"E", 1.35},
-            {"model", mc::ode::Vote(model)}
+        mc::ode::RadonsContext tenth_set{
+            {.dt = dt, .gamma = 0.1, .A = 0.5, .w0 = 1.3, .w = 1.0, .E = 1.35}, model
         };
-        mc::ode::DSArgs eleventh_set = {
-            {"dt", dt},
-            {"gamma", 0.1},
-            {"A", 0.5},
-            {"w0", 1.0},
-            {"w", 1.3},
-            {"E", 1.35},
-            {"model", mc::ode::Vote(model)}
+        mc::ode::RadonsContext eleventh_set{
+            {.dt = dt, .gamma = 0.1, .A = 0.5, .w0 = 1.0, .w = 1.3, .E = 1.35}, model
         };
 
-        const std::unordered_map<std::string, mc::ode::DSArgs &> params_sets = {
+        const std::unordered_map<std::string, mc::ode::RadonsContext &> params_sets = {
             {"first_set", first_set},
             // {"second_set", second_set},
             // {"third_set", third_set},
@@ -1576,23 +1494,22 @@ void ComplexRadonsResearch()
         {
             for (const auto &x0 : x0s)
             {
+                auto nextArgs = args;
+                nextArgs.model = next_model;
+                auto system = mc::ode::GetRadonsSystem(dt, args, nextArgs, x0);
                 system->SetResetFn(resetFn);
-                system->SetArgs(args, true);
+                system->Reset();
 
-                mc::ode::DSArgs nextArgs = args;
-                nextArgs.at("model") = mc::ode::Vote(next_model);
-                system->SetNextArgs(nextArgs, true);
-
-                system->ResetTo(x0);
-
-                message.AddField("name", "JustSolveRodos");
-                message.AddSubField({"params", "dt"}, dt);
-                message.AddSubField({"params", "time"}, solve_time);
-                message.AddSubField({"params", "model"}, model_name);
-                message.AddSubField({"params", "args_set"}, args_set);
-                auto args_doc = dsArgsToJsonDoc(args);
-                message.AddSubField({"params", "args"}, args_doc);
-                message.AddSubField({"params", "x0"}, mc::doubleToString(x0, 1));
+                Experiment::Archive archive("results", "complex_radons_research");
+                const auto &p = args.params;
+                archive.Parameters() = {
+                    {"dt", dt}, {"time", solve_time}, {"model", model_name}, {"args_set", args_set},
+                    {"args", {{"dt", p.dt}, {"gamma", p.gamma}, {"A", p.A}, {"w0", p.w0},
+                              {"w", p.w}, {"E", p.E}, {"phi", p.phi}, {"eps", p.eps}}},
+                    {"x0", mc::doubleToString(x0, 1)}
+                };
+                archive.Results()["name"] = "JustSolveRodos";
+                archive.Results()["params"] = archive.Parameters();
 
                 const auto full_name = std::format("{}/{}/{}", model_name, args_set, mc::doubleToString(x0, 1));
 
@@ -1665,7 +1582,8 @@ void ComplexRadonsResearch()
                 //         }
                 //     }
                 // }
-                message.AddSubField({"results", "LCEs", "power_law"}, power_law);
+                archive.Results()["results"]["LCEs"]["power_law"] = StorePowerLaw(archive, power_law);
+                archive.AddPlot({{"kind", "power_law"}, {"title", "Power law of trajectory divergence"}});
                 // system->SetResetFn(resetFn); // restore reset fn
 
                 // at period
@@ -1693,11 +1611,7 @@ void ComplexRadonsResearch()
 
                 std::cout << "write " << full_name << "\n";
 
-                FileWriter file(
-                    // std::format("../python/article_plots/{}/ComplexRadonsResearch.json", full_name));
-                    std::format("../python/pl/PowerLaw_0.5_50.0.json", full_name));
-                file.Write(message.ToString());
-                message.ClearDoc();
+                PublishResult(archive);
 
                 std::cout << "end" << "\n";
                 std::cout << "\n";
@@ -1713,17 +1627,11 @@ void TwoTrajs()
     constexpr double time = 300.;
     auto model = std::make_shared<mc::ArealPreisachModel>(1.0, true, false);
     auto next_model = std::make_shared<mc::ArealPreisachModel>(1.0, true, false);
-    mc::ode::DSArgs args = {
-        {"dt", dt},
-        {"gamma", 0.1},
-        {"A", 1.5},
-        {"w0", 1.0},
-        {"w", 1.0},
-        {"E", 1.35},
-        {"model", mc::ode::Vote(model)}
+    mc::ode::RadonsContext args{
+        {.dt = dt, .gamma = 0.1, .A = 1.5, .w0 = 1.0, .w = 1.0, .E = 1.35}, model
     };
-    mc::ode::DSArgs nextArgs = args;
-    nextArgs.at("model") = mc::ode::Vote(next_model);
+    mc::ode::RadonsContext nextArgs = args;
+    nextArgs.model = next_model;
 
     const Eigen::Vector2d v = {1., 0.};
     const double eps = 0.1;
@@ -1738,16 +1646,17 @@ void TwoTrajs()
     model->ResetState();
     auto traj2 = system2->Forward(time);
 
-    mc::json::JsonDocument message({"name", "time", "traj1", "traj1_next", "traj2"});
-    message.AddField("name", "TrajsCircle");
-    message.AddField("time", time);
-
-    message.AddField("traj1", traj1.first);
-    message.AddField("traj1_next", traj1.second);
-    message.AddField("traj2", traj2);
-
-    FileWriter file("TwoTrajs.json");
-    file.Write(message.ToString());
+    Experiment::Archive archive("results", "two_trajs");
+    archive.Parameters() = {{"dt", dt}, {"duration", time}, {"e", eps}};
+    archive.Results() = {
+        {"name", "TrajsCircle"}, {"time", time},
+        {"sample_times", StoreTimes(archive, traj1.first.rows(), dt)},
+        {"traj1", archive.AddArray("primary", traj1.first, {"sample", "coordinate"})},
+        {"traj1_next", archive.AddArray("perturbed", traj1.second, {"sample", "coordinate"})},
+        {"traj2", archive.AddArray("reference", traj2, {"sample", "coordinate"})}
+    };
+    archive.AddPlot({{"kind", "phase_pair"}, {"title", "Primary and perturbed trajectories"}});
+    PublishResult(archive);
 }
 
 void TwoTrajsOnPhaseTrajectory()
@@ -1789,17 +1698,11 @@ void TwoTrajsOnPhaseTrajectory()
 
     auto model = std::make_shared<mc::ArealPreisachModel>(1.0, true, false);
     auto next_model = std::make_shared<mc::ArealPreisachModel>(1.0, true, false);
-    mc::ode::DSArgs args = {
-        {"dt", dt},
-        {"gamma", 0.1},
-        {"A", 1.5},
-        {"w0", 1.0},
-        {"w", 1.0},
-        {"E", 1.35},
-        {"model", mc::ode::Vote(model)}
+    mc::ode::RadonsContext args{
+        {.dt = dt, .gamma = 0.1, .A = 1.5, .w0 = 1.0, .w = 1.0, .E = 1.35}, model
     };
-    mc::ode::DSArgs nextArgs = args;
-    nextArgs.at("model") = mc::ode::Vote(next_model);
+    mc::ode::RadonsContext nextArgs = args;
+    nextArgs.model = next_model;
     const Eigen::Vector2d v = {1., 0.};
 
     auto system = mc::ode::GetRadonsSystem(dt, args, nextArgs, {1., 0.});
@@ -1870,21 +1773,37 @@ void TwoTrajsOnPhaseTrajectory()
         trajs.insert({i, {traj.first, traj.second}});
     }
 
-    mc::json::JsonDocument message({"name", "time", "times", "coords", "x0s", "trajs"});
-    message.AddField("name", "TrajsCircle");
-    message.AddField("time", time);
-
-    // message.AddField("x0s", points);
-    // message.AddField("times", times);
-    message.AddField("coords", coordsStr);
-    message.AddField("trajs", trajs);
-
-    FileWriter file("TwoTrajsOnPhaseTrajectory.json");
-    file.Write(message.ToString());
+    Experiment::Archive archive("results", "two_trajs_on_phase_trajectory");
+    archive.Parameters() = {{"dt", dt}, {"duration", time}, {"e", eps}};
+    auto &results = archive.Results();
+    results = {{"name", "TrajsCircle"}, {"time", time}, {"coords", coordsStr}, {"trajs", json::object()}};
+    if (!trajs.empty())
+    {
+        results["sample_times"] = StoreTimes(archive, trajs.begin()->second[0].rows(), dt);
+    }
+    for (const auto &[index, pair] : trajs)
+    {
+        const auto id = std::to_string(index);
+        results["trajs"][id] = json::array({
+            archive.AddArray("primary_" + id, pair[0], {"sample", "coordinate"}),
+            archive.AddArray("perturbed_" + id, pair[1], {"sample", "coordinate"})
+        });
+    }
+    archive.AddPlot({{"kind", "directional_phase_pair"}, {"title", "Primary and perturbed trajectories"}});
+    PublishResult(archive);
 }
 
-int main()
+int main(int argc, char **argv)
 {
+    if (argc == 2 && std::string_view(argv[1]) == "--send")
+    {
+        g_SendResults = true;
+    }
+    else if (argc != 1)
+    {
+        std::println(stderr, "Usage: PreisachModel.exe [--send]");
+        return 2;
+    }
     // TwoTrajsOnPhaseTrajectory();
     // ComplexRadonsResearch();
     // JustSolveRodos();
@@ -1912,7 +1831,6 @@ int main()
 
     // DiscreteModelChaosTestByStepSize();
 
-    // g_Server.Connect();
     // MainResearch();
     // PLot_mLCE_HysteronsStep_E();
 
@@ -1935,7 +1853,15 @@ int main()
 
     // TwoTrajsOnCircle();
     // TestTrajsCircle();
-    TestEverettFunction();
+    try
+    {
+        TestEverettFunction();
+    }
+    catch (const std::exception &error)
+    {
+        std::println(stderr, "{}", error.what());
+        return 1;
+    }
 
     // PoincareMapping();
     // BifurcationDiagram();

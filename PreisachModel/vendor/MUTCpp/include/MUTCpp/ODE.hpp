@@ -8,7 +8,6 @@
 
 #include "ODE/DynamicSystem.hpp"
 #include "ODE/Lyapunov.hpp"
-#include "ODE/DSArgs.hpp"
 #include "ODE/AFC.hpp"
 #include "ODE/PoincareMapping.hpp"
 #include "ODE/BifurcationDiagram.hpp"

@@ -16,16 +16,25 @@ namespace mc
 {
     namespace ode
     {
-        inline std::unique_ptr<ContinuousDS<2>> GetDuffingSystem(double dt, const DSArgs &args, const DSArgs &nextArgs = {},
+        struct DuffingParams
+        {
+            double delta;
+            double alpha;
+            double beta;
+            double gamma;
+            double w;
+        };
+
+        inline std::unique_ptr<ContinuousDS<2, DuffingParams>> GetDuffingSystem(double dt, const DuffingParams &args, const std::optional<DuffingParams> &nextArgs = {},
                                                  const Eigen::Vector2d &x0 = {0.0, 0.0})
         {
-            auto func = [](const Eigen::Vector2d &x, double t, const DSArgs &args) -> Eigen::Vector2d
+            auto func = [](const Eigen::Vector2d &x, double t, const DuffingParams &args) -> Eigen::Vector2d
             {
-                double delta = args.at("delta").toDouble();
-                double alpha = args.at("alpha").toDouble();
-                double beta = args.at("beta").toDouble();
-                double gamma = args.at("gamma").toDouble();
-                double w = args.at("w").toDouble();
+                double delta = args.delta;
+                double alpha = args.alpha;
+                double beta = args.beta;
+                double gamma = args.gamma;
+                double w = args.w;
 
                 Eigen::Vector2d res;
                 res[0] = x[1];
@@ -33,25 +42,25 @@ namespace mc
                 return res;
             };
 
-            auto jac = [](const Eigen::Vector2d &x, double, const DSArgs &args) -> Eigen::Matrix2d
+            auto jac = [](const Eigen::Vector2d &x, double, const DuffingParams &args) -> Eigen::Matrix2d
             {
-                const double delta = args.at("delta").toDouble();
-                const double alpha = args.at("alpha").toDouble();
-                const double beta = args.at("beta").toDouble();
+                const double delta = args.delta;
+                const double alpha = args.alpha;
+                const double beta = args.beta;
                 Eigen::Matrix2d res;
                 res << 0.0, 1.0,
                        -alpha - 3.0 * beta * x[0] * x[0], -delta;
                 return res;
             };
 
-            return std::make_unique<ContinuousDS<2>>(func, jac, dt, args, nextArgs, x0);
+            return std::make_unique<ContinuousDS<2, DuffingParams>>(func, jac, dt, args, nextArgs, x0);
         }
 
         template <typename Derived>
-        std::unique_ptr<ContinuousDS<2>> GetDuffingSystem(double dt, const DSArgs &args, const DSArgs &nextArgs,
+        std::unique_ptr<ContinuousDS<2, DuffingParams>> GetDuffingSystem(double dt, const DuffingParams &args, const std::optional<DuffingParams> &nextArgs,
                                                          const Eigen::MatrixBase<Derived> &x0)
         {
-            return GetDuffingSystem(dt, args, nextArgs, DynamicalSystem<2>::CheckedState(x0));
+            return GetDuffingSystem(dt, args, nextArgs, DynamicalSystem<2, DuffingParams>::CheckedState(x0));
         }
     }
 }

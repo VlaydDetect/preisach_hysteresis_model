@@ -8,28 +8,37 @@
 
 #include "Functions/find_extrema.hpp"
 #include "DynamicSystem.hpp"
-#include "Json/JsonDocument.hpp"
+#include <format>
+#include <span>
+#include <string>
+#include <vector>
 
 namespace mc
 {
     namespace ode
     {
+        struct BifurcationData
+        {
+            std::vector<double> max_params;
+            std::vector<double> max_values;
+            std::vector<double> min_params;
+            std::vector<double> min_values;
+        };
+
+        struct BifurcationResult
+        {
+            std::string parameter_name;
+            std::vector<double> parameter_values;
+            BifurcationData extrema;
+        };
+
         namespace detail
         {
-            struct BifurcationData
-            {
-                std::vector<double> max_params;
-                std::vector<double> max_values;
-
-                std::vector<double> min_params;
-                std::vector<double> min_values;
-            };
-
             // Используем RowMajor для обеспечения кэш-дружественного последовательного доступа к памяти
             using MatrixRowMajor = Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
 
             inline BifurcationData extract_bifurcation_extrema(
-                const std::vector<Vote> &bifurcation_params,
+                std::span<const double> bifurcation_params,
                 const MatrixRowMajor &time_series_matrix)
             {
                 const Eigen::Index num_params = time_series_matrix.rows();
@@ -56,7 +65,7 @@ namespace mc
                 // Используем унифицированный безопасный метод для каждой строки
                 for (Eigen::Index i = 0; i < num_params; ++i)
                 {
-                    const double current_param = bifurcation_params[i].toDouble();
+                    const double current_param = bifurcation_params[i];
 
                     // Передаем строку как Eigen::Ref (без копирования)
                     auto [maxima, minima] = mc::find_extrema_1d(time_series_matrix.row(i));
@@ -84,31 +93,25 @@ namespace mc
             }
         }
 
-        template <int N>
-        json::JsonDocument BifurcationDiagram(DynamicalSystem<N> &system,
-                                                     const std::pair<std::string, std::vector<Vote>> &bifurcationParam,
-                                                     double researchTime,
-                                                     double timeForward,
-                                                     uint32_t var_idx = 0)
+        template <int N, typename Context, typename SetParameter>
+        BifurcationResult BifurcationDiagram(DynamicalSystem<N, Context> &system,
+                                              const std::string &param_name, std::span<const double> param_values,
+                                              SetParameter set_parameter, double researchTime,
+                                              double timeForward, uint32_t var_idx = 0)
         {
             system.ResetArgs();
             system.Reset();
 
-            const auto &[param_name, param_value] = bifurcationParam;
-
-            json::JsonDocument message({"name", param_name, "max_params", "max_values", "min_params", "min_values"});
-            message.AddField("name", "BifurcationDiagram");
-
-            WriteVotesToDoc(message, param_name, param_value, param_value[0].Type());
-
             detail::MatrixRowMajor trajs =
-                detail::MatrixRowMajor::Zero(param_value.size(),
+                detail::MatrixRowMajor::Zero(param_values.size(),
                                              static_cast<Eigen::Index>(researchTime / system.GetDeltaTime()) + 1);
 
-            for (int i = 0; i < param_value.size(); ++i)
+            for (std::size_t i = 0; i < param_values.size(); ++i)
             {
                 system.Reset();
-                system.SetArg(param_name, param_value[i]);
+                auto args = system.GetArgs();
+                std::invoke(set_parameter, args, param_values[i]);
+                system.SetArgs(args);
 
                 system.Forward(timeForward);
 
@@ -116,18 +119,12 @@ namespace mc
                 trajs.row(i) = traj.col(var_idx).transpose();
             }
 
-            const auto biff_data = detail::extract_bifurcation_extrema(param_value, trajs);
-            message.AddField("max_params", biff_data.max_params);
-            message.AddField("max_values", biff_data.max_values);
-            message.AddField("min_params", biff_data.min_params);
-            message.AddField("min_values", biff_data.min_values);
-
-            // message.AddField("trajs", trajs);
+            auto extrema = detail::extract_bifurcation_extrema(param_values, trajs);
 
             system.ResetArgs();
             system.Reset();
             
-            return message;
+            return {param_name, {param_values.begin(), param_values.end()}, std::move(extrema)};
         }
     }
 }

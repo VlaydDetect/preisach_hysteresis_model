@@ -6,4 +6,5 @@
 
 #pragma once
 
+#include "Json/Eigen.hpp"
 #include "Json/JsonDocument.hpp"

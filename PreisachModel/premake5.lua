@@ -16,6 +16,8 @@ project "PreisachModel"
 		"vendor/MUTCpp/include/**.hpp",
 		"vendor/MUTCpp/vendor/**.hpp",
 		"vendor/hep-mc/include/**.hpp",
+		"vendor/miniz/miniz.c",
+		"vendor/miniz/miniz.h",
 	}
 
 	includedirs

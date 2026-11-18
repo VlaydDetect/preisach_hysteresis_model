@@ -8,8 +8,9 @@
 
 #include "Core/Constants.hpp"
 #include "MUTCpp/Utils/Profile.hpp"
-#include "Json/JsonDocument.hpp"
 
+#include <cmath>
+#include <utility>
 #include <Eigen/Dense>
 #include <unsupported/Eigen/FFT>
 
@@ -17,17 +18,23 @@ namespace mc
 {
     namespace ode
     {
+        struct FourierSpectrumResult
+        {
+            double dt;
+            Eigen::VectorXd frequencies;
+            Eigen::VectorXd amplitudes;
+        };
+
         /**
          * @brief Вычисляет односторонний амплитудный спектр Фурье для выбранной координаты.
          * @param signal Входной сигнал.
          * @param dt Шаг по времени.
          * @param remove_dc Если true, нулевая частота (0 Гц) исключается из результатов (как в Python).
          * @param use_blackman Если true, применяется окно Блэкмана перед БПФ.
-         * @return JsonDocument с массивами частот и амплитуд.
+         * @return Шаг по времени, частоты и амплитуды.
          */
-        inline json::JsonDocument FourierSpectrum(Eigen::Ref<Eigen::VectorXd> signal, double dt,
-                                                  bool remove_dc = true,
-                                                  bool use_blackman = false)
+        inline FourierSpectrumResult FourierSpectrum(Eigen::Ref<Eigen::VectorXd> signal, double dt,
+                                                     bool remove_dc = true, bool use_blackman = false)
         {
             AL_PROFILE_FUNC("chaos::FourierSpectrum");
             
@@ -78,14 +85,7 @@ namespace mc
                 amplitudes(out_idx) = (i == 0) ? mag : mag * 2.0;
             }
 
-            // 4. Упаковка результатов в JSON
-            json::JsonDocument doc({"name", "time", "dt", "var_idx", "frequencies", "amplitudes"});
-            doc.AddField("name", "FourierSpectrum");
-            doc.AddField("dt", dt);
-            doc.AddField("frequencies", frequencies);
-            doc.AddField("amplitudes", amplitudes);
-
-            return doc;
+            return {dt, std::move(frequencies), std::move(amplitudes)};
         }
     }
 }

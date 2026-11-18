@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -7,10 +7,18 @@
 #pragma once
 
 #include "DynamicSystem.hpp"
+#include "RadonsSystem.hpp"
 #include <cmath>
+#include <format>
 #include <print>
+#include <ranges>
+#include <unordered_map>
+#include <utility>
+#include <variant>
 
 #include "Hysteresis/ArealModel.hpp"
+#include "Core/Error.hpp"
+#include "Utils/Eigen.hpp"
 #include "Utils/doubleToString.hpp"
 #include "Utils/nestedLoop.hpp"
 
@@ -18,13 +26,16 @@ namespace mc
 {
     namespace ode
     {
+        template <int N>
+        using DivergenceTrajectories = std::unordered_map<std::string, std::vector<Eigen::Vector<double, N>>>;
+
         namespace detail
         {
-            template <int N>
-            std::array<double, 2> divergenceDegree(DynamicalSystem<N> &system, double timeForward, double e,
-                                                          typename DynamicalSystem<N>::State v, double T, int M,
-                                                  std::vector<typename DynamicalSystem<N>::State> &traj1,
-                                                  std::vector<typename DynamicalSystem<N>::State> &traj2)
+            template <int N, typename Context>
+            std::array<double, 2> divergenceDegree(DynamicalSystem<N, Context> &system, double timeForward, double e,
+                                                          typename DynamicalSystem<N, Context>::State v, double T, int M,
+                                                  std::vector<typename DynamicalSystem<N, Context>::State> &traj1,
+                                                  std::vector<typename DynamicalSystem<N, Context>::State> &traj2)
             {
                 AL_PROFILE_FUNC("divergenceDegree");
 
@@ -93,14 +104,14 @@ namespace mc
              * @brief Вспомогательная функция вычисления усредненного логарифма расстояния для одного значения T.
              */
             inline double ComputeAvgLogDistForT(
-                ode::ContinuousDS<2> &system,
+                 RadonsSystem &system,
                 const Eigen::Vector2d &initial_dir, double eps, int T_steps, int M,
                 std::vector<Eigen::Vector2d> &traj1, std::vector<Eigen::Vector2d> &traj2)
             {
                 AL_PROFILE_FUNC("mc::ode::ComputePowerLawExponent::ComputeAvgLogDistForT");
 
                 Eigen::Vector2d dir = initial_dir.normalized();
-                const double w02 = system.GetArgs().at("w0").toDouble();
+                 const double w02 = system.GetArgs().params.w0;
 
                 const auto calc_logonormal_dist = [eps, dir, w02](
                     const Eigen::Vector2d &main_x, Eigen::Vector2d &pert_x,
@@ -156,22 +167,35 @@ namespace mc
                 return sum_log_dist / static_cast<double>(M);
             }
             
-            inline mc::json::JsonDocument ComputePowerLawExponent(
-                ode::ContinuousDS<2> &system,
+            struct PowerLawResult
+            {
+                double epsilon;
+                Eigen::ArrayXd log_times;
+                Eigen::ArrayXd mean_log_distances;
+                double exponent;
+                double intercept;
+                double r_squared;
+                DivergenceTrajectories<2> primary;
+                DivergenceTrajectories<2> perturbed;
+            };
+
+            inline PowerLawResult ComputePowerLawExponent(
+                 RadonsSystem &system,
                 const Eigen::Vector2d &initial_dir,
                 double eps,
                 double T_step, double additional_time = 0.0)
             {
                 AL_PROFILE_FUNC("mc::ode::ComputePowerLawExponent");
+                 system.GetNextArgs();
                 
                 const double dt = system.GetDeltaTime();
-                const double L = system.GetArgs().at("model").toPreisachModel()->GetL() + 0.1;
-                const double w02 = system.GetArgs().at("w0").toDouble();
+                 const double L = system.GetArgs().model->GetL() + 0.1;
+                 const double w02 = system.GetArgs().params.w0;
 
-                system.SetResetFn([](mc::ode::DSArgs &args, mc::ode::DSArgs &nextArgs, uint32_t)
+                 system.SetResetFn([](RadonsContext &args, std::optional<RadonsContext> &nextArgs, uint32_t)
                 {
-                    args.at("model").toPreisachModel()->ResetState();
-                    nextArgs.at("model").toPreisachModel()->ResetState();
+                     args.model->ResetState();
+                     if (nextArgs) nextArgs->model->ResetState();
                 });
                 
                 system.ResetArgs();
@@ -242,28 +266,18 @@ namespace mc
                 
                 const auto reg = Eigen::Regression(X, Y);
 
-                mc::json::JsonDocument message({"name", "e", "M", "Ts", "ns", "nu", "C", "r2", "trajs1", "trajs2"});
-                message.AddField("name", "DivergenceDegreeRegressionData");
-                message.AddField("e", eps);
-                message.AddField("Ts", X);
-                message.AddField("ns", Y);
-                message.AddField("nu", reg.slope);
-                message.AddField("C", reg.intercept);
-                message.AddField("r2", reg.r * reg.r);
-                message.AddField("trajs1", trajs1);
-                message.AddField("trajs2", trajs2);
-
                 system.ResetArgs();
                 system.ResetNextArgs();
                 system.Reset();
 
-                return message;
+                return {eps, std::move(X), std::move(Y), reg.slope, reg.intercept, reg.r * reg.r,
+                        std::move(trajs1), std::move(trajs2)};
             }
         }
 
         /// Implements Benettin's mLCE computation algorithm
-        template <int N>
-        std::pair<double, Eigen::VectorXd> Benettin_mLCE(DynamicalSystem<N> &system, double timeForward,
+        template <int N, typename Context>
+        std::pair<double, Eigen::VectorXd> Benettin_mLCE(DynamicalSystem<N, Context> &system, double timeForward,
                                                                 double e,
                                                                 double T = 8.0,
                                                                 int M = 30, bool linearize = true)
@@ -296,18 +310,24 @@ namespace mc
             return {mLCE, history};
         }
 
-        inline json::JsonDocument TrajsCircle(DynamicalSystem<3> &system, const std::vector<double> &es, double time,
-                                              double timeForward = consts::nan, double areaCoeff = consts::nan)
+        struct TrajsCircleResult
         {
-            std::vector<std::string> esStr(es.size());
-            std::ranges::transform(es, esStr.begin(), [](const double &elem) { return doubleToString(elem, 2); });
+            using DirectionTrajectories = std::unordered_map<std::string,
+                std::array<std::vector<Eigen::Vector3d>, 2>>;
+            using DirectionLoops = std::unordered_map<std::string, std::array<std::vector<double>, 4>>;
 
-            json::JsonDocument message({"name", "es", "coords", "time", "timeForward", "trajs"});
-            message.AddField("name", "TrajsCircle");
-            message.AddField("es", esStr);
-            message.AddField("time", time);
-            message.AddField("timeForward", timeForward);
+            std::vector<double> perturbations;
+            std::vector<Eigen::Vector3d> directions;
+            double time;
+            double time_forward;
+            std::unordered_map<std::string, DirectionTrajectories> trajectories;
+            std::unordered_map<std::string, DirectionLoops> loops;
+        };
 
+         inline TrajsCircleResult TrajsCircle(DynamicalSystem<3, RadonsContext> &system, const std::vector<double> &es, double time,
+                                             double timeForward = consts::nan, double areaCoeff = consts::nan)
+        {
+             system.GetNextArgs();
             std::vector<Eigen::Vector3d> coords = {
                 {1., 0., 0.},
                 {std::sqrt(2.) / 2, std::sqrt(2.) / 2, 0.},
@@ -318,26 +338,14 @@ namespace mc
                 {0., -1., 0.},
                 {std::sqrt(2.) / 2, -std::sqrt(2.) / 2, 0.},
             };
-            std::vector<std::string> coordsStr(coords.size());
-            std::ranges::transform(coords, coordsStr.begin(), [](const Eigen::Vector3d &elem)
-            {
-                return mc::doubleToString(elem, 4);
-            });
-            message.AddField("coords", coordsStr);
-
             if (!std::isnan(timeForward))
             {
                 system.Forward(timeForward);
             }
 
-            std::unordered_map<std::string,
-                               std::unordered_map<std::string,
-                                                  std::array<std::vector<std::vector<double>>, 2>>> allTrajs = {};
+            TrajsCircleResult result{es, std::move(coords), time, timeForward, {}, {}};
 
-            std::unordered_map<std::string,
-                               std::unordered_map<std::string, std::array<std::vector<double>, 4>>> allLoops = {};
-
-            system.SetResetFn([areaCoeff](DSArgs &args, DSArgs &nextArgs, uint32_t)
+             system.SetResetFn([areaCoeff](RadonsContext &args, std::optional<RadonsContext> &nextArgs, uint32_t)
             {
                 constexpr double L = 1.0;
                 auto model1 = std::make_shared<mc::ArealPreisachModel>(L, false, false);
@@ -349,58 +357,50 @@ namespace mc
                     model2->P(areaCoeff * L, 0.0, -1);
                 }
 
-                args.insert_or_assign("model", Vote(model1));
-                nextArgs.insert_or_assign("model", Vote(model2));
+                 args.model = std::move(model1);
+                 nextArgs.value().model = std::move(model2);
             });
 
             for (const auto &e : es)
             {
-                std::unordered_map<std::string,
-                                   std::array<std::vector<std::vector<double>>, 2>> trajs = {};
+                TrajsCircleResult::DirectionTrajectories trajs;
+                TrajsCircleResult::DirectionLoops loops;
 
-                std::unordered_map<std::string, std::array<std::vector<double>, 4>> loops = {};
-
-                for (const auto v : coords)
+                for (const auto &v : result.directions)
                 {
                     system.Reset();
 
-                    std::vector<std::vector<double>> mainTraj = {};
-                    mainTraj.emplace_back(Eigen::to_std(system.GetX()));
+                    std::vector<Eigen::Vector3d> mainTraj{system.GetX()};
 
                     Eigen::Vector3d w = system.GetX() + v.normalized() * e;
 
-                    std::vector<std::vector<double>> secondTraj = {};
-                    secondTraj.emplace_back(Eigen::to_std(w));
+                    std::vector<Eigen::Vector3d> secondTraj{w};
 
                     auto count = static_cast<uint32>(time / system.GetDeltaTime());
                     while (count--)
                     {
                         auto traj = system.Forward(1);
-                        mainTraj.emplace_back(Eigen::to_std(system.GetX()));
+                        mainTraj.emplace_back(system.GetX());
 
                         w = system.NextTM(w);
-                        secondTraj.emplace_back(Eigen::to_std(w));
+                        secondTraj.emplace_back(w);
                     }
 
                     // TODO:
                     // auto [in1, out1] = system.GetArgs().at("model").toPreisachModel()->HysteresisLoop();
                     // auto [in2, out2] = system.GetNextArgs().at("model").toPreisachModel()->HysteresisLoop();
-                    auto [in1, out1] = system.GetArgs().at("model").toPreisachModel()->HysteresisLoop();
-                    auto [in2, out2] = system.GetNextArgs().at("model").toPreisachModel()->HysteresisLoop();
+                    auto [in1, out1] = system.GetArgs().model->HysteresisLoop();
+                    auto [in2, out2] = system.GetNextArgs().model->HysteresisLoop();
 
-                    trajs.insert({mc::doubleToString(v, 4), {mainTraj, secondTraj}});
-                    loops.insert({mc::doubleToString(v, 4), {in1, out1, in2, out2}});
+                    trajs.insert({mc::doubleToString(v, 4), {std::move(mainTraj), std::move(secondTraj)}});
+                    loops.insert({mc::doubleToString(v, 4),
+                                  {std::move(in1), std::move(out1), std::move(in2), std::move(out2)}});
                 }
-                allTrajs.insert({doubleToString(e, 2), trajs});
-                allLoops.insert({doubleToString(e, 2), loops});
+                result.trajectories.emplace(doubleToString(e, 2), std::move(trajs));
+                result.loops.emplace(doubleToString(e, 2), std::move(loops));
             }
 
-            auto &doc = message.GetDoc();
-
-            doc["trajs"] = allTrajs;
-            doc["loops"] = allLoops;
-
-            return message;
+            return result;
         }
 
 
@@ -424,9 +424,9 @@ namespace mc
          * @return [Eigen::VectorXd, Eigen::MatrixXd]   Спектр из N показателей Ляпунова (где N - размерность системы)
          * и вектор истории каждого из них (построчно).
          */
-        template <int N>
+        template <int N, typename Context>
         LCEResult ComputeLCEs(
-            DynamicalSystem<N> &system,
+            DynamicalSystem<N, Context> &system,
             double timeForward,
             double total_time,
             uint32_t ortho_steps,
@@ -567,9 +567,42 @@ namespace mc
             std::optional<uint32_t> m_End = std::nullopt;
         };
 
+        using CandidateValue = std::variant<bool, int, double, Eigen::MatrixXd>;
+        using CandidateValues = std::unordered_map<std::string, CandidateValue>;
+
         template <int N>
-        using SolutionFn = std::function<Eigen::VectorXd(DynamicalSystem<N> &system,
-                                                         const std::unordered_map<DSArgs::key_type, Vote> &args)>;
+        struct DivergenceCandidate
+        {
+            double epsilon;
+            Eigen::Vector<double, N> direction;
+        };
+
+        template <int N>
+        DivergenceCandidate<N> DecodeDivergenceCandidate(const CandidateValues &values)
+        {
+            for (const auto &[name, value] : values)
+            {
+                if (name != "e" && name != "v")
+                {
+                    throw std::invalid_argument("Unknown divergence candidate parameter: " + name);
+                }
+            }
+            const auto e = values.find("e");
+            const auto *epsilon = e == values.end() ? nullptr : std::get_if<double>(&e->second);
+            if (!epsilon || !std::isfinite(*epsilon))
+            {
+                throw std::invalid_argument("Divergence candidate e must be a finite double");
+            }
+            const auto v = values.find("v");
+            const auto *direction = v == values.end() ? nullptr : std::get_if<Eigen::MatrixXd>(&v->second);
+            if (!direction || direction->rows() != N || direction->cols() != 1 ||
+                !direction->allFinite() || direction->isZero(0.0))
+            {
+                throw std::invalid_argument(std::format("Divergence candidate v must be a finite nonzero {} x 1 vector", N));
+            }
+            return {*epsilon, *direction};
+        }
+
         using SolutionsMetricFn = std::function<MetricResult(const Eigen::VectorXd &)>;
         using MetricsCompareFn = std::function<bool(double, double)>;
 
@@ -619,9 +652,9 @@ namespace mc
          */
         struct CandidateParams
         {
-            using CandidateFn = std::function<std::vector<Vote>()>;
+            using CandidateFn = std::function<std::vector<CandidateValue>()>;
 
-            CandidateParams(std::vector<Vote> coarse_range, std::optional<double> fine_step)
+            CandidateParams(std::vector<CandidateValue> coarse_range, std::optional<double> fine_step)
             {
                 this->coarse_range = coarse_range;
                 this->fine_step = fine_step;
@@ -633,19 +666,19 @@ namespace mc
                 this->fine_step = fine_step;
             }
 
-            std::variant<std::vector<Vote>, CandidateFn> coarse_range;
+            std::variant<std::vector<CandidateValue>, CandidateFn> coarse_range;
             std::optional<double> fine_step;
         };
 
         struct ParamsSearchResult
         {
-            ParamsSearchResult(const std::unordered_map<DSArgs::key_type, Vote> &p, const MetricResult &m,
+            ParamsSearchResult(const CandidateValues &p, const MetricResult &m,
                                const Eigen::VectorXd &s) :
                 params(p), metric(m), solution(s)
             {
             }
 
-            std::unordered_map<DSArgs::key_type, Vote> params;
+            CandidateValues params;
             MetricResult metric;
             Eigen::VectorXd solution;
         };
@@ -653,17 +686,17 @@ namespace mc
         /**
          * Find the best params with specific metric for system solutions.
          * @param system: dynamical system
-         * @param solve: function that gets a system solution
+         * @param validate: converts a complete candidate before resetting or advancing the system
+         * @param solve: evaluates a validated, typed candidate
          * @param candidates: a candidate map, the keys of which are the names of the candidate params, and the values are the steps for these candidates.
          * @param metric: a solution metric.
          * @param comparator: compares results of applying metric for solutions
          * @returns vector of CoarseSearchResult
          */
-        template <int N>
-        std::vector<ParamsSearchResult> FindBestParams(DynamicalSystem<N> &system,
-                                                      const std::type_identity_t<SolutionFn<N>> &solve,
-                                                              const std::unordered_map<
-                                                                  DSArgs::key_type, CandidateParams> &candidates,
+        template <int N, typename Context, typename Validate, typename Solve>
+        std::vector<ParamsSearchResult> FindBestParams(DynamicalSystem<N, Context> &system,
+                                                      Validate validate, Solve solve,
+                                                              const std::unordered_map<std::string, CandidateParams> &candidates,
                                                               const SolutionsMetricFn &metric = GrowthMetric,
                                                               const MetricsCompareFn &comparator = MaxCompare)
         {
@@ -671,15 +704,15 @@ namespace mc
             std::vector<std::string> params_names{keys.begin(), keys.end()};
             std::ranges::sort(params_names);
 
-            std::unordered_map<DSArgs::key_type, std::vector<Vote>> coarse_grid;
+            std::unordered_map<std::string, std::vector<CandidateValue>> coarse_grid;
             std::ranges::transform(params_names, std::inserter(coarse_grid, coarse_grid.begin()),
                                    [candidates](const auto &name)
                                    {
-                                       std::vector<Vote> value;
+                                       std::vector<CandidateValue> value;
                                        if (const auto &range = candidates.at(name).coarse_range; std::holds_alternative<
-                                           std::vector<Vote>>(range))
+                                           std::vector<CandidateValue>>(range))
                                        {
-                                           value = std::get<std::vector<Vote>>(range);
+                                           value = std::get<std::vector<CandidateValue>>(range);
                                        }
                                        else
                                        {
@@ -693,14 +726,10 @@ namespace mc
 
             for (const auto &candidate : mc::utils::getNestedCombinations(coarse_grid))
             {
+                const auto checked = std::invoke(validate, candidate);
                 system.Reset();
 
-                for (const auto &[param_name, param_value] : candidate)
-                {
-                    system.SetArg(param_name, param_value);
-                }
-
-                Eigen::VectorXd solution = solve(system, candidate);
+                Eigen::VectorXd solution = std::invoke(solve, system, checked);
                 auto metric_value = metric(solution);
                 coarse_results.emplace_back(candidate, metric_value, solution);
             }
@@ -742,17 +771,27 @@ namespace mc
 
         //#endregion ------------------------------------------ Find Best Params ------------------------------------------
 
-        // TODO: remove
-        template <int N, typename Derived>
-        mc::json::JsonDocument DivergenceDegreeRegressionData(DynamicalSystem<N> &system,
-                                                                     double timeForward,
-                                                                     double e, const Eigen::MatrixBase<Derived> &v,
-                                                                     const Eigen::VectorXd &Ts, int M)
+        template <int N>
+        struct DivergenceRegressionResult
+        {
+            double epsilon;
+            int repetitions;
+            Eigen::VectorXd log_times;
+            std::vector<double> mean_log_distances;
+            DivergenceTrajectories<N> primary;
+            DivergenceTrajectories<N> perturbed;
+        };
+
+        template <int N, typename Context, typename Derived>
+        DivergenceRegressionResult<N> DivergenceDegreeRegressionData(DynamicalSystem<N, Context> &system,
+                                                                      double timeForward,
+                                                                      double e, const Eigen::MatrixBase<Derived> &v,
+                                                                      const Eigen::VectorXd &Ts, int M)
         {
             AL_PROFILE_FUNC("FindDivergenceDegree");
 
-            using State = typename DynamicalSystem<N>::State;
-            const State direction = DynamicalSystem<N>::CheckedState(v);
+            using State = typename DynamicalSystem<N, Context>::State;
+            const State direction = DynamicalSystem<N, Context>::CheckedState(v);
             system.Reset();
 
             std::unordered_map<std::string, std::vector<State>>
@@ -777,17 +816,7 @@ namespace mc
                 ns.push_back(n);
             }
 
-            Eigen::VectorXd TsLog = Ts.array().log();
-            mc::json::JsonDocument message({"name", "e", "M", "Ts", "ns", "trajs1", "trajs2"});
-            message.AddField("name", "DivergenceDegreeRegressionData");
-            message.AddField("e", e);
-            message.AddField("M", M);
-            message.AddField("Ts", TsLog);
-            message.AddField("ns", ns);
-            message.AddField("trajs1", trajs1);
-            message.AddField("trajs2", trajs2);
-
-            return message;
+            return {e, M, Ts.array().log().matrix(), std::move(ns), std::move(trajs1), std::move(trajs2)};
         }
     }
 }

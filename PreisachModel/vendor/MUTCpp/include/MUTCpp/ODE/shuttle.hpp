@@ -19,51 +19,11 @@
 
 #include "Utils/mathOperations.hpp"
 #include "DynamicSystem.hpp"
+#include "Json/Eigen.hpp"
+#include "Json/JsonDocument.hpp"
 
 #include <Eigen/Dense>
 #include <unsupported/Eigen/MatrixFunctions>
-#include "vendor/json/nlohmann_json.hpp"
-
-namespace Eigen
-{
-    template <typename Derived>
-    void to_json(nlohmann::json &j, const MatrixBase<Derived> &matrix)
-    {
-        j = nlohmann::json::array();
-        for (int i = 0; i < matrix.rows(); ++i)
-        {
-            nlohmann::json row = nlohmann::json::array();
-            for (int k = 0; k < matrix.cols(); ++k)
-            {
-                row.push_back(matrix(i, k));
-            }
-            j.push_back(row);
-        }
-    }
-
-    template <typename Derived>
-    void from_json(const nlohmann::json &j, MatrixBase<Derived> &matrix)
-    {
-        if (!j.is_array() || j.empty() || !j.front().is_array())
-        {
-            matrix.resize(0, 0);
-            return;
-        }
-        const auto rows = j.size();
-        const auto cols = j.front().size();
-        matrix.resize(rows, cols);
-        for (size_t i = 0; i < rows; ++i)
-        {
-            const auto &row = j.at(i);
-            if (row.size() != cols)
-                THROW_RUNTIME_ERROR("Non-rectangular matrix in JSON.");
-            for (size_t k = 0; k < cols; ++k)
-            {
-                matrix(i, k) = row.at(k).get<double>();
-            }
-        }
-    }
-}
 
 namespace mc
 {
@@ -87,9 +47,9 @@ namespace mc
         inline void to_json(nlohmann::json &j, const Settings &settings)
         {
             j = nlohmann::json::object();
-            j["T"] = settings.T;
-            j["dt"] = settings.dt;
-            j["tol"] = settings.tol;
+            j["T"] = json::EncodeNumber(settings.T);
+            j["dt"] = json::EncodeNumber(settings.dt);
+            j["tol"] = json::EncodeNumber(settings.tol);
             j["patience"] = settings.patience;
         }
 
@@ -611,26 +571,12 @@ namespace mc
             nlohmann::json j;
             j["dimension"] = m_Dimension;
             j["rays_count"] = 2;
-            j["rays"] = nlohmann::json::array();
-            for (int jcol = 0; jcol < m_BoundaryRays.cols(); ++jcol)
-            {
-                std::vector<double> v(m_Dimension);
-                for (int i = 0; i < m_Dimension; ++i)
-                    v[i] = m_BoundaryRays(i, jcol);
-                j["rays"].push_back(v);
-            }
+            j["rays"] = json::EncodeRows(m_BoundaryRays.transpose());
             if (m_GeneratingMatrix.has_value())
             {
-                const auto curve = m_GeneratingMatrix.value();
-                j["curve_A"] = nlohmann::json::array();
-                for (int i = 0; i < curve.m_A.rows(); ++i)
-                {
-                    std::vector<double> row(curve.m_A.cols());
-                    for (int k = 0; k < curve.m_A.cols(); ++k)
-                        row[k] = curve.m_A(i, k);
-                    j["curve_A"].push_back(row);
-                }
-                j["curve_b"] = curve.m_b;
+                const auto &curve = *m_GeneratingMatrix;
+                j["curve_A"] = json::EncodeRows(curve.m_A);
+                j["curve_b"] = json::EncodeRows(curve.m_b);
                 j["curve_settings"] = curve.settings;
             }
             return j;
@@ -645,36 +591,13 @@ namespace mc
             {
                 THROW_INVALID_ARGUMENT_ERROR("SolidCone2d requires two rays in two dimensions");
             }
-            Eigen::Matrix2d R;
-            auto arr = j.at("rays");
-            for (int col = 0; col < m; ++col)
-            {
-                auto v = arr.at(col).get<std::vector<double>>();
-                if (static_cast<int>(v.size()) != n)
-                    THROW_INVALID_ARGUMENT_ERROR("rays size mismatch");
-                for (int i = 0; i < n; ++i)
-                    R(i, col) = v[i];
-            }
-            auto c = fromRays(R);
+            auto c = fromRays(json::DecodeRows<2, 2>(j.at("rays")).transpose());
 
             if (j.contains("curve_A"))
             {
-                auto Aarr = j.at("curve_A").get<std::vector<std::vector<double>>>();
-                if (Aarr.size() != 2 || Aarr[0].size() != 2 || Aarr[1].size() != 2)
-                {
-                    THROW_INVALID_ARGUMENT_ERROR("SolidCone2d requires a 2 x 2 curve matrix");
-                }
-                Eigen::Matrix2d A;
-                for (int i = 0; i < n; ++i)
-                {
-                    for (int k = 0; k < n; ++k)
-                    {
-                        A(i, k) = Aarr[i][k];
-                    }
-                }
-                Eigen::Vector2d b;
-                Eigen::from_json(j["curve_b"], b);
-                detail::Settings s = j["curve_settings"];
+                const auto A = json::DecodeRows<2, 2>(j.at("curve_A"));
+                const auto b = json::DecodeRows<2, 1>(j.at("curve_b"));
+                const auto s = j.at("curve_settings").get<detail::Settings>();
                 c->m_GeneratingMatrix = GenerationCurve(A, b, s);
                 c->m_ConstructionType = ConstructionType::FROM_CURVE;
             }
@@ -723,7 +646,8 @@ namespace mc
         mc::json::JsonDocument doc{};
     };
 
-    inline ShuttlePointResult ShuttlePoint(ode::DynamicalSystem<2> &system, const SolidCone2d &cone,
+    template <typename Context>
+    ShuttlePointResult ShuttlePoint(ode::DynamicalSystem<2, Context> &system, const SolidCone2d &cone,
                                            const Eigen::Vector2d &u0, const Eigen::Vector2d &z_minus,
                                            const Eigen::Vector2d &z_plus, double period)
     {
@@ -736,7 +660,8 @@ namespace mc
         constexpr int maxYIter = 100;
         
         CSVWriter trace("trace.csv");
-        std::unordered_map<std::string, ode::DynamicalSystem<2>::Trajectory> sequences_log;
+        using Trajectory = typename ode::DynamicalSystem<2, Context>::Trajectory;
+        std::unordered_map<std::string, Trajectory> sequences_log;
         std::unordered_map<std::string, Eigen::Vector2d> initial_points_log;
         std::unordered_map<std::string, Eigen::Vector2d> cond_points_log;
 
@@ -791,8 +716,8 @@ namespace mc
 
         // Вспомогательные последовательности
         auto build_sequence = [maxYIter, period, sigma_n, u0, &cone, build_new_subseq_point](
-            const Eigen::Vector2d &y0, ode::DynamicalSystem<2> &system, int sig_idx, CSVWriter &trace,
-            std::unordered_map<std::string, ode::DynamicalSystem<2>::Trajectory> &sequences_log, std::unordered_map<std::string, Eigen::Vector2d> &initial_points_log,
+            const Eigen::Vector2d &y0, ode::DynamicalSystem<2, Context> &system, int sig_idx, CSVWriter &trace,
+            std::unordered_map<std::string, Trajectory> &sequences_log, std::unordered_map<std::string, Eigen::Vector2d> &initial_points_log,
             std::unordered_map<std::string, Eigen::Vector2d> &cond_points_log) -> std::optional<Eigen::Vector2d>
         {
             const bool add = sig_idx % 2 == 1;

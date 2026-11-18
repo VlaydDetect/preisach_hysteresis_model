@@ -14,23 +14,26 @@
 
 #include <Eigen/Dense>
 
-#include "DSArgs.hpp"
+#include "Core/Types.hpp"
+#include "Utils/Profile.hpp"
 
 namespace mc
 {
     namespace ode
     {
+        struct NoContext {};
+
         namespace detail
         {
-            template <typename Function, typename State, typename Result>
-            concept SystemFunction = requires(Function &fn, const State &x, double t, DSArgs &args)
+            template <typename Function, typename State, typename Result, typename Context>
+            concept SystemFunction = requires(Function &fn, const State &x, double t, const Context &args)
             {
                 { std::invoke(fn, x, t, args) } -> std::same_as<Result>;
             };
 
-            template <typename State>
-            State rk4(const std::function<State(const State &, double, DSArgs &)> &fn,
-                      const State &x, double t, double dt, DSArgs &args)
+            template <typename State, typename Context>
+            State rk4(const std::function<State(const State &, double, const Context &)> &fn,
+                      const State &x, double t, double dt, const Context &args)
             {
                 const State k1 = fn(x, t, args);
                 const State k2 = fn(x + k1 * dt / 2., t + dt / 2., args);
@@ -43,7 +46,7 @@ namespace mc
             }
         }
 
-        template <int N>
+        template <int N, typename Context = NoContext>
         class DynamicalSystem
         {
             static_assert(N > 0, "Dynamical system dimension must be positive");
@@ -53,9 +56,9 @@ namespace mc
             using Jacobian = Eigen::Matrix<double, N, N>;
             using Trajectory = Eigen::Matrix<double, Eigen::Dynamic, N>;
             using ShiftedTrajectory = Eigen::Matrix<double, N, Eigen::Dynamic>;
-            using RightHandSide = std::function<State(const State &, double, DSArgs &)>;
-            using JacobianFunction = std::function<Jacobian(const State &, double, DSArgs &)>;
-            using ResetFn = std::function<void(DSArgs &, DSArgs &, uint32_t)>;
+            using RightHandSide = std::function<State(const State &, double, const Context &)>;
+            using JacobianFunction = std::function<Jacobian(const State &, double, const Context &)>;
+            using ResetFn = std::function<void(Context &, std::optional<Context> &, uint32_t)>;
 
             template <typename Derived>
             static State CheckedState(const Eigen::MatrixBase<Derived> &x)
@@ -77,8 +80,8 @@ namespace mc
             {
                 SystemState(const State &x0, const State &x,
                             double t0, double t,
-                            const DSArgs &args, const DSArgs &default_args,
-                            const DSArgs &next_args, const DSArgs &default_next_args) :
+                            const Context &args, const Context &default_args,
+                            const std::optional<Context> &next_args, const std::optional<Context> &default_next_args) :
                     m_X0(x0), m_X(x), m_T0(t0), m_T(t),
                     m_Args(args), m_NextArgs(next_args), m_DefaultArgs(default_args),
                     m_DefaultNextArgs(default_next_args)
@@ -90,7 +93,10 @@ namespace mc
                 std::optional<State> m_MemoizedNextStep = std::nullopt;
                 double m_T0 = 0;
                 double m_T = 0;
-                DSArgs m_Args, m_NextArgs, m_DefaultArgs, m_DefaultNextArgs;
+                Context m_Args;
+                std::optional<Context> m_NextArgs;
+                Context m_DefaultArgs;
+                std::optional<Context> m_DefaultNextArgs;
             };
 
             /**
@@ -103,29 +109,32 @@ namespace mc
              * @param args2 Arguments for the secondary trajectory.
              */
             template <typename Function, typename Derivative>
-                requires detail::SystemFunction<Function, State, State> &&
-                         detail::SystemFunction<Derivative, State, Jacobian>
+                 requires detail::SystemFunction<Function, State, State, Context> &&
+                          detail::SystemFunction<Derivative, State, Jacobian, Context>
             DynamicalSystem(Function &&f, Derivative &&jac, const double dt,
                             const State &x0 = State::Zero(), const double t0 = 0.0,
-                            const DSArgs &args = {}, const DSArgs &args2 = {}) :
+                            const Context &args = {}, const std::optional<Context> &args2 = {}) :
                 m_State(x0, x0, t0, t0, args, args, args2, args2),
                 m_Function(std::forward<Function>(f)),
                 m_Jacobian(std::forward<Derivative>(jac)),
                 m_DeltaTime(dt)
             {
+                ValidateContexts(args, args2);
             }
 
             virtual ~DynamicalSystem() = default;
             DynamicalSystem(const DynamicalSystem &) = delete;
             DynamicalSystem &operator=(const DynamicalSystem &) = delete;
 
-            SystemState GetState() const noexcept
+            SystemState GetState() const
             {
                 return m_State;
             }
             
-            void SetState(const SystemState& state) noexcept
+            void SetState(const SystemState& state)
             {
+                ValidateContexts(state.m_Args, state.m_NextArgs);
+                ValidateContexts(state.m_DefaultArgs, state.m_DefaultNextArgs);
                 m_State = state;
             }
 
@@ -259,6 +268,7 @@ namespace mc
             std::pair<Trajectory, Trajectory> ForwardTwoTrajs(double time, const State &next_x0)
             {
                 AL_PROFILE_FUNC("DynamicalSystem::Forward");
+                GetNextArgs();
 
                 auto numSteps = static_cast<uint32>(time / m_DeltaTime);
 
@@ -326,10 +336,7 @@ namespace mc
                 m_State.m_T = m_State.m_T0;
                 m_State.m_MemoizedNextStep = std::nullopt;
 
-                if (m_ResetFn.has_value())
-                {
-                    m_ResetFn.value()(m_State.m_Args, m_State.m_NextArgs, reset_idx);
-                }
+                CallResetFn(reset_idx);
             }
 
             /// Update x0 and reset a system solution to x0 and time to t0
@@ -340,10 +347,7 @@ namespace mc
                 m_State.m_T = m_State.m_T0;
                 m_State.m_MemoizedNextStep = std::nullopt;
 
-                if (m_ResetFn.has_value())
-                {
-                    m_ResetFn.value()(m_State.m_Args, m_State.m_NextArgs, reset_idx);
-                }
+                CallResetFn(reset_idx);
             }
 
             template <typename Derived>
@@ -354,11 +358,14 @@ namespace mc
 
             void ResetArgs()
             {
+                ValidateContexts(m_State.m_DefaultArgs, m_State.m_NextArgs);
                 m_State.m_Args = m_State.m_DefaultArgs;
+                m_State.m_MemoizedNextStep.reset();
             }
 
             void ResetNextArgs()
             {
+                ValidateContexts(m_State.m_Args, m_State.m_DefaultNextArgs);
                 m_State.m_NextArgs = m_State.m_DefaultNextArgs;
             }
 
@@ -373,6 +380,7 @@ namespace mc
                 SetX0(CheckedState(x0));
             }
 
+            /// Callbacks update the contexts explicitly associated with each trajectory.
             void SetResetFn(const ResetFn &fn)
             {
                 m_ResetFn = fn;
@@ -382,7 +390,10 @@ namespace mc
             {
                 if (m_ResetFn.has_value())
                 {
-                    m_ResetFn.value()(m_State.m_Args, m_State.m_NextArgs, reset_idx);
+                    auto args = m_State.m_Args;
+                    auto next = m_State.m_NextArgs;
+                    m_ResetFn.value()(args, next, reset_idx);
+                    SetContexts(args, next);
                 }
             }
 
@@ -391,56 +402,57 @@ namespace mc
                 m_State.m_T = m_State.m_T0;
             }
 
-            void SetArgs(const DSArgs &args, bool keepAsDefault = false)
+            /// Replace current parameters. ResetArgs restores the separately stored defaults.
+            void SetArgs(const Context &args)
             {
-                SetDefaultArgs(args);
+                ValidateContexts(args, m_State.m_NextArgs);
                 m_State.m_Args = args;
+                m_State.m_MemoizedNextStep.reset();
             }
 
-            void SetNextArgs(const DSArgs &args, bool keepAsDefault = false)
+            void SetNextArgs(const Context &args)
             {
-                SetDefaultNextArgs(args);
+                ValidateContexts(m_State.m_Args, args);
                 m_State.m_NextArgs = args;
             }
 
-            void SetDefaultArgs(const DSArgs &args)
+            void SetDefaultArgs(const Context &args)
             {
+                ValidateContexts(args, m_State.m_DefaultNextArgs);
                 m_State.m_DefaultArgs = args;
             }
 
-            void SetDefaultNextArgs(const DSArgs &args)
+            void SetDefaultNextArgs(const Context &args)
             {
+                ValidateContexts(m_State.m_DefaultArgs, args);
                 m_State.m_DefaultNextArgs = args;
             }
 
-            void AddAndSetArg(const std::string &name, const Vote &arg)
+            void SetContexts(const Context &primary, const std::optional<Context> &perturbed)
             {
-                m_State.m_Args.insert_or_assign(name, arg);
+                ValidateContexts(primary, perturbed);
+                m_State.m_Args = primary;
+                m_State.m_NextArgs = perturbed;
+                m_State.m_MemoizedNextStep.reset();
             }
 
-            void SetArg(const std::string &name, const Vote &arg)
+            static void ValidateContexts(const Context &primary, const std::optional<Context> &perturbed)
             {
-                m_State.m_Args.insert_or_assign(name, arg);
+                if constexpr (requires { Context::ValidatePair(primary, perturbed); })
+                {
+                    Context::ValidatePair(primary, perturbed);
+                }
             }
 
-            void SetNextArg(const std::string &name, const Vote &arg)
-            {
-                m_State.m_NextArgs.insert_or_assign(name, arg);
-            }
-
-            bool ContainsArg(const std::string &argName) const
-            {
-                return m_State.m_Args.contains(argName);
-            }
-
-            DSArgs GetArgs() const
+            const Context &GetArgs() const
             {
                 return m_State.m_Args;
             }
 
-            DSArgs GetNextArgs() const
+            const Context &GetNextArgs() const
             {
-                return m_State.m_NextArgs;
+                if (!m_State.m_NextArgs) throw std::invalid_argument("A second trajectory context is required");
+                return *m_State.m_NextArgs;
             }
 
             State GetX() const
@@ -468,10 +480,10 @@ namespace mc
         };
 
         /// Continuous dynamical system
-        template <int N>
-        class ContinuousDS : public DynamicalSystem<N>
+        template <int N, typename Context = NoContext>
+        class ContinuousDS : public DynamicalSystem<N, Context>
         {
-            using Base = DynamicalSystem<N>;
+            using Base = DynamicalSystem<N, Context>;
             using Base::m_Function;
             using Base::m_Jacobian;
             using Base::m_DeltaTime;
@@ -485,19 +497,19 @@ namespace mc
             using Base::ShiftTrajNext;
 
             template <typename Function, typename Derivative>
-                requires detail::SystemFunction<Function, State, State> &&
-                         detail::SystemFunction<Derivative, State, Jacobian>
-            ContinuousDS(Function &&f, Derivative &&jac, double dt, const DSArgs &args = {},
-                         const DSArgs &args2 = {}, const State &x0 = State::Zero(), double t0 = 0.0) :
+                 requires detail::SystemFunction<Function, State, State, Context> &&
+                          detail::SystemFunction<Derivative, State, Jacobian, Context>
+            ContinuousDS(Function &&f, Derivative &&jac, double dt, const Context &args = {},
+                         const std::optional<Context> &args2 = {}, const State &x0 = State::Zero(), double t0 = 0.0) :
                 Base(std::forward<Function>(f), std::forward<Derivative>(jac), dt, x0, t0, args, args2)
             {
             }
 
             template <typename Function, typename Derivative, typename Derived>
-                requires detail::SystemFunction<Function, State, State> &&
-                         detail::SystemFunction<Derivative, State, Jacobian>
-            ContinuousDS(Function &&f, Derivative &&jac, double dt, const DSArgs &args,
-                         const DSArgs &args2, const Eigen::MatrixBase<Derived> &x0, double t0 = 0.0) :
+                 requires detail::SystemFunction<Function, State, State, Context> &&
+                          detail::SystemFunction<Derivative, State, Jacobian, Context>
+            ContinuousDS(Function &&f, Derivative &&jac, double dt, const Context &args,
+                         const std::optional<Context> &args2, const Eigen::MatrixBase<Derived> &x0, double t0 = 0.0) :
                 ContinuousDS(std::forward<Function>(f), std::forward<Derivative>(jac), dt, args, args2,
                              Base::CheckedState(x0), t0)
             {
@@ -559,13 +571,8 @@ namespace mc
             State NextTM(const State &w) override
             {
                 AL_PROFILE_FUNC("ContinuousDS::NextTM");
-                // auto k1 = m_Function(w, m_T, m_NextArgs);
-                // auto k2 = m_Function(w + (m_DeltaTime / 2.0) * k1, m_T + (m_DeltaTime / 2.0), m_NextArgs);
-                // auto k3 = m_Function(w + (m_DeltaTime / 2.0) * k2, m_T + (m_DeltaTime / 2.0), m_NextArgs);
-                // auto k4 = m_Function(w + m_DeltaTime * k3, m_T + m_DeltaTime, m_NextArgs);
-                // auto res = w + (m_DeltaTime / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4);
-                // return res;
-                return detail::rk4(m_Function, w, m_State.m_T, m_DeltaTime, m_State.m_NextArgs);
+                if (!m_State.m_NextArgs) throw std::invalid_argument("A second trajectory context is required");
+                return detail::rk4(m_Function, w, m_State.m_T, m_DeltaTime, *m_State.m_NextArgs);
             }
         };
     }

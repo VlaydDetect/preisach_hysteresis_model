@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -98,13 +98,13 @@ namespace mc
             }
         };
 
-        template <int N, typename Normal, typename Point>
-        typename DynamicalSystem<N>::Trajectory PoincareMapping(
-            DynamicalSystem<N> &system, double time, const Eigen::MatrixBase<Normal> &normal,
+        template <int N, typename Context, typename Normal, typename Point>
+        typename DynamicalSystem<N, Context>::Trajectory PoincareMapping(
+            DynamicalSystem<N, Context> &system, double time, const Eigen::MatrixBase<Normal> &normal,
             const Eigen::MatrixBase<Point> &point)
         {
             const typename PoincareMapGenerator<N>::PoincareSection section(
-                DynamicalSystem<N>::CheckedState(normal), DynamicalSystem<N>::CheckedState(point));
+                DynamicalSystem<N, Context>::CheckedState(normal), DynamicalSystem<N, Context>::CheckedState(point));
             system.ResetArgs();
             system.Reset();
             const auto traj = system.Forward(time);
@@ -113,9 +113,9 @@ namespace mc
             return PoincareMapGenerator<N>::ComputeMap(traj, section);
         }
 
-        template <int N>
-        typename DynamicalSystem<N>::Trajectory PoincareStroboscopicMapping(
-            DynamicalSystem<N> &system, double periodMultiplier, double period, double dt)
+        template <int N, typename Context>
+        typename DynamicalSystem<N, Context>::Trajectory PoincareStroboscopicMapping(
+            DynamicalSystem<N, Context> &system, double periodMultiplier, double period, double dt)
         {
             system.ResetArgs();
             system.Reset();

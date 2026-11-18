@@ -85,3 +85,9 @@ hooks/
 
 # Output files
 **/preisach_*.txt
+PreisachModel/results/
+PreisachModel/tests/
+PreisachModel/out_*.csv
+PreisachModel/trace_*.csv
+python/results/
+python/tests/
