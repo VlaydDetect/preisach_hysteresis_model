@@ -9,7 +9,5 @@
 #include "Core/Constants.hpp"
 #include "Core/DtypeInfo.hpp"
 #include "Core/Enums.hpp"
-#include "Core/Shape.hpp"
-#include "Core/Slice.hpp"
 #include "Core/Timer.hpp"
 #include "Core/Types.hpp"

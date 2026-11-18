@@ -11,7 +11,8 @@
 #if defined(__cpp_lib_math_special_functions)
 
 #include "Functions/linspace.hpp"
-#include "Matrix.hpp"
+#include <Eigen/Core>
+#include "Core/Types.hpp"
 #include "Utils/mathOperations.hpp"
 
 namespace mc
@@ -36,7 +37,7 @@ namespace mc
     /// @param m: Number of points in the output window. If zero or less, an empty array is returned.
     /// @param beta: shape parameter for the window
     /// @return Matrix
-    inline Matrix<double> kaiser(int32 m, double beta)
+    inline Eigen::RowVectorX<double> kaiser(int32 m, double beta)
     {
         if (m < 1)
         {
@@ -49,7 +50,7 @@ namespace mc
         const auto mMinus1Squared = utils::sqr(mMinus1);
         const auto i0Beta = detail::bessel_in(0, beta);
 
-        Matrix<double> result(1, m);
+        Eigen::RowVectorX<double> result(m);
         int32 i = 0;
         for (auto n : linspace(-mMinus1Over2, mMinus1Over2, m, EndPoint::YES))
         {

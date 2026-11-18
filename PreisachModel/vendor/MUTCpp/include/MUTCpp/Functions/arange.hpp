@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,105 +6,67 @@
 
 #pragma once
 
-#include <string>
+#include <Eigen/Core>
+#include <cmath>
+#include <limits>
+#include <stdexcept>
+#include <type_traits>
 #include <vector>
-
-#include "Core/Error.hpp"
-#include "Core/StaticAssert.hpp"
-#include "Matrix.hpp"
-#include "Core/Slice.hpp"
 
 namespace mc
 {
-    /// Return evenly spaced values within a given interval.
-    ///
-    /// Values are generated within the half - open interval[start, stop)
-    /// (in other words, the interval including start but excluding stop).
-    /// For integer arguments, the function is equivalent to the Python built - in
-    /// range function, but returns a matrix rather than a list.
-    ///
-    /// When using a non - integer step, such as 0.1, the results will often
-    /// not be consistent. It is better to use linspace for these cases.
-    /// @param inStart
-    /// @param inStop
-    /// @param inStep: (Optional, defaults to 1)
-    /// @return Matrix
-    template<typename dtype>
-    Matrix<dtype> arange(dtype inStart, dtype inStop, dtype inStep = 1)
+    template <typename T>
+    Eigen::RowVectorX<T> arange(T first, T last, T step = T{1})
     {
-        STATIC_ASSERT_ARITHMETIC(dtype);
-
-        if (inStep > 0 && inStop < inStart)
+        if constexpr (std::is_floating_point_v<T>)
         {
-            THROW_INVALID_ARGUMENT_ERROR("stop value must be larger than the start value for positive step.");
-        }
-
-        if (inStep < 0 && inStop > inStart)
-        {
-            THROW_INVALID_ARGUMENT_ERROR("start value must be larger than the stop value for negative step.");
-        }
-
-        std::vector<dtype> values;
-
-        dtype theValue = inStart;
-        auto  counter  = dtype{ 1 };
-
-        if (inStep > 0)
-        {
-            while (theValue < inStop)
+            if (!std::isfinite(first) || !std::isfinite(last) || !std::isfinite(step))
             {
-                values.push_back(theValue);
-                theValue = inStart + inStep * counter++;
+                throw std::invalid_argument("Range endpoints and step must be finite");
             }
         }
-        else
+        if (step == T{} || (step > T{} && last < first) || (step < T{} && last > first))
         {
-            while (theValue > inStop)
+            throw std::invalid_argument("Invalid range or step");
+        }
+        std::vector<T> values;
+        for (T value = first; (step > T{} ? value < last : value > last);)
+        {
+            values.push_back(value);
+            T next;
+            if constexpr (std::is_integral_v<T>)
             {
-                values.push_back(theValue);
-                theValue = inStart + inStep * counter++;
+                if ((step > T{} && value > (std::numeric_limits<T>::max)() - step) ||
+                    (step < T{} && value < (std::numeric_limits<T>::lowest)() - step))
+                {
+                    break;
+                }
+                next = static_cast<T>(value + step);
             }
+            else
+            {
+                next = first + step * static_cast<T>(values.size());
+            }
+            if ((step > T{} && next <= value) || (step < T{} && next >= value))
+            {
+                throw std::overflow_error("Range no longer advances");
+            }
+            value = next;
         }
-
-        return Matrix(values);
+        return Eigen::Map<const Eigen::RowVectorX<T>>(values.data(), static_cast<Eigen::Index>(values.size()));
     }
-    
-    /// Return evenly spaced values within a given interval.
-    ///
-    /// Values are generated within the half - open interval[start, stop)
-    /// (in other words, the interval including start but excluding stop).
-    /// For integer arguments, the function is equivalent to the Python built - in
-    /// range function, but returns a matrix rather than a list.
-    ///
-    /// When using a non - integer step, such as 0.1, the results will often
-    /// not be consistent. It is better to use linspace for these cases.
-    /// @param inStop: start is 0 and a step is 1
-    /// @return Matrix
-    template<typename dtype>
-    Matrix<dtype> arange(dtype inStop)
-    {
-        if (inStop <= 0)
-        {
-            THROW_INVALID_ARGUMENT_ERROR("stop value must ge greater than 0.");
-        }
 
-        return arange<dtype>(0, inStop, 1);
-    }
-    
-    /// Return evenly spaced values within a given interval.
-    ///
-    /// Values are generated within the half - open interval[start, stop)
-    /// (in other words, the interval including start but excluding stop).
-    /// For integer arguments, the function is equivalent to the Python built - in
-    /// range function, but returns a matrix rather than a list.
-    ///
-    /// When using a non - integer step, such as 0.1, the results will often
-    /// not be consistent. It is better to use linspace for these cases.
-    /// @param inSlice
-    /// @return Matrix
-    template<typename dtype>
-    Matrix<dtype> arange(const Slice& inSlice)
+    template <typename T>
+    Eigen::RowVectorX<T> arange(T last)
     {
-        return arange<dtype>(inSlice.m_Start, inSlice.m_Stop, inSlice.m_Step);
+        if (last <= T{}) throw std::invalid_argument("Range end must be positive");
+        return arange(T{}, last);
+    }
+    template <typename T = Eigen::Index, typename First, typename Size, typename Step>
+    Eigen::RowVectorX<T> arange(const Eigen::ArithmeticSequence<First, Size, Step> &indices)
+    {
+        if (indices.size() < 0) throw std::invalid_argument("Range size cannot be negative");
+        return Eigen::RowVectorX<T>::NullaryExpr(indices.size(),
+            [&](Eigen::Index i) { return static_cast<T>(indices[i]); });
     }
 }

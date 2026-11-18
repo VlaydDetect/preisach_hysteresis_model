@@ -6,13 +6,14 @@
 
 #pragma once
 
+#include <Eigen/Core>
+
 #include <algorithm>
 #include <random>
 
+#include "Utils/DenseOperations.hpp"
 #include "Core/Error.hpp"
 #include "Core/StaticAssert.hpp"
-#include "Core/Shape.hpp"
-#include "Matrix.hpp"
 #include "Random/generator.hpp"
 
 namespace mc
@@ -26,11 +27,12 @@ namespace mc
             /// range [0, n) with the probability of producing each value
             /// is specified by the parameters of the distribution.
             template <typename dtype, typename GeneratorType = std::mt19937>
-            dtype discrete(GeneratorType &generator, const Matrix<double> &inWeights)
+            dtype discrete(GeneratorType &generator, const Eigen::MatrixX<double> &inWeights)
             {
                 STATIC_ASSERT_INTEGER(dtype);
 
-                std::discrete_distribution<dtype> dist(inWeights.cbegin(), inWeights.cend());
+                const auto weights = mc::detail::rowMajor(inWeights);
+                std::discrete_distribution<dtype> dist(weights.begin(), weights.end());
                 return dist(generator);
             }
 
@@ -40,16 +42,17 @@ namespace mc
             /// producing each value is specified by the parameters
             /// of the distribution.
             template <typename dtype, typename GeneratorType = std::mt19937>
-            Matrix<dtype> discrete(GeneratorType &generator, const Shape &inShape, const Matrix<double> &inWeights)
+            Eigen::MatrixX<dtype> discrete(GeneratorType &generator, Eigen::Index rows, Eigen::Index columns, const Eigen::MatrixX<double> &inWeights)
             {
                 STATIC_ASSERT_INTEGER(dtype);
 
-                Matrix<dtype> returnArray(inShape);
+                Eigen::Matrix<dtype, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> returnArray(rows, columns);
 
-                std::discrete_distribution<dtype> dist(inWeights.cbegin(), inWeights.cend());
+                const auto weights = mc::detail::rowMajor(inWeights);
+                std::discrete_distribution<dtype> dist(weights.begin(), weights.end());
 
-                std::for_each(returnArray.begin(),
-                              returnArray.end(),
+                std::for_each(returnArray.data(),
+                              returnArray.data() + returnArray.size(),
                               [&generator, &dist](dtype &value) -> void { value = dist(generator); });
 
                 return returnArray;
@@ -61,7 +64,7 @@ namespace mc
         /// range [0, n) with the probability of producing each value
         /// is specified by the parameters of the distribution.
         template <typename dtype>
-        dtype discrete(const Matrix<double> &inWeights)
+        dtype discrete(const Eigen::MatrixX<double> &inWeights)
         {
             return detail::discrete<dtype>(generator_, inWeights);
         }
@@ -72,9 +75,9 @@ namespace mc
         /// producing each value is specified by the parameters
         /// of the distribution.
         template <typename dtype>
-        Matrix<dtype> discrete(const Shape &inShape, const Matrix<double> &inWeights)
+        Eigen::MatrixX<dtype> discrete(Eigen::Index rows, Eigen::Index columns, const Eigen::MatrixX<double> &inWeights)
         {
-            return detail::discrete<dtype>(generator_, inShape, inWeights);
+            return detail::discrete<dtype>(generator_, rows, columns, inWeights);
         }
     }
 }

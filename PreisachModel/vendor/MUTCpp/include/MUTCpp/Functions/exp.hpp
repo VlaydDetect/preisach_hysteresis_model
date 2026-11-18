@@ -10,13 +10,13 @@
 #include <complex>
 
 #include "Core/StaticAssert.hpp"
-#include "Core/Algorithm.hpp"
-#include "Matrix.hpp"
+#include <Eigen/Core>
 
 namespace mc
 {
     /// Calculate the exponential of the input value.
     template<typename dtype>
+        requires (std::is_arithmetic_v<dtype> || mc::is_complex_v<dtype>)
     auto exp(dtype inValue) noexcept
     {
         STATIC_ASSERT_ARITHMETIC_OR_COMPLEX(dtype);
@@ -25,16 +25,12 @@ namespace mc
     }
     
     /// Calculate the exponential of all elements in the input array.
-    template<typename dtype>
-    auto exp(const Matrix<dtype>& inArray)
+    template <typename Derived>
+    auto exp(const Eigen::DenseBase<Derived> &inArray)
     {
-        Matrix<decltype(exp(dtype{ 0 }))> returnArray(inArray.shape());
-
-        algo::transform(inArray.cbegin(),
-                                  inArray.cend(),
-                                  returnArray.begin(),
-                                  [](dtype inValue) noexcept -> auto { return exp(inValue); });
-
-        return returnArray;
+        return inArray.derived().unaryExpr([](const auto &inValue)
+        {
+            return mc::exp(inValue);
+        }).eval();
     }
 }

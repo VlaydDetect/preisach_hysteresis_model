@@ -9,13 +9,13 @@
 #include <cmath>
 
 #include "Core/StaticAssert.hpp"
-#include "Core/Algorithm.hpp"
-#include "Matrix.hpp"
+#include <Eigen/Core>
 
 namespace mc
 {
     /// Return the cube-root of an array.
     template <typename dtype>
+        requires (std::is_arithmetic_v<dtype> || mc::is_complex_v<dtype>)
     double cbrt(dtype inValue) noexcept
     {
         STATIC_ASSERT_ARITHMETIC(dtype);
@@ -24,15 +24,12 @@ namespace mc
     }
 
     /// Return the cube-root of an array, element-wise.
-    template <typename dtype>
-    Matrix<double> cbrt(const Matrix<dtype> &inArray)
+    template <typename Derived>
+    auto cbrt(const Eigen::DenseBase<Derived> &inArray)
     {
-        Matrix<double> returnArray(inArray.shape());
-        algo::transform(inArray.cbegin(),
-                        inArray.cend(),
-                        returnArray.begin(),
-                        [](dtype inValue) noexcept -> double { return cbrt(inValue); });
-
-        return returnArray;
+        return inArray.derived().unaryExpr([](const auto &inValue)
+        {
+            return mc::cbrt(inValue);
+        }).eval();
     }
 }

@@ -6,14 +6,14 @@
 
 #pragma once
 
+#include <Eigen/Core>
+
 #include <algorithm>
 #include <random>
 #include <string>
 
 #include "Core/Error.hpp"
 #include "Core/StaticAssert.hpp"
-#include "Core/Shape.hpp"
-#include "Matrix.hpp"
 #include "Random/generator.hpp"
 
 namespace mc
@@ -47,7 +47,7 @@ namespace mc
             /// with the given shape. If no high value is input then the range will
             /// go from [0, low).
             template <typename dtype, typename GeneratorType = std::mt19937>
-            Matrix<dtype> randInt(GeneratorType &generator, const Shape &inShape, dtype inLow, dtype inHigh = 0)
+            Eigen::MatrixX<dtype> randInt(GeneratorType &generator, Eigen::Index rows, Eigen::Index columns, dtype inLow, dtype inHigh = 0)
             {
                 STATIC_ASSERT_INTEGER(dtype);
 
@@ -60,12 +60,12 @@ namespace mc
                     std::swap(inLow, inHigh);
                 }
 
-                Matrix<dtype> returnArray(inShape);
+                Eigen::Matrix<dtype, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> returnArray(rows, columns);
 
                 std::uniform_int_distribution<dtype> dist(inLow, inHigh - 1);
 
-                std::for_each(returnArray.begin(),
-                              returnArray.end(),
+                std::for_each(returnArray.data(),
+                              returnArray.data() + returnArray.size(),
                               [&dist, &generator](dtype &value) -> void { value = dist(generator); });
 
                 return returnArray;
@@ -85,9 +85,9 @@ namespace mc
         /// with the given shape. If no high value is input then the range will
         /// go from [0, low).
         template <typename dtype>
-        Matrix<dtype> randInt(const Shape &inShape, dtype inLow, dtype inHigh = 0)
+        Eigen::MatrixX<dtype> randInt(Eigen::Index rows, Eigen::Index columns, dtype inLow, dtype inHigh = 0)
         {
-            return detail::randInt(generator_, inShape, inLow, inHigh);
+            return detail::randInt(generator_, rows, columns, inLow, inHigh);
         }
     }
 }

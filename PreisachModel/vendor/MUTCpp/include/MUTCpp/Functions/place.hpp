@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,36 +6,21 @@
 
 #pragma once
 
-#include "Core/Error.hpp"
-#include "Matrix.hpp"
+#include "Functions/find.hpp"
 
 namespace mc
 {
-    /// Change elements of an array based on conditional and input values.
-    /// @param arr: Array to put data into.
-    /// @param mask: Boolean mask array. Must have the same size as arr
-    /// @param vals: Values to put into arr. Only the first N elements are used, where N is the
-    ///              number of True values in mask. If vals is smaller than N, it will be repeated.
-    template <typename dtype>
-    void place(Matrix<dtype> &arr, const Matrix<bool> &mask, const Matrix<dtype> &vals)
+    template <typename Derived, typename Mask, typename Values>
+    void place(Eigen::DenseBase<Derived> &input, const Eigen::DenseBase<Mask> &mask, const Eigen::DenseBase<Values> &values)
     {
-        if (mask.size() != arr.size())
+        if (mask.size() != input.size()) throw std::invalid_argument("Input and mask sizes must match");
+        if (values.size() == 0) return;
+        const auto selected = find(mask);
+        const Eigen::VectorX<typename Derived::Scalar> replacements = detail::rowMajor(values);
+        auto data = detail::rowMajor(input);
+        for (Eigen::Index i = 0; i < selected.size(); ++i)
         {
-            THROW_INVALID_ARGUMENT_ERROR("Input arguments 'arr' and 'mask' must have the same size.");
-        }
-
-        if (vals.isempty())
-        {
-            return;
-        }
-
-        auto valIdx = 0;
-        for (decltype(arr.size()) i = 0; i < arr.size(); ++i)
-        {
-            if (mask[i])
-            {
-                arr[i] = vals[valIdx++ % vals.size()];
-            }
+            data(selected(i)) = replacements(i % replacements.size());
         }
     }
 }

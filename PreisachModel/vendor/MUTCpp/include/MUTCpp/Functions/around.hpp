@@ -1,28 +1,31 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
 // Copyright (c) 2024 Vlayd Detect.All rights reserved.
 
 #pragma once
-#include "Matrix.hpp"
+
+#include <Eigen/Core>
+#include <cmath>
+#include <algorithm>
+#include "Functions/round.hpp"
 
 namespace mc
 {
-    /// Evenly round to the given number of decimals.
-    template<typename dtype>
-    dtype around(dtype inValue, uint8 inNumDecimals = 0)
+    template <typename T>
+        requires std::is_arithmetic_v<T>
+    auto around(T value, unsigned decimals = 0)
     {
-        Matrix<dtype> value = { inValue };
-        return value.round(inNumDecimals).item();
+        return mc::round(value, decimals);
     }
 
-    //============================================================================
-    // Method Description:
-    /// Evenly round to the given number of decimals.
-    template<typename dtype>
-    Matrix<dtype> around(const Matrix<dtype>& inArray, uint8 inNumDecimals = 0)
+    template <typename Derived>
+    auto around(const Eigen::DenseBase<Derived> &input, unsigned decimals = 0)
     {
-        return inArray.round(inNumDecimals);
+        return input.derived().unaryExpr([&](const auto &value)
+        {
+            return mc::round(value, decimals);
+        }).eval();
     }
 }

@@ -8,12 +8,13 @@
 
 #include "Core/StaticAssert.hpp"
 #include "Functions/isinf.hpp"
-#include "Matrix.hpp"
+#include <Eigen/Core>
 
 namespace mc
 {
     /// Test for negative inf and return result as a boolean.
     template <typename dtype>
+        requires (std::is_arithmetic_v<dtype> || mc::is_complex_v<dtype>)
     bool isneginf(dtype inValue) noexcept
     {
         STATIC_ASSERT_FLOAT(dtype);
@@ -22,15 +23,12 @@ namespace mc
     }
 
     /// Test element-wise for negative inf and return result as a boolean array.
-    template <typename dtype>
-    Matrix<bool> isneginf(const Matrix<dtype> &inArray)
+    template <typename Derived>
+    auto isneginf(const Eigen::DenseBase<Derived> &inArray)
     {
-        Matrix<bool> returnArray(inArray.shape());
-        algo::transform(inArray.cbegin(),
-                        inArray.cend(),
-                        returnArray.begin(),
-                        [](dtype inValue) noexcept -> bool { return isneginf(inValue); });
-
-        return returnArray;
+        return inArray.derived().unaryExpr([](const auto &inValue)
+        {
+            return mc::isneginf(inValue);
+        }).eval();
     }
 }

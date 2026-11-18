@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,14 +6,16 @@
 
 #pragma once
 
-#include "Matrix.hpp"
+#include <Eigen/Core>
 
 namespace mc
 {
-    /// Compute the bit-wise NOT the input array element-wise.
-    template<typename dtype>
-    Matrix<dtype> bitwise_not(const Matrix<dtype>& inArray)
+    template <typename Derived>
+    auto bitwise_not(const Eigen::DenseBase<Derived> &input)
     {
-        return ~inArray;
+        return input.derived().unaryExpr([&](const auto &value)
+        {
+            return static_cast<typename Derived::Scalar>(~value);
+        }).eval();
     }
 }

@@ -5,9 +5,11 @@
 #include <vector>
 #include <filesystem>
 
-#include "MUTCpp.hpp"
+#include <format>
 
-class FileWriter : public mc::RefCounted
+#include "MUTCpp/Core/Error.hpp"
+
+class FileWriter
 {
 public:
     FileWriter(const std::string& filePath)
@@ -18,7 +20,7 @@ public:
         std::cout << m_FilePath;
     }
 
-    virtual ~FileWriter() override
+    ~FileWriter()
     {
         if (m_File.is_open())
         {

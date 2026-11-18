@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,22 +6,23 @@
 
 #pragma once
 
-#include "Matrix.hpp"
+#include "Utils/DenseOperations.hpp"
 
 namespace mc
 {
-    /// Return the minimum of to values;
-    template<typename dtype>
-    dtype min(const dtype a, const dtype b)
+    template <typename T>
+    T min(const T &left, const T &right)
     {
-        STATIC_ASSERT_ARITHMETIC(dtype);
-        return std::min(a, b);
+        return std::min(left, right);
     }
-    
-    /// Return the minimum of an array or minimum along an axis.
-    template<typename dtype>
-    Matrix<dtype> min(const Matrix<dtype>& inArray, Axis inAxis = Axis::NONE)
+
+    template <typename Derived>
+    auto min(const Eigen::DenseBase<Derived> &input, Axis axis = Axis::NONE)
     {
-        return inArray.min(inAxis);
+        return detail::reduce(input, axis, [](const auto &values)
+        {
+            if (values.size() == 0) throw std::invalid_argument("Empty reduction");
+            return values.minCoeff();
+        });
     }
 }

@@ -6,7 +6,8 @@
 #include <vector>
 #include <utility>
 
-#include "MUTCpp/Functions.hpp"
+#include <cmath>
+#include <cstdint>
 
 inline std::optional<size_t> FindFirstGreater(const std::vector<double>& vec, double x)
 {
@@ -96,7 +97,7 @@ inline std::vector<double> GenerateSequenceByDelta(double first, double last, do
 // inline std::vector<std::pair<size_t, size_t>> FindBoundsIndices(const std::vector<double>& vec, double x)
 // {
 //     auto sortedVec = vec;
-//     std::erase_if(sortedVec, [](const double elem) { return mc::isnan(elem); });
+//     std::erase_if(sortedVec, [](const double elem) { return std::isnan(elem); });
 //     std::ranges::sort(sortedVec);
 //
 //     auto lower = std::ranges::lower_bound(sortedVec, x);
@@ -122,7 +123,7 @@ inline std::vector<double> GenerateSequenceByDelta(double first, double last, do
 inline std::pair<int32_t, int32_t> FindBoundsIndices(const std::vector<double>& vec, double x)
 {
     auto sortedVec = vec;
-    std::erase_if(sortedVec, [](const double elem) { return mc::isnan(elem); });
+    std::erase_if(sortedVec, [](const double elem) { return std::isnan(elem); });
     std::ranges::sort(sortedVec);
 
     auto lower = std::ranges::lower_bound(sortedVec, x);

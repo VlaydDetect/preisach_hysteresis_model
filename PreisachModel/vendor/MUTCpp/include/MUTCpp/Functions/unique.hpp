@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,34 +6,21 @@
 
 #pragma once
 
-#include <complex>
-#include <vector>
-
-#include "Core/StaticAssert.hpp"
-#include "Core/Algorithm.hpp"
-#include "Functions/sort.hpp"
+#include "Utils/DenseOperations.hpp"
+#include "Utils/essentiallyEqual.hpp"
 
 namespace mc
 {
-    /// Find the unique elements of an array.
-    ///
-    /// Returns the sorted unique elements of an array.
-    /// @return Matrix
-    template <typename dtype>
-    Matrix<dtype> unique(const Matrix<dtype> &inArray)
+    template <typename Derived>
+    Eigen::RowVectorX<typename Derived::Scalar> unique(const Eigen::DenseBase<Derived> &input)
     {
-        STATIC_ASSERT_ARITHMETIC_OR_COMPLEX(dtype);
-
-        const auto comp = [](const dtype lhs, const dtype rhs) noexcept -> bool
+        using T = typename Derived::Scalar;
+        Eigen::RowVectorX<T> values = detail::rowMajor(input).transpose();
+        std::sort(values.begin(), values.end());
+        const auto end = std::unique(values.begin(), values.end(), [](const T &a, const T &b)
         {
-            return utils::essentiallyEqual(lhs, rhs);
-        };
-
-        const auto sorted = sort(inArray);
-
-        std::vector<dtype> res(sorted.size());
-        const auto last = algo::unique_copy(sorted.begin(), sorted.end(), res.begin(), comp);
-
-        return Matrix<dtype>(res.begin(), last);
+            return utils::essentiallyEqual(a, b);
+        });
+        return values.head(std::distance(values.begin(), end));
     }
 }

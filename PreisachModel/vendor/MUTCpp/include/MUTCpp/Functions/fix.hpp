@@ -7,13 +7,13 @@
 #pragma once
 
 #include "Core/StaticAssert.hpp"
-#include "Core/Algorithm.hpp"
-#include "Matrix.hpp"
+#include <Eigen/Core>
 
 namespace mc
 {
     /// Round to nearest integer towards zero.
     template <typename dtype>
+        requires (std::is_arithmetic_v<dtype> || mc::is_complex_v<dtype>)
     dtype fix(dtype inValue) noexcept
     {
         STATIC_ASSERT_ARITHMETIC(dtype);
@@ -23,16 +23,13 @@ namespace mc
 
     /// Round to nearest integer towards zero.
 \
-    template <typename dtype>
-    Matrix<dtype> fix(const Matrix<dtype> &inArray)
+    template <typename Derived>
+    auto fix(const Eigen::DenseBase<Derived> &inArray)
     {
-        Matrix<double> returnArray(inArray.shape());
-
-        algo::transform(inArray.cbegin(),
-                        inArray.cend(),
-                        returnArray.begin(),
-                        [](dtype inValue) noexcept -> double { return fix(inValue); });
-
-        return returnArray;
+        using Scalar = typename Derived::Scalar;
+        return inArray.derived().unaryExpr([](const auto &inValue)
+        {
+            return static_cast<Scalar>(mc::fix(inValue));
+        }).eval();
     }
 }

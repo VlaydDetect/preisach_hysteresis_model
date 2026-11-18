@@ -11,7 +11,7 @@
 #include "Functions/find_extrema.hpp"
 
 #include <Eigen/Dense>
-#include "Eigen/utils.hpp"
+#include "MUTCpp/Utils/Eigen.hpp"
 
 namespace mc
 {
@@ -25,17 +25,17 @@ namespace mc
         /// @param freqs:sequence of frequencies
         /// @param eps: Epsilon value for amplitude condition
         /// @param freqArgName: name of frequency argument in system arguments map (default is 'w')
-        inline json::JsonDocument AFC(Ref<DynamicalSystem> system, double time, const Eigen::VectorXd &freqs,
+        template <int N>
+        json::JsonDocument AFC(DynamicalSystem<N> &system, double time, const Eigen::VectorXd &freqs,
                                       double eps = 0.05, const std::string &freqArgName = "w")
         {
             AL_PROFILE_FUNC("AFC");
             
-            system->ResetArgs();
-            system->Reset();
+            system.ResetArgs();
+            system.Reset();
 
-            const int dim = system->GetDimension();
-            Eigen::VectorXd x0 = Eigen::VectorXd::Zero(dim);
-            const int steps = static_cast<int>(time / system->GetDeltaTime());
+            Eigen::Vector<double, N> x0 = Eigen::Vector<double, N>::Zero();
+            const int steps = static_cast<int>(time / system.GetDeltaTime());
 
             const Eigen::VectorXd& freqs_inc = freqs;
             const Eigen::VectorXd freqs_dec = freqs.reverse().eval();
@@ -51,10 +51,10 @@ namespace mc
                 {
                     const double w = f_sweep[k];
 
-                    system->ResetTo(x0);
-                    system->SetArg(freqArgName, mc::ode::Vote(w));
+                    system.ResetTo(x0);
+                    system.SetArg(freqArgName, mc::ode::Vote(w));
 
-                    Eigen::MatrixXd traj = system->Forward(steps);
+                    const auto traj = system.Forward(steps);
                     
                     const auto xi = traj.col(0); 
 
@@ -87,7 +87,7 @@ namespace mc
                     
                     amplitudes[k] = amplitude;
                     // Использование bottomRows<1>() избегает промежуточных объектов при транспонировании
-                    x0 = traj.bottomRows<1>().transpose();
+                    x0 = traj.template bottomRows<1>().transpose();
                 }
             };
 
@@ -97,21 +97,21 @@ namespace mc
             json::JsonDocument doc({"name", "time", "dt", "A", "freqs", "forward", "backward"});
             doc.AddField("name", "AFC");
             doc.AddField("time", time);
-            doc.AddField("dt", system->GetDeltaTime());
-            doc.AddField("A", system->GetArgs().at("A").toDouble());
+            doc.AddField("dt", system.GetDeltaTime());
+            doc.AddField("A", system.GetArgs().at("A").toDouble());
             doc.AddField("freqs", freqs_inc);
             doc.AddSubField({"forward", "amplitudes"}, amplitudes_inc);
             doc.AddSubField({"forward", "frequencies"}, freqs_inc);
             doc.AddSubField({"backward", "amplitudes"}, amplitudes_dec);
             doc.AddSubField({"backward", "frequencies"}, freqs_dec);
             
-            system->ResetArgs();
-            system->Reset();
+            system.ResetArgs();
+            system.Reset();
             
             
-            // system->Reset();
+            // system.Reset();
             //
-            // const int dim = system->GetDimension();
+            // const int dim = system.GetDimension();
             // Eigen::VectorXd x0 = Eigen::VectorXd::Zero(dim);
             // auto steps = static_cast<int>(time / dim);
             //
@@ -136,10 +136,10 @@ namespace mc
             //         const double w = freqs[k];
             //         std::print("{}\n", w);
             //
-            //         system->ResetTo(x0);
-            //         system->AddAndSetArg(freqArgName, Vote(w));
+            //         system.ResetTo(x0);
+            //         system.AddAndSetArg(freqArgName, Vote(w));
             //
-            //         Eigen::MatrixXd traj = system->Forward(steps);
+            //         const auto traj = system.Forward(steps);
             //         trajs.push_back(std::move(traj));
             //
             //         const Eigen::VectorXd xi = trajs.back().col(0);
@@ -168,8 +168,8 @@ namespace mc
             // json::JsonDocument doc({"name", "time", "dt", "A", "freqs", "forward", "backward"});
             // doc.AddField("name", "AFC");
             // doc.AddField("time", time);
-            // doc.AddField("dt", system->GetDeltaTime());
-            // doc.AddField("A", system->GetArgs().at("A").toDouble());
+            // doc.AddField("dt", system.GetDeltaTime());
+            // doc.AddField("A", system.GetArgs().at("A").toDouble());
             // doc.AddField("freqs", freqs_inc);
             // doc.AddSubField({"forward", "amplitudes"}, amplitudes_inc);
             // doc.AddSubField({"forward", "frequencies"}, freqs_inc);

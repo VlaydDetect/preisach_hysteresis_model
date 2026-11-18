@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,17 +6,19 @@
 
 #pragma once
 
+#include <Eigen/Core>
+#include <algorithm>
 #include <iterator>
 #include <vector>
 
-#include "Matrix.hpp"
-
 namespace mc
 {
-    /// Create a new 1-dimensional array from an iterable object.
-    template<typename dtype, typename Iter>
-    Matrix<dtype> fromiter(Iter inBegin, Iter inEnd)
+    template <typename T, std::input_iterator Iterator>
+    Eigen::RowVectorX<T> fromiter(Iterator first, Iterator last)
     {
-        return Matrix<dtype>(inBegin, inEnd);
+        const std::vector<T> values(first, last);
+        Eigen::RowVectorX<T> result(static_cast<Eigen::Index>(values.size()));
+        std::copy(values.begin(), values.end(), result.begin());
+        return result;
     }
 }

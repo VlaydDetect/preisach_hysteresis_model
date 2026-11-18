@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,88 +6,31 @@
 
 #pragma once
 
-#include <algorithm>
+#include "Utils/DenseOperations.hpp"
 #include <cmath>
-
-#include "Core/DtypeInfo.hpp"
-#include "Core/StaticAssert.hpp"
-#include "Core/Shape.hpp"
-#include "Core/Types.hpp"
-#include "Matrix.hpp"
+#include <complex>
+#include <limits>
+#include <vector>
+#include "Core/TypeTraits.hpp"
 
 namespace mc
 {
-    /// Compute the mean along the specified axis ignoring NaNs.
-    template <typename dtype>
-    Matrix<double> nanmean(const Matrix<dtype> &inArray, Axis inAxis = Axis::NONE)
+    template <typename Derived>
+    auto nanmean(const Eigen::DenseBase<Derived> &input, Axis axis = Axis::NONE)
     {
-        STATIC_ASSERT_FLOAT(dtype);
-
-        switch (inAxis)
+        return detail::reduce(input, axis, [&](const auto &values)
         {
-        case Axis::NONE:
-        {
-            auto sum = static_cast<double>(std::accumulate(inArray.cbegin(),
-                                                           inArray.cend(),
-                                                           0.,
-                                                           [](dtype inValue1, dtype inValue2) -> dtype
-                                                           {
-                                                               return std::isnan(inValue2)
-                                                                   ? inValue1
-                                                                   : inValue1 + inValue2;
-                                                           }));
-
-            const auto numberNonNan =
-                static_cast<double>(std::accumulate(inArray.cbegin(),
-                                                    inArray.cend(),
-                                                    0.,
-                                                    [](dtype inValue1, dtype inValue2) -> dtype
-                                                    {
-                                                        return std::isnan(inValue2) ? inValue1 : inValue1 + 1;
-                                                    }));
-
-            Matrix<double> returnArray = {sum /= numberNonNan};
-
-            return returnArray;
-        }
-        case Axis::COL:
-        {
-            const Shape inShape = inArray.shape();
-            Matrix<double> returnArray(1, inShape.m_Rows);
-            for (uint32 row = 0; row < inShape.m_Rows; ++row)
+            double sum = 0.0;
+            Eigen::Index count = 0;
+            for (double value : values)
             {
-                auto sum = static_cast<double>(
-                    std::accumulate(inArray.cbegin(row),
-                                    inArray.cend(row),
-                                    0.,
-                                    [](dtype inValue1, dtype inValue2) -> dtype
-                                    {
-                                        return std::isnan(inValue2) ? inValue1 : inValue1 + inValue2;
-                                    }));
-
-                auto numberNonNan =
-                    static_cast<double>(std::accumulate(inArray.cbegin(row),
-                                                        inArray.cend(row),
-                                                        0.,
-                                                        [](dtype inValue1, dtype inValue2) -> dtype
-                                                        {
-                                                            return std::isnan(inValue2) ? inValue1 : inValue1 + 1;
-                                                        }));
-
-                returnArray(0, row) = sum / numberNonNan;
+                if (!std::isnan(value))
+                {
+                    sum += value;
+                    ++count;
+                }
             }
-
-            return returnArray;
-        }
-        case Axis::ROW:
-        {
-            return nanmean(inArray.transpose(), Axis::COL);
-        }
-        default:
-        {
-            THROW_INVALID_ARGUMENT_ERROR("Unimplemented axis type.");
-            return {}; // get rid of compiler warning
-        }
-        }
+            return sum / static_cast<double>(count);
+        });
     }
 }

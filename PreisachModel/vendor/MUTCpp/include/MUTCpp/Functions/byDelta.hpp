@@ -5,15 +5,16 @@
 // Copyright (c) 2024 Vlayd Detect.All rights reserved.
 
 #pragma once
-#include "Matrix.hpp"
+#include <Eigen/Core>
+#include "Core/Types.hpp"
 
 namespace mc
 {
     template<typename dtype>
-    Matrix<dtype> byDelta(dtype first, dtype last, dtype delta)
+    Eigen::RowVectorX<dtype> byDelta(dtype first, dtype last, dtype delta)
     {
         auto steps = static_cast<uint32>((last - first) / delta);
-        Matrix<dtype> res(1, steps);
+        Eigen::RowVectorX<dtype> res(steps);
         for (auto i = 0; i < steps; ++i)
         {
             res[i] = first + i * delta;

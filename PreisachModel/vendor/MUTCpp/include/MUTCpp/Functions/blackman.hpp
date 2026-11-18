@@ -10,7 +10,8 @@
 
 #include "Core/Constants.hpp"
 #include "Functions/linspace.hpp"
-#include "Matrix.hpp"
+#include <Eigen/Core>
+#include "Core/Types.hpp"
 
 namespace mc
 {
@@ -19,7 +20,7 @@ namespace mc
     /// optimal, only slightly worse than a Kaiser window.
     /// @param m: Number of points in the output window. If zero or less, an empty array is returned.
     /// @return Matrix
-    inline Matrix<double> blackman(int32 m)
+    inline Eigen::RowVectorX<double> blackman(int32 m)
     {
         if (m < 1)
         {
@@ -28,7 +29,7 @@ namespace mc
 
         const auto mDouble = static_cast<double>(m);
 
-        Matrix<double> result(1, m);
+        Eigen::RowVectorX<double> result(m);
         int32 i = 0;
         for (auto n : linspace(0., mDouble, m, EndPoint::YES))
         {

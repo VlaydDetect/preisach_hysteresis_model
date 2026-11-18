@@ -14,7 +14,6 @@ project "PreisachModel"
 		"source/**.cpp",
 
 		"vendor/MUTCpp/include/**.hpp",
-		"vendor/MUTCpp/include/**.cpp",
 		"vendor/MUTCpp/vendor/**.hpp",
 		"vendor/hep-mc/include/**.hpp",
 	}

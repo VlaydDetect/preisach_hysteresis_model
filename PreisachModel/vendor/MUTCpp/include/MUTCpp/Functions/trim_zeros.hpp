@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,114 +6,31 @@
 
 #pragma once
 
-#include <string>
-
-#include "Core/Error.hpp"
-#include "Core/StaticAssert.hpp"
-#include "Core/Algorithm.hpp"
-#include "Core/Types.hpp"
-#include "Matrix.hpp"
+#include "Utils/DenseOperations.hpp"
+#include "Utils/essentiallyEqual.hpp"
+#include <string_view>
 
 namespace mc
 {
-    /// Trim the leading and/or trailing zeros from a 1-D array or sequence.
-    /// NumPy Reference: https://www.numpy.org/devdocs/reference/generated/numpy.trim_zeros.html
-    /// @param inArray
-    /// @param inTrim: ("f" = front, "b" = back, "fb" = front and back)
-    template <typename dtype>
-    Matrix<dtype> trim_zeros(const Matrix<dtype> &inArray, const std::string &inTrim = "fb")
+    template <typename Derived>
+    Eigen::RowVectorX<typename Derived::Scalar> trim_zeros(const Eigen::DenseBase<Derived> &input, std::string_view trim = "fb")
     {
-        STATIC_ASSERT_ARITHMETIC_OR_COMPLEX(dtype);
-
-        if (inTrim == "f")
+        if (trim != "f" && trim != "b" && trim != "fb")
         {
-            uint32 place = 0;
-            for (auto value : inArray)
-            {
-                if (!utils::essentiallyEqual(value, dtype{0}))
-                {
-                    break;
-                }
-
-                ++place;
-            }
-
-            if (place == inArray.size())
-            {
-                return Matrix<dtype>(0);
-            }
-
-            Matrix<dtype> returnArray(1, inArray.size() - place);
-            algo::copy(inArray.cbegin() + place, inArray.cend(), returnArray.begin());
-
-            return returnArray;
+            throw std::invalid_argument("Trim options are f, b, and fb");
         }
-
-        if (inTrim == "b")
+        using T = typename Derived::Scalar;
+        const auto values = detail::rowMajor(input);
+        Eigen::Index first = 0;
+        Eigen::Index last = values.size();
+        while (trim != "b" && first < last && utils::essentiallyEqual(values(first), T{}))
         {
-            uint32 place = inArray.size();
-            for (uint32 i = inArray.size() - 1; i > 0; --i)
-            {
-                if (!utils::essentiallyEqual(inArray[i], dtype{0}))
-                {
-                    break;
-                }
-
-                --place;
-            }
-
-            if (place == 0 || (place == 1 && utils::essentiallyEqual(inArray[0], dtype{0})))
-            {
-                return Matrix<dtype>(0);
-            }
-
-            Matrix<dtype> returnArray(1, place);
-            algo::copy(inArray.cbegin(), inArray.cbegin() + place, returnArray.begin());
-
-            return returnArray;
+            ++first;
         }
-
-        if (inTrim == "fb")
+        while (trim != "f" && first < last && utils::essentiallyEqual(values(last - 1), T{}))
         {
-            uint32 placeBegin = 0;
-            for (auto value : inArray)
-            {
-                if (!utils::essentiallyEqual(value, dtype{0}))
-                {
-                    break;
-                }
-
-                ++placeBegin;
-            }
-
-            if (placeBegin == inArray.size())
-            {
-                return Matrix<dtype>(0);
-            }
-
-            uint32 placeEnd = inArray.size();
-            for (uint32 i = inArray.size() - 1; i > 0; --i)
-            {
-                if (!utils::essentiallyEqual(inArray[i], dtype{0}))
-                {
-                    break;
-                }
-
-                --placeEnd;
-            }
-
-            if (placeEnd == 0 || (placeEnd == 1 && utils::essentiallyEqual(inArray[0], dtype{0})))
-            {
-                return Matrix<dtype>(0);
-            }
-
-            Matrix<dtype> returnArray(1, placeEnd - placeBegin);
-            algo::copy(inArray.cbegin() + placeBegin, inArray.cbegin() + placeEnd, returnArray.begin());
-
-            return returnArray;
+            --last;
         }
-
-        THROW_INVALID_ARGUMENT_ERROR("trim options are 'f' = front, 'b' = back, 'fb' = front and back.");
-        return {};
+        return values.segment(first, last - first).transpose();
     }
 }

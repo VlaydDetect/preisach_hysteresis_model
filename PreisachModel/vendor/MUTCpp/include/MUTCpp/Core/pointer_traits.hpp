@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include <memory>
+
 #include <cstddef>
 
 namespace mc

@@ -9,7 +9,8 @@
 #include <cmath>
 
 #include "Functions/linspace.hpp"
-#include "Matrix.hpp"
+#include <Eigen/Core>
+#include "Core/Types.hpp"
 
 namespace mc
 {
@@ -18,7 +19,7 @@ namespace mc
     /// without generating too much ripple in the frequency domain.
     /// @param m: Number of points in the output window. If zero or less, an empty array is returned.
     /// @return Matrix
-    inline Matrix<double> bartlett(int32 m)
+    inline Eigen::RowVectorX<double> bartlett(int32 m)
     {
         if (m < 1)
         {
@@ -29,7 +30,7 @@ namespace mc
         const auto mMinus1Over2 = (mDouble - 1.) / 2.;
         const auto mMinus1Over2Inv = 1. / mMinus1Over2;
 
-        Matrix<double> result(1, m);
+        Eigen::RowVectorX<double> result(m);
         int32 i = 0;
         for (auto n : linspace(0., mDouble - 1., m, EndPoint::YES))
         {

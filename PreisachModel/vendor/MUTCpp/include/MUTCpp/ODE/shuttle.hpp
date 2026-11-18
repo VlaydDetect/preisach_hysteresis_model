@@ -5,12 +5,19 @@
 // Copyright (c) 2024 Vlayd Detect.All rights reserved.
 
 #pragma once
+#include <chrono>
+#include <fstream>
+#include <format>
+#include <iomanip>
+#include <print>
 #include <vector>
 #include <random>
 #include <expected>
 #include <stdexcept>
 
-#include "Ref/Ref.hpp"
+#include <memory>
+
+#include "Utils/mathOperations.hpp"
 #include "DynamicSystem.hpp"
 
 #include <Eigen/Dense>
@@ -510,22 +517,19 @@ namespace mc
      * 1. By explicitly specifying the boundary rays.
      * 2. By approximating it using the generating curve exp(A * t), where A is the Hurwitz matrix.
      */
-    class SolidCone2d : public RefCounted
+    class SolidCone2d
     {
     public:
         enum class ConstructionType { FROM_RAYS, FROM_CURVE };
-
-        virtual ~SolidCone2d() override = default;
 
         /**
         * @brief Construct a cone from a set of boundary rays.
         * @param rays A matrix whose columns are the vectors of the boundary rays.
         */
-        static Ref<SolidCone2d> fromRays(const Eigen::Matrix2d &rays)
+        static std::unique_ptr<SolidCone2d> fromRays(const Eigen::Matrix2d &rays)
         {
             AL_PROFILE_FUNC("SolidCone2d::fromRays");
-            SolidCone2d *c = new SolidCone2d();
-            c->m_Dimension = 2;
+            auto c = std::unique_ptr<SolidCone2d>(new SolidCone2d());
             c->m_BoundaryRays = rays;
             c->m_GeneratingMatrix = std::nullopt;
             c->m_ConstructionType = ConstructionType::FROM_RAYS;
@@ -549,7 +553,7 @@ namespace mc
 
             c->m_Rng.seed(std::chrono::high_resolution_clock::now().time_since_epoch().count());
 
-            return Ref(c);
+            return c;
         }
 
         /**
@@ -563,11 +567,10 @@ namespace mc
          * @param b вектор
          * @param s настройки генерации конуса
          */
-        static Ref<SolidCone2d> fromCurve(const Eigen::Matrix2d &A, const Eigen::Vector2d &b, const detail::Settings &s)
+        static std::unique_ptr<SolidCone2d> fromCurve(const Eigen::Matrix2d &A, const Eigen::Vector2d &b, const detail::Settings &s)
         {
             AL_PROFILE_FUNC("SolidCone2d::fromCurve");
-            SolidCone2d *c = new SolidCone2d();
-            c->m_Dimension = 2;
+            auto c = std::unique_ptr<SolidCone2d>(new SolidCone2d());
             c->m_GeneratingMatrix = GenerationCurve(A, b, s);
             c->m_ConstructionType = ConstructionType::FROM_CURVE;
 
@@ -580,7 +583,7 @@ namespace mc
 
             c->m_Rng.seed(std::chrono::high_resolution_clock::now().time_since_epoch().count());
 
-            return Ref(c);
+            return c;
         }
 
         // Проверка принадлежности точки конусу (внутри или на границе)
@@ -633,12 +636,16 @@ namespace mc
             return j;
         }
 
-        static Ref<SolidCone2d> FromJson(const nlohmann::json &j)
+        static std::unique_ptr<SolidCone2d> FromJson(const nlohmann::json &j)
         {
             int n = j.at("dimension").get<int>();
 
             int m = j.at("rays_count").get<int>();
-            Eigen::MatrixXd R(n, m);
+            if (n != 2 || m != 2)
+            {
+                THROW_INVALID_ARGUMENT_ERROR("SolidCone2d requires two rays in two dimensions");
+            }
+            Eigen::Matrix2d R;
             auto arr = j.at("rays");
             for (int col = 0; col < m; ++col)
             {
@@ -653,7 +660,11 @@ namespace mc
             if (j.contains("curve_A"))
             {
                 auto Aarr = j.at("curve_A").get<std::vector<std::vector<double>>>();
-                Eigen::MatrixXd A(n, n);
+                if (Aarr.size() != 2 || Aarr[0].size() != 2 || Aarr[1].size() != 2)
+                {
+                    THROW_INVALID_ARGUMENT_ERROR("SolidCone2d requires a 2 x 2 curve matrix");
+                }
+                Eigen::Matrix2d A;
                 for (int i = 0; i < n; ++i)
                 {
                     for (int k = 0; k < n; ++k)
@@ -672,15 +683,12 @@ namespace mc
         }
 
     private:
-        SolidCone2d() :
-            m_Dimension(0), m_ConstructionType(ConstructionType::FROM_RAYS)
-        {
-        }
+        SolidCone2d() = default;
 
     private:
-        uint32_t m_Dimension;
+        static constexpr int m_Dimension = 2;
         Eigen::Matrix2d m_BoundaryRays;
-        ConstructionType m_ConstructionType;
+        ConstructionType m_ConstructionType = ConstructionType::FROM_RAYS;
         std::optional<GenerationCurve> m_GeneratingMatrix;
 
         std::mt19937_64 m_Rng;
@@ -715,7 +723,7 @@ namespace mc
         mc::json::JsonDocument doc{};
     };
 
-    inline ShuttlePointResult ShuttlePoint(Ref<ode::DynamicalSystem> system, const Ref<SolidCone2d> &cone,
+    inline ShuttlePointResult ShuttlePoint(ode::DynamicalSystem<2> &system, const SolidCone2d &cone,
                                            const Eigen::Vector2d &u0, const Eigen::Vector2d &z_minus,
                                            const Eigen::Vector2d &z_plus, double period)
     {
@@ -728,19 +736,19 @@ namespace mc
         constexpr int maxYIter = 100;
         
         CSVWriter trace("trace.csv");
-        std::unordered_map<std::string, Eigen::MatrixXd> sequences_log;
+        std::unordered_map<std::string, ode::DynamicalSystem<2>::Trajectory> sequences_log;
         std::unordered_map<std::string, Eigen::Vector2d> initial_points_log;
         std::unordered_map<std::string, Eigen::Vector2d> cond_points_log;
 
         // std::println("z-: {}, z+: {}", z_minus, z_plus);
 
-        const Eigen::MatrixXd z_minus_traj = system->ShiftTraj(z_minus, period);
-        const Eigen::MatrixXd z_plus_traj = system->ShiftTraj(z_plus, period);
+        const auto z_minus_traj = system.ShiftTraj(z_minus, period);
+        const auto z_plus_traj = system.ShiftTraj(z_plus, period);
         
         // Последовательность sigma_n
         auto sigma_n = [](int n)
         {
-            double v = 1.0 / mc::power(2.0, n + 3);
+            double v = 1.0 / mc::utils::power(2.0, n + 3);
             // std::println("sigma_{}: {}", n, v);
             return v;
         };
@@ -748,8 +756,8 @@ namespace mc
         const Eigen::Vector2d z_minus_new = z_minus_traj.col(z_minus_traj.cols() - 1) - z_minus - sigma_n(0) * u0;
         const Eigen::Vector2d z_plus_new = z_plus - z_plus_traj.col(z_plus_traj.cols() - 1) - sigma_n(0) * u0;
 
-        bool cond_z_minus = cone->contains(z_minus_new);
-        bool cond_z_plus = cone->contains(z_plus_new);
+        bool cond_z_minus = cone.contains(z_minus_new);
+        bool cond_z_plus = cone.contains(z_plus_new);
 
         // Проверка условий для z- и z+
         if (!cond_z_minus)
@@ -767,7 +775,7 @@ namespace mc
                                    "limits", "sequences", "initial_points", "cond_points"});
         message.AddField("name", "ShuttlePoint");
         message.AddField("iters", maxIter * maxYIter);
-        message.GetDoc()["cone"] = cone->ToJson();
+        message.GetDoc()["cone"] = cone.ToJson();
         message.AddField("traj_z-", z_minus_traj);
         message.AddField("traj_z+", z_plus_traj);
         message.AddField("new_z-", z_minus_new);
@@ -783,23 +791,23 @@ namespace mc
 
         // Вспомогательные последовательности
         auto build_sequence = [maxYIter, period, sigma_n, u0, &cone, build_new_subseq_point](
-            const Eigen::Vector2d &y0, Ref<ode::DynamicalSystem> &system, int sig_idx, CSVWriter &trace,
-            std::unordered_map<std::string, Eigen::MatrixXd> &sequences_log, std::unordered_map<std::string, Eigen::Vector2d> &initial_points_log,
+            const Eigen::Vector2d &y0, ode::DynamicalSystem<2> &system, int sig_idx, CSVWriter &trace,
+            std::unordered_map<std::string, ode::DynamicalSystem<2>::Trajectory> &sequences_log, std::unordered_map<std::string, Eigen::Vector2d> &initial_points_log,
             std::unordered_map<std::string, Eigen::Vector2d> &cond_points_log) -> std::optional<Eigen::Vector2d>
         {
             const bool add = sig_idx % 2 == 1;
             
             AL_PROFILE_FUNC("ShuttlePoint::build_sequence");
-            Eigen::Vector2d y_current = build_new_subseq_point(system->Shift(y0, period), sig_idx);
-            // Eigen::Vector2d y_current = system->Shift(y0, period) + (add ? (sigma_n(sig_idx) * u0) : (-sigma_n(sig_idx) * u0));
+            Eigen::Vector2d y_current = build_new_subseq_point(system.Shift(y0, period), sig_idx);
+            // Eigen::Vector2d y_current = system.Shift(y0, period) + (add ? (sigma_n(sig_idx) * u0) : (-sigma_n(sig_idx) * u0));
             // std::println("y{}_1: {}", sig_idx, y_current);
             initial_points_log.emplace(std::format("y{}_1", sig_idx), y_current);
             for (int n = 1; n < maxYIter; ++n)
             {
                 const std::string seq_name = std::format("y_{{{},{}}}", sig_idx, n);
                 
-                system->ResetTo(y_current);
-                const Eigen::MatrixXd newSol = system->Forward(period);
+                system.ResetTo(y_current);
+                const auto newSol = system.Forward(period);
                 Eigen::Vector2d y_shifted = newSol.row(newSol.rows() - 1).transpose();
 
                 initial_points_log.emplace(seq_name, y_current);
@@ -811,7 +819,7 @@ namespace mc
                     ? (y_current - y_shifted - sigma_n(sig_idx + 2) * u0)
                     : (y_shifted - y_current - sigma_n(sig_idx + 2) * u0);
                 cond_points_log.emplace(seq_name, cond_point);
-                if (cone->contains(cond_point))
+                if (cone.contains(cond_point))
                 {
                     // std::println("{} that satisfies condition: {}", seq_name, y_current);
                     return y_current;

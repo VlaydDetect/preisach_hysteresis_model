@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,26 +6,18 @@
 
 #pragma once
 
-#include "Core/StaticAssert.hpp"
-#include "Core/Error.hpp"
-#include "Core/Algorithm.hpp"
-#include "copy.hpp"
-#include "Matrix.hpp"
+#include <Eigen/Core>
+#include <stdexcept>
 
 namespace mc
 {
-    template<typename dtype>
-    Matrix<dtype> reverse(Matrix<dtype> inArray)
+    template <typename Derived>
+    auto reverse(const Eigen::DenseBase<Derived> &input)
     {
-        STATIC_ASSERT_ARITHMETIC(dtype);
-
-        if (!inArray.isflat())
+        if (input.rows() != 1 && input.cols() != 1)
         {
-            THROW_INVALID_ARGUMENT_ERROR("Matrix must be row (m_Cols = 1) or column (m_Rows = 1)");
+            throw std::invalid_argument("Reverse requires a row or column vector");
         }
-
-        Matrix<dtype> ret = copy(inArray);
-        ret.reverse();
-        return ret;
+        return input.derived().reverse().eval();
     }
 }

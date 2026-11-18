@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,14 +6,13 @@
 
 #pragma once
 
-#include "Matrix.hpp"
+#include "Utils/DenseOperations.hpp"
 
 namespace mc
 {
-    /// Return the cumulative sum of the elements along a given axis.
-    template<typename dtype>
-    Matrix<dtype> cumsum(const Matrix<dtype>& inArray, Axis inAxis = Axis::NONE)
+    template <typename Derived>
+    auto cumsum(const Eigen::DenseBase<Derived> &input, Axis axis = Axis::NONE)
     {
-        return inArray.cumsum(inAxis);
+        return detail::cumulative(input, axis, std::plus<>{});
     }
 }

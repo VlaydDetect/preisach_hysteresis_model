@@ -22,27 +22,19 @@
 #pragma once
 
 #include "MUTCpp/Core.hpp"
-#include "MUTCpp/DynamicBitset.hpp"
 #include "MUTCpp/Functions.hpp"
 #include "MUTCpp/Hash.hpp"
 #include "MUTCpp/Hysteresis.hpp"
 #include "MUTCpp/Integrate.hpp"
 #include "MUTCpp/Itertools.hpp"
 #include "MUTCpp/Json.hpp"
-#include "MUTCpp/Linalg.hpp"
-#include "MUTCpp/Matrix.hpp"
 #include "MUTCpp/ODE.hpp"
-#include "MUTCpp/Polynomial.hpp"
 #include "MUTCpp/Random.hpp"
-#include "MUTCpp/Ref.hpp"
 #include "MUTCpp/Roots.hpp"
 #include "MUTCpp/Rotations.hpp"
 #include "MUTCpp/Utils.hpp"
-#include "MUTCpp/Vector.hpp"
+#include "MUTCpp/Vector/StaticVector.hpp"
 
-/// \example GaussNewtonNlls
-/// Example for using the linalg::gaussNewtonNlls function
-///
 /// \example InterfaceWithEigen
 /// Example for interfacing with Eigen Matrix
 ///

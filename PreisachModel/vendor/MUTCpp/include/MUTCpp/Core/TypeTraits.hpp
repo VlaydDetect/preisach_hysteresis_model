@@ -9,6 +9,7 @@
 #pragma once
 
 #include <complex>
+#include <Eigen/Core>
 #include <type_traits>
 
 namespace mc {
@@ -58,7 +59,7 @@ namespace mc {
     // ==================================================
 
     // ==================================================
-    /// Template class for determining if dtype is a valid dtype for NdArray
+    /// Template class for determining if dtype is a valid dtype for Eigen scalar types
     template<typename dtype>
     struct is_valid_dtype {
         static constexpr bool value =
@@ -75,26 +76,13 @@ namespace mc {
     // ==================================================
 
     // Forward declare
-    template<typename dtype, class Allocator>
-    class Matrix;
+    template<typename T, typename = void>
+    struct is_matrix_int : std::false_type {};
 
-    /// Template class for determining if dtype is a valid index type for NdArray
-    ///
-    template<typename>
-    struct is_matrix_int : std::false_type {
-    };
+    template<typename T>
+    struct is_matrix_int<T, std::void_t<typename T::Scalar>>
+        : std::bool_constant<std::is_base_of_v<Eigen::DenseBase<T>, T> && std::is_integral_v<typename T::Scalar>> {};
 
-    /// Template class for determining if dtype is a valid index typefor NdArray
-    ///
-
-    template<typename dtype, typename Allocator>
-    struct is_matrix_int<Matrix<dtype, Allocator> > {
-        static constexpr bool value = std::is_integral_v<dtype>;
-    };
-
-
-    /// is_ndarray_int helper
-    ///
     template<typename T>
     constexpr bool is_matrix_int_v = is_matrix_int<T>::value;
 

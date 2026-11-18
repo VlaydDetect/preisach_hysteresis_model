@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,22 +6,23 @@
 
 #pragma once
 
-#include "Matrix.hpp"
+#include "Utils/DenseOperations.hpp"
 
 namespace mc
 {
-    /// Return the maximum of to values;
-    template<typename dtype>
-    dtype max(const dtype a, const dtype b)
+    template <typename T>
+    T max(const T &left, const T &right)
     {
-        STATIC_ASSERT_ARITHMETIC(dtype);
-        return std::max(a, b);
+        return std::max(left, right);
     }
-    
-    /// Return the maximum of an array or maximum along an axis.
-    template<typename dtype>
-    Matrix<dtype> max(const Matrix<dtype>& inArray, Axis inAxis = Axis::NONE)
+
+    template <typename Derived>
+    auto max(const Eigen::DenseBase<Derived> &input, Axis axis = Axis::NONE)
     {
-        return inArray.max(inAxis);
+        return detail::reduce(input, axis, [](const auto &values)
+        {
+            if (values.size() == 0) throw std::invalid_argument("Empty reduction");
+            return values.maxCoeff();
+        });
     }
 }

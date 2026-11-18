@@ -7,14 +7,14 @@
 #pragma once
 
 #include "Core/StaticAssert.hpp"
-#include "Core/Algorithm.hpp"
-#include "Matrix.hpp"
+#include <Eigen/Core>
 #include "Utils/mathOperations.hpp"
 
 namespace mc
 {
     /// Cubes the input
     template <typename dtype>
+        requires (std::is_arithmetic_v<dtype> || mc::is_complex_v<dtype>)
     constexpr dtype cube(dtype inValue) noexcept
     {
         STATIC_ASSERT_ARITHMETIC_OR_COMPLEX(dtype);
@@ -23,15 +23,12 @@ namespace mc
     }
 
     /// Cubes the elements of the array
-    template <typename dtype>
-    Matrix<dtype> cube(const Matrix<dtype> &inArray)
+    template <typename Derived>
+    auto cube(const Eigen::DenseBase<Derived> &inArray)
     {
-        Matrix<dtype> returnArray(inArray.shape());
-        algo::transform(inArray.cbegin(),
-                        inArray.cend(),
-                        returnArray.begin(),
-                        [](dtype inValue) noexcept -> dtype { return cube(inValue); });
-
-        return returnArray;
+        return inArray.derived().unaryExpr([](const auto &inValue)
+        {
+            return mc::cube(inValue);
+        }).eval();
     }
 }

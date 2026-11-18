@@ -6,14 +6,14 @@
 
 #pragma once
 
+#include <Eigen/Core>
+
 #include <algorithm>
 #include <random>
 #include <string>
 
 #include "Core/Error.hpp"
 #include "Core/StaticAssert.hpp"
-#include "Core/Shape.hpp"
-#include "Matrix.hpp"
 #include "Random/generator.hpp"
 #include "Utils/essentiallyEqual.hpp"
 
@@ -48,7 +48,7 @@ namespace mc
             /// with the given shape. If no high value is input then the range will
             /// go from [0, low).
             template <typename dtype, typename GeneratorType = std::mt19937>
-            Matrix<dtype> randFloat(GeneratorType &generator, const Shape &inShape, dtype inLow, dtype inHigh = 0.)
+            Eigen::MatrixX<dtype> randFloat(GeneratorType &generator, Eigen::Index rows, Eigen::Index columns, dtype inLow, dtype inHigh = 0.)
             {
                 STATIC_ASSERT_FLOAT(dtype);
 
@@ -61,12 +61,12 @@ namespace mc
                     std::swap(inLow, inHigh);
                 }
 
-                Matrix<dtype> returnArray(inShape);
+                Eigen::Matrix<dtype, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> returnArray(rows, columns);
 
                 std::uniform_real_distribution<dtype> dist(inLow, inHigh - DtypeInfo<dtype>::epsilon());
 
-                std::for_each(returnArray.begin(),
-                              returnArray.end(),
+                std::for_each(returnArray.data(),
+                              returnArray.data() + returnArray.size(),
                               [&generator, &dist](dtype &value) -> void { value = dist(generator); });
 
                 return returnArray;
@@ -86,9 +86,9 @@ namespace mc
         /// with the given shape. If no high value is input then the range will
         /// go from [0, low).
         template <typename dtype>
-        Matrix<dtype> randFloat(const Shape &inShape, dtype inLow, dtype inHigh = 0.)
+        Eigen::MatrixX<dtype> randFloat(Eigen::Index rows, Eigen::Index columns, dtype inLow, dtype inHigh = 0.)
         {
-            return detail::randFloat(generator_, inShape, inLow, inHigh);
+            return detail::randFloat(generator_, rows, columns, inLow, inHigh);
         }
     }
 }

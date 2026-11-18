@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,16 +6,13 @@
 
 #pragma once
 
-#include "Core/Types.hpp"
-#include "Matrix.hpp"
+#include <Eigen/Core>
 
 namespace mc
 {
-    /// Return the length of the first dimension of the input array.
-    /// @return length uint16
-    template <typename dtype>
-    uint32 alen(const Matrix<dtype> &inArray) noexcept
+    template <typename Derived>
+    auto alen(const Eigen::DenseBase<Derived> &input)
     {
-        return inArray.shape().rows;
+        return input.rows();
     }
 }

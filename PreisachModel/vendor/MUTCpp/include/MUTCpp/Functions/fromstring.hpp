@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,40 +6,22 @@
 
 #pragma once
 
+#include "Functions/fromiter.hpp"
 #include <sstream>
-#include <string_view>
-
-#include "Matrix.hpp"
+#include <string>
 
 namespace mc
 {
-    /// Construct an array from data in a string
-    /// @param inStr
-    /// @param inSep: Delimiter separator between values in the string
-    /// @return Matrix
-    template <typename dtype>
-    Matrix<dtype> fromstring(const std::string &inStr, const char inSep = ' ')
+    template <typename T>
+    Eigen::RowVectorX<T> fromstring(const std::string &text, char separator = ' ')
     {
-        STATIC_ASSERT_ARITHMETIC(dtype);
-
-        std::istringstream inputStream(inStr);
-        auto values = std::vector<dtype>{};
-        dtype value{};
-        for (std::string segment; std::getline(inputStream, segment, inSep);)
+        std::istringstream input(text);
+        std::vector<T> values;
+        for (std::string segment; std::getline(input, segment, separator);)
         {
-            if (!inputStream.fail())
-            {
-                std::istringstream segmentStream(segment);
-                while (segmentStream >> value)
-                {
-                    if (!inputStream.fail())
-                    {
-                        values.push_back(value);
-                    }
-                }
-            }
+            std::istringstream elements(segment);
+            for (T value{}; elements >> value;) values.push_back(value);
         }
-
-        return Matrix<dtype>(values);
+        return fromiter<T>(values.begin(), values.end());
     }
 }

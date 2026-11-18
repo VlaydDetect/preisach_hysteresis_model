@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include <memory>
+#include <type_traits>
 #include <variant>
 #include <string>
 #include <unordered_map>
@@ -13,13 +15,12 @@
 #include <ranges>
 
 #include <Eigen/Dense>
-#include "Eigen/utils.hpp"
+#include "MUTCpp/Utils/Eigen.hpp"
 
 #include "Json/JsonDocument.hpp"
 #include "Core/Error.hpp"
 #include "Core/Types.hpp"
-#include "Hysteresis/ArealModel.hpp"
-#include "Hysteresis/DiscreteModel.hpp"
+#include "Core/Constants.hpp"
 #include "Hysteresis/ModelBase.hpp"
 
 namespace mc
@@ -40,8 +41,8 @@ namespace mc
         struct Vote
         {
         public:
-            using ValueVariant = std::variant<std::monostate, bool, int, double, Eigen::MatrixXd, Ref<
-                                                  PreisachModelBase>>;
+            using ValueVariant = std::variant<
+                std::monostate, bool, int, double, Eigen::MatrixXd, std::shared_ptr<PreisachModelBase>>;
 
             Vote() :
                 m_Value(std::monostate{})
@@ -72,23 +73,10 @@ namespace mc
             {
             }
 
-            Vote(const Ref<PreisachModelBase> &m) :
-                m_Value(static_cast<Ref<PreisachModelBase>>(m))
-            {
-            }
-
-            Vote(const Ref<DiscretePreisachModel> &m) :
-                m_Value(static_cast<Ref<PreisachModelBase>>(m))
-            {
-            }
-
-            Vote(const Ref<ArealPreisachModel> &m) :
-                m_Value(static_cast<Ref<PreisachModelBase>>(m))
-            {
-            }
-
-            Vote(const Ref<DoubleArealPreisachModel> &m) :
-                m_Value(static_cast<Ref<PreisachModelBase>>(m))
+            template <typename Model>
+                requires std::is_convertible_v<std::shared_ptr<Model>, std::shared_ptr<PreisachModelBase>>
+            Vote(std::shared_ptr<Model> model) :
+                m_Value(std::shared_ptr<PreisachModelBase>(std::move(model)))
             {
             }
 
@@ -108,7 +96,7 @@ namespace mc
                         return VoteDataType::Double;
                     else if constexpr (std::is_same_v<U, Eigen::MatrixXd>)
                         return VoteDataType::Matrix;
-                    else if constexpr (std::is_same_v<U, Ref<PreisachModelBase>>)
+                    else if constexpr (std::is_same_v<U, std::shared_ptr<PreisachModelBase>>)
                         return VoteDataType::PreisachModel;
                     else
                         return VoteDataType::Null;
@@ -193,17 +181,16 @@ namespace mc
                 THROW_RUNTIME_ERROR("Vote: not a Matrix");
             }
 
-            const Ref<PreisachModelBase> &toPreisachModel() const
+            const std::shared_ptr<PreisachModelBase> &toPreisachModel() const
             {
-                if (auto pval = std::get_if<Ref<PreisachModelBase>>(&m_Value))
+                if (auto pval = std::get_if<std::shared_ptr<PreisachModelBase>>(&m_Value))
                     return *pval;
                 THROW_RUNTIME_ERROR("Vote: not a PreisachModel");
             }
 
-            Ref<PreisachModelBase> &toPreisachModel()
+            std::shared_ptr<PreisachModelBase> &toPreisachModel()
             {
-                auto p = std::get<Ref<PreisachModelBase>>(m_Value);
-                if (auto pval = std::get_if<Ref<PreisachModelBase>>(&m_Value))
+                if (auto pval = std::get_if<std::shared_ptr<PreisachModelBase>>(&m_Value))
                     return *pval;
                 THROW_RUNTIME_ERROR("Vote: not a PreisachModel");
             }

@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,15 +6,17 @@
 
 #pragma once
 
-#include "Core/Types.hpp"
-#include "Matrix.hpp"
+#include "Utils/DenseOperations.hpp"
 
 namespace mc
 {
-    /// Sum of array elements over a given axis.
-    template <typename dtype>
-    Matrix<dtype> sum(const Matrix<dtype> &inArray, Axis inAxis = Axis::NONE)
+    template <typename Derived>
+    auto sum(const Eigen::DenseBase<Derived> &input, Axis axis = Axis::NONE)
     {
-        return inArray.sum(inAxis);
+        using Scalar = typename Derived::Scalar;
+        return detail::reduce(input, axis, [](const auto &values)
+        {
+            return std::accumulate(values.begin(), values.end(), Scalar{});
+        });
     }
 }

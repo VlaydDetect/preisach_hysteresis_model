@@ -6,9 +6,14 @@
 
 #pragma once
 
+#include <tuple>
+#include "Utils/Profile.hpp"
+#include <array>
+#include <ranges>
+
 #include <vector>
 #include "Core/Types.hpp"
-#include "Functions/abs.hpp"
+#include <cmath>
 
 #include <Eigen/Dense>
 

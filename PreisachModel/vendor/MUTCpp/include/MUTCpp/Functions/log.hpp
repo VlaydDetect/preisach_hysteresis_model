@@ -9,12 +9,15 @@
 #include <cmath>
 #include <complex>
 
-#include "Matrix.hpp"
+#include <Eigen/Core>
+
+#include "Core/StaticAssert.hpp"
 
 namespace mc
 {
     /// Natural logarithm.
     template <typename dtype>
+        requires (std::is_arithmetic_v<dtype> || mc::is_complex_v<dtype>)
     auto log(dtype inValue) noexcept
     {
         STATIC_ASSERT_ARITHMETIC_OR_COMPLEX(dtype);
@@ -32,28 +35,12 @@ namespace mc
     }
 
     /// Natural logarithm, element-wise.
-    template <typename dtype>
-    auto log(const Matrix<dtype> &inArray)
+    template <typename Derived>
+    auto log(const Eigen::DenseBase<Derived> &inArray)
     {
-        Matrix<decltype(log(dtype{0}))> returnArray(inArray.shape());
-        algo::transform(inArray.cbegin(),
-                        inArray.cend(),
-                        returnArray.begin(),
-                        [](dtype inValue) noexcept -> auto { return log(inValue); });
-
-        return returnArray;
-    }
-
-    /// Natural logarithm, element-wise.
-    template <typename dtype>
-    auto log(const Matrix<std::complex<dtype>> &inArray)
-    {
-        Matrix<decltype(log(std::complex<dtype>{0}))> returnArray(inArray.shape());
-        algo::transform(inArray.cbegin(),
-                        inArray.cend(),
-                        returnArray.begin(),
-                        [](std::complex<dtype> inValue) noexcept -> auto { return log(inValue); });
-
-        return returnArray;
+        return inArray.derived().unaryExpr([](const auto &inValue)
+        {
+            return mc::log(inValue);
+        }).eval();
     }
 }

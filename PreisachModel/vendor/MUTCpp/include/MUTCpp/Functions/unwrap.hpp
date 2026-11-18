@@ -9,8 +9,7 @@
 #include <cmath>
 
 #include "Core/StaticAssert.hpp"
-#include "Core/Algorithm.hpp"
-#include "Matrix.hpp"
+#include <Eigen/Core>
 
 namespace mc
 {
@@ -18,6 +17,7 @@ namespace mc
     /// Unwraps to [-pi, pi].
     /// NumPy Reference: https://www.numpy.org/devdocs/reference/generated/numpy.unwrap.html
     template <typename dtype>
+        requires (std::is_arithmetic_v<dtype> || mc::is_complex_v<dtype>)
     dtype unwrap(dtype inValue) noexcept
     {
         STATIC_ASSERT_ARITHMETIC(dtype);
@@ -28,15 +28,12 @@ namespace mc
     /// Unwrap by changing deltas between values to 2*pi complement.
     /// Unwraps to [-pi, pi].
     /// NumPy Reference: https://www.numpy.org/devdocs/reference/generated/numpy.unwrap.html
-    template <typename dtype>
-    Matrix<dtype> unwrap(const Matrix<dtype> &inArray)
+    template <typename Derived>
+    auto unwrap(const Eigen::DenseBase<Derived> &inArray)
     {
-        Matrix<dtype> returnArray(inArray.shape());
-        algo::transform(inArray.cbegin(),
-                        inArray.cend(),
-                        returnArray.begin(),
-                        [](dtype inValue) noexcept -> dtype { return unwrap(inValue); });
-
-        return returnArray;
+        return inArray.derived().unaryExpr([](const auto &inValue)
+        {
+            return mc::unwrap(inValue);
+        }).eval();
     }
 }

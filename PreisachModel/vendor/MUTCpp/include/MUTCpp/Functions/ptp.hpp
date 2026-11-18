@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,15 +6,18 @@
 
 #pragma once
 
-#include "Core/Types.hpp"
-#include "Matrix.hpp"
+#include "Utils/DenseOperations.hpp"
 
 namespace mc
 {
-    /// Range of values (maximum - minimum) along an axis.
-    template <typename dtype>
-    Matrix<dtype> ptp(const Matrix<dtype> &inArray, Axis inAxis = Axis::NONE)
+    template <typename Derived>
+    auto ptp(const Eigen::DenseBase<Derived> &input, Axis axis = Axis::NONE)
     {
-        return inArray.ptp(inAxis);
+        using Scalar = typename Derived::Scalar;
+        return detail::reduce(input, axis, [](const auto &values)
+        {
+            if (values.size() == 0) throw std::invalid_argument("Empty reduction");
+            return static_cast<Scalar>(values.maxCoeff() - values.minCoeff());
+        });
     }
 }

@@ -3,10 +3,11 @@
 #include <cmath>
 #include <vector>
 
-#include "Array.hpp"
-#include "MUTCpp.hpp"
+#include <complex>
+#include <cstdint>
+#include <utility>
 
-#define NAN mc::constants::nan
+#include "MUTCpp/Core/Error.hpp"
 
 inline bool eqf(double a, double b, double epsilon = 1.0e-6)
 {

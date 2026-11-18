@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,86 +6,28 @@
 
 #pragma once
 
-#include <algorithm>
-#include <cmath>
-#include <complex>
-
-#include "Core/StaticAssert.hpp"
-#include "Core/Types.hpp"
 #include "Functions/norm.hpp"
-#include "Matrix.hpp"
 
 namespace mc
 {
-    /// Matrix or vector norm.
-    template<typename dtype>
-    Matrix<double> normalize(const Matrix<dtype>& inArray, Axis inAxis = Axis::NONE)
+    template <typename Derived>
+    auto normalize(const Eigen::DenseBase<Derived> &input, Axis axis = Axis::NONE)
     {
-        STATIC_ASSERT_ARITHMETIC(dtype);
-
-        switch (inAxis)
+        using Result = std::conditional_t<mc::is_complex_v<typename Derived::Scalar>, std::complex<double>, double>;
+        Eigen::MatrixX<Result> result = input.derived().matrix().template cast<Result>();
+        const auto lengths = mc::norm(input, axis);
+        switch (axis)
         {
-            case Axis::NONE:
-            {
-                return inArray / norm(inArray, Axis::NONE);
-            }
-            case Axis::COL:
-            {
-                Matrix<double> returnArray(inArray.shape());
-                const auto      cSlice = returnArray.cSlice();
-                for (uint32 row = 0; row < inArray.numRows(); ++row)
-                {
-                    returnArray.put(row, cSlice, normalize(inArray.row(row), Axis::NONE));
-                }
-
-                return returnArray;
-            }
-            case Axis::ROW:
-            {
-                return normalize(inArray.transpose(), Axis::COL).transpose();
-            }
-            default:
-            {
-                THROW_INVALID_ARGUMENT_ERROR("Unimplemented axis type.");
-                return {}; // get rid of compiler warning
-            }
+        case Axis::NONE:
+            result /= lengths(0, 0);
+            break;
+        case Axis::COL:
+            result.array().colwise() /= lengths.row(0).transpose().array();
+            break;
+        case Axis::ROW:
+            result.array().rowwise() /= lengths.row(0).array();
+            break;
         }
-    }
-
-    //============================================================================
-    // Method Description:
-    /// Matrix or vector norm.
-    template<typename dtype>
-    Matrix<std::complex<double>> normalize(const Matrix<std::complex<dtype>>& inArray, Axis inAxis = Axis::NONE)
-    {
-        STATIC_ASSERT_ARITHMETIC(dtype);
-
-        switch (inAxis)
-        {
-            case Axis::NONE:
-            {
-                return inArray / norm(inArray, Axis::NONE);
-            }
-            case Axis::COL:
-            {
-                Matrix<std::complex<double>> returnArray(inArray.shape());
-                const auto                    cSlice = returnArray.cSlice();
-                for (uint32 row = 0; row < inArray.numRows(); ++row)
-                {
-                    returnArray.put(row, cSlice, normalize(inArray.row(row), Axis::NONE));
-                }
-
-                return returnArray;
-            }
-            case Axis::ROW:
-            {
-                return normalize(inArray.transpose(), Axis::COL).transpose();
-            }
-            default:
-            {
-                THROW_INVALID_ARGUMENT_ERROR("Unimplemented axis type.");
-                return {}; // get rid of compiler warning
-            }
-        }
+        return result;
     }
 }

@@ -10,7 +10,8 @@
 #include "Core/StaticAssert.hpp"
 #include "Core/Algorithm.hpp"
 #include "Functions/linspace.hpp"
-#include "Matrix.hpp"
+#include <Eigen/Core>
+#include "Core/Types.hpp"
 #include "Utils/mathOperations.hpp"
 
 namespace mc
@@ -29,7 +30,7 @@ namespace mc
     /// @param base: The base of the log space. The step size between the elements in ln(samples) / ln(base)
     /// @return Matrix
     template <typename dtype>
-    Matrix<double>
+    Eigen::RowVectorX<double>
     logspace(dtype start, dtype stop, uint32 num = 50, EndPoint endPoint = EndPoint::YES, double base = 10.)
     {
         STATIC_ASSERT_ARITHMETIC_OR_COMPLEX(dtype);

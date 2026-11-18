@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,15 +6,22 @@
 
 #pragma once
 
-#include "Core/Types.hpp"
-#include "Matrix.hpp"
+#include "Utils/DenseOperations.hpp"
 
 namespace mc
 {
-    /// Returns the indices that would sort an array.
-    template<typename dtype>
-    Matrix<uint32> argsort(const Matrix<dtype>& inArray, Axis inAxis = Axis::NONE)
+    template <typename Derived>
+    Eigen::MatrixX<Eigen::Index> argsort(const Eigen::DenseBase<Derived> &input, Axis axis = Axis::NONE)
     {
-        return inArray.argsort(inAxis);
+        return detail::mapAxis(input, axis, 0, [](const auto &values)
+        {
+            Eigen::RowVectorX<Eigen::Index> indices(values.size());
+            std::iota(indices.begin(), indices.end(), Eigen::Index{});
+            std::stable_sort(indices.begin(), indices.end(), [&](Eigen::Index a, Eigen::Index b)
+            {
+                return values(a) < values(b);
+            });
+            return indices;
+        });
     }
 }

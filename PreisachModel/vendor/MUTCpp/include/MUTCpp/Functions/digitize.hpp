@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,35 +6,15 @@
 
 #pragma once
 
-#include <algorithm>
-#include <cstdint>
-#include <iterator>
-
+#include "Functions/searchsorted.hpp"
 #include "Functions/unique.hpp"
-#include "Matrix.hpp"
+#include "Core/Types.hpp"
 
 namespace mc
 {
-    /// Return the indices of the bins to which each value in input array belongs.
-    /// @param x: Input array to be binned.
-    /// @param bins: Array of bins.
-    /// @return Matrix
-    template <typename dtype1, typename dtype2>
-    Matrix<uint32> digitize(const Matrix<dtype1> &x, const Matrix<dtype2> &bins)
+    template <typename Left, typename Right>
+    Eigen::RowVectorX<uint32> digitize(const Eigen::DenseBase<Left> &left, const Eigen::DenseBase<Right> &right)
     {
-        const auto uniqueBins = unique(bins);
-        auto result = Matrix<uint32>(1, x.size());
-        result.fill(0);
-
-        typename decltype(result)::size_type idx{0};
-        std::for_each(x.begin(),
-                      x.end(),
-                      [&uniqueBins, &result, &idx](const auto value)
-                      {
-                          const auto upperBin = std::upper_bound(uniqueBins.begin(), uniqueBins.end(), value);
-                          result[idx++] = static_cast<uint32>(std::distance(uniqueBins.begin(), upperBin));
-                      });
-
-        return result;
+        return searchsorted(unique(right), left, Side::RIGHT).template cast<uint32>();
     }
 }

@@ -6,18 +6,22 @@
 
 #pragma once
 
-#include "Functions/isnan.hpp"
+#include <array>
+#include <cmath>
+#include <memory>
+#include <tuple>
+#include <vector>
+
 #include "Core/Constants.hpp"
-#include "Debug/Profile.hpp"
-#include "Ref/Ref.hpp"
+#include "MUTCpp/Utils/Profile.hpp"
+#include "Utils/essentiallyEqual.hpp"
+#include "Utils/mathOperations.hpp"
 
 #include <Eigen/Dense>
 
 namespace mc
 {
-    using Vec = Eigen::VectorXd;
-
-    class PreisachModelBase : public RefCounted
+    class PreisachModelBase
     {
     public:
         PreisachModelBase(double L) :
@@ -38,6 +42,7 @@ namespace mc
             ResetImpl();
         }
 
+        virtual ~PreisachModelBase() = default;
         PreisachModelBase(const PreisachModelBase &) = delete;
         PreisachModelBase &operator=(const PreisachModelBase &) = delete;
 
@@ -243,7 +248,7 @@ namespace mc
             if (m_InterfaceMin.empty())
                 return x_i - m_Bounds[0];
 
-            double u = isnan(m_HistoryInterfaceMax[i]) ? m_InterfaceMax.back() : m_InterfaceMin.back();
+            double u = std::isnan(m_HistoryInterfaceMax[i]) ? m_InterfaceMax.back() : m_InterfaceMin.back();
             return x_i - u;
         }
 
@@ -472,8 +477,8 @@ namespace mc
         }
 
     protected:
-        Ref<SinglePreisachModel> m_UpperModel;
-        Ref<SinglePreisachModel> m_LowerModel;
+        std::unique_ptr<SinglePreisachModel> m_UpperModel;
+        std::unique_ptr<SinglePreisachModel> m_LowerModel;
 
         std::array<double, 2> m_D;
         double m_K;

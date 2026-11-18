@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,21 +6,20 @@
 
 #pragma once
 
-#include "DSArgs.hpp"
+#include <memory>
+#include <cmath>
+
 #include "DynamicSystem.hpp"
-
-#include <Eigen/Dense>
-
-#include "Functions/power.hpp"
+#include "Utils/mathOperations.hpp"
 
 namespace mc
 {
     namespace ode
     {
-        inline Ref<ContinuousDS> GetDuffingSystem(double dt, const DSArgs &args, const DSArgs &nextArgs = {},
+        inline std::unique_ptr<ContinuousDS<2>> GetDuffingSystem(double dt, const DSArgs &args, const DSArgs &nextArgs = {},
                                                  const Eigen::Vector2d &x0 = {0.0, 0.0})
         {
-            auto func = [](Eigen::VectorXd x, double t, const DSArgs &args) -> Eigen::VectorXd
+            auto func = [](const Eigen::Vector2d &x, double t, const DSArgs &args) -> Eigen::Vector2d
             {
                 double delta = args.at("delta").toDouble();
                 double alpha = args.at("alpha").toDouble();
@@ -28,20 +27,31 @@ namespace mc
                 double gamma = args.at("gamma").toDouble();
                 double w = args.at("w").toDouble();
 
-                Eigen::VectorXd res = Eigen::VectorXd::Zero(x.size());
+                Eigen::Vector2d res;
                 res[0] = x[1];
-                res[1] = gamma * sin(w * t) - delta * x[1] - alpha * x[0] - beta * mc::power(x[0], 3);
+                res[1] = gamma * std::sin(w * t) - delta * x[1] - alpha * x[0] - beta * mc::utils::power(x[0], 3);
                 return res;
             };
 
-            auto jac = [](Eigen::VectorXd x, double t, const DSArgs &args) -> Eigen::MatrixXd
+            auto jac = [](const Eigen::Vector2d &x, double, const DSArgs &args) -> Eigen::Matrix2d
             {
-                Eigen::VectorXd res = Eigen::VectorXd::Zero(x.size());
+                const double delta = args.at("delta").toDouble();
+                const double alpha = args.at("alpha").toDouble();
+                const double beta = args.at("beta").toDouble();
+                Eigen::Matrix2d res;
+                res << 0.0, 1.0,
+                       -alpha - 3.0 * beta * x[0] * x[0], -delta;
                 return res;
             };
 
-            auto system = Ref<ContinuousDS>::Create(func, jac, dt, args, nextArgs, x0, 0.0);
-            return system;
+            return std::make_unique<ContinuousDS<2>>(func, jac, dt, args, nextArgs, x0);
+        }
+
+        template <typename Derived>
+        std::unique_ptr<ContinuousDS<2>> GetDuffingSystem(double dt, const DSArgs &args, const DSArgs &nextArgs,
+                                                         const Eigen::MatrixBase<Derived> &x0)
+        {
+            return GetDuffingSystem(dt, args, nextArgs, DynamicalSystem<2>::CheckedState(x0));
         }
     }
 }

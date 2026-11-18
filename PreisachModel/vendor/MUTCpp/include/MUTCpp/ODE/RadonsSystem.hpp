@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,18 +6,19 @@
 
 #pragma once
 
-#include "DSArgs.hpp"
+#include <memory>
+#include <cmath>
+
 #include "DynamicSystem.hpp"
 
 namespace mc
 {
     namespace ode
     {
-        inline Ref<ContinuousDS> GetRadonsSystem(double dt, const DSArgs &args, const DSArgs &nextArgs = {},
+        inline std::unique_ptr<ContinuousDS<2>> GetRadonsSystem(double dt, const DSArgs &args, const DSArgs &nextArgs = {},
                                                  const Eigen::Vector2d &x0 = {0.0, 0.0}, bool use_atan = false)
         {
-            DynamicalSystem::DSFunc func = [use_atan](const Eigen::VectorXd &x, const double t,
-                                                      DSArgs &args) -> Eigen::VectorXd
+            auto func = [use_atan](const Eigen::Vector2d &x, double t, DSArgs &args) -> Eigen::Vector2d
             {
                 AL_PROFILE_FUNC("Rodos::func");
                 double dt = args.at("dt").toDouble();
@@ -29,9 +30,9 @@ namespace mc
                 double phi = args.at("phi").toDouble();
                 auto &model = args.at("model").toPreisachModel();
                 
-                Eigen::VectorXd res = Eigen::VectorXd::Zero(x.size());
+                Eigen::Vector2d res;
 
-                const double a = A * sin(w * t + phi);
+                const double a = A * std::sin(w * t + phi);
                 const double g = gamma * x[1];
                 const double ww = w0 * x[0];
                 const double atan = use_atan ? args.at("eps").toDouble() * std::atan(x[0]) : 0.0;
@@ -44,16 +45,15 @@ namespace mc
                 return res;
             };
 
-            auto jac = [use_atan](Eigen::VectorXd x, double t, DSArgs &args) -> Eigen::MatrixXd
+            auto jac = [use_atan](const Eigen::Vector2d &x, double t, DSArgs &args) -> Eigen::Matrix2d
             {
                 double w0 = args.at("w0").toDouble();
                 double gamma = args.at("gamma").toDouble();
                 double E = args.at("E").toDouble();
-                auto model = args.at("model").toPreisachModel();
+                const auto &model = args.at("model").toPreisachModel();
                 double dt = args.at("dt").toDouble();
-                double A = args.at("A").toDouble();
 
-                Eigen::MatrixXd res = Eigen::MatrixXd::Zero(x.size(), x.size());
+                Eigen::Matrix2d res = Eigen::Matrix2d::Zero();
 
                 res(0, 1) = 1.0;
 
@@ -64,15 +64,18 @@ namespace mc
                 }
                 
                 res(1, 1) = -gamma;
-                // TODO: make DynamicSystem compile-time dimention
-                // res(1, 2) = A * cos(x[2]);
 
                 return res;
             };
 
-            auto system = Ref<ContinuousDS>::Create(func, jac, dt, args, nextArgs, x0);
+            return std::make_unique<ContinuousDS<2>>(func, jac, dt, args, nextArgs, x0);
+        }
 
-            return system;
+        template <typename Derived>
+        std::unique_ptr<ContinuousDS<2>> GetRadonsSystem(double dt, const DSArgs &args, const DSArgs &nextArgs,
+                                                         const Eigen::MatrixBase<Derived> &x0, bool use_atan = false)
+        {
+            return GetRadonsSystem(dt, args, nextArgs, DynamicalSystem<2>::CheckedState(x0), use_atan);
         }
     }
 }

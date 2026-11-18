@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,19 +6,17 @@
 
 #pragma once
 
-#include "Core/Types.hpp"
-#include "Matrix.hpp"
+#include <Eigen/Core>
+#include "Core/Enums.hpp"
 
 namespace mc
 {
-    /// Return specified diagonals.
-    /// @param inArray
-    /// @param inOffset (Defaults to 0)
-    /// @param inAxis (Optional, default ROW) axis the offset is applied to
-    /// @return Matrix
-    template <typename dtype>
-    Matrix<dtype> diagonal(const Matrix<dtype> &inArray, int32 inOffset = 0, Axis inAxis = Axis::ROW)
+    template <typename Derived>
+    Eigen::RowVectorX<typename Derived::Scalar> diagonal(const Eigen::DenseBase<Derived> &input, Eigen::Index offset = 0, Axis axis = Axis::ROW)
     {
-        return inArray.diagonal(inOffset, inAxis);
+        const auto &value = input.derived();
+        if (axis == Axis::COL) offset = -offset;
+        if (offset <= -input.rows() || offset >= input.cols()) return {};
+        return value.matrix().diagonal(offset).transpose();
     }
 }

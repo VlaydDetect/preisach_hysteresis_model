@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -7,19 +7,12 @@
 #pragma once
 
 #include "Functions/array_equiv.hpp"
-#include "Matrix.hpp"
 
 namespace mc
 {
-    /// True if two arrays have the same shape and elements, False otherwise.
-    template<typename dtype>
-    bool array_equal(const Matrix<dtype>& inArray1, const Matrix<dtype>& inArray2) noexcept
+    template <typename Left, typename Right>
+    bool array_equal(const Eigen::DenseBase<Left> &left, const Eigen::DenseBase<Right> &right)
     {
-        if (inArray1.shape() != inArray2.shape())
-        {
-            return false;
-        }
-
-        return array_equiv(inArray1, inArray2);
+        return left.rows() == right.rows() && left.cols() == right.cols() && array_equiv(left, right);
     }
 }

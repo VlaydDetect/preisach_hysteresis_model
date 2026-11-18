@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,125 +6,62 @@
 
 #pragma once
 
-#include <string>
-
-#include "Core/Error.hpp"
-#include "Core/StaticAssert.hpp"
-#include "Core/Shape.hpp"
-#include "Core/Types.hpp"
-#include "Matrix.hpp"
+#include "Utils/DenseOperations.hpp"
 
 namespace mc
 {
-    /// Integrate along the given axis using the composite trapezoidal rule.
-    /// NumPy Reference: https://www.numpy.org/devdocs/reference/generated/numpy.trapz.html
-    /// @param inArray
-    /// @param dx: (Optional defaults to 1.)
-    /// @param inAxis (Optional, default NONE)
-    /// @return Matrix
-    template <typename dtype>
-    Matrix<double> trapz(const Matrix<dtype> &inArray, double dx = 1., Axis inAxis = Axis::NONE)
+    namespace detail
     {
-        STATIC_ASSERT_ARITHMETIC(dtype);
-
-        const Shape inShape = inArray.shape();
-        switch (inAxis)
+        template <typename Derived, typename Spacing>
+        Eigen::VectorXd trapezoidalSum(const Eigen::DenseBase<Derived> &input, Axis axis, Spacing spacing)
         {
-        case Axis::NONE:
-        {
-            double sum = 0.;
-            for (uint32 i = 0; i < inArray.size() - 1; ++i)
+            if (axis != Axis::NONE && axis != Axis::ROW && axis != Axis::COL)
             {
-                sum += static_cast<double>(inArray[i + 1] - inArray[i]) / 2. + static_cast<double>(inArray[i]);
+                throw std::invalid_argument("Unsupported axis");
             }
-
-            Matrix<double> returnArray = {sum * dx};
-            return returnArray;
-        }
-        case Axis::COL:
-        {
-            Matrix<double> returnArray(inShape.m_Rows, 1);
-            for (uint32 row = 0; row < inShape.m_Rows; ++row)
+            const auto count = axis == Axis::NONE ? 1 : (axis == Axis::COL ? input.rows() : input.cols());
+            const auto length = axisSize(input.rows(), input.cols(), axis);
+            Eigen::VectorXd result = Eigen::VectorXd::Zero(count);
+            const auto flat = rowMajor(input);
+            for (Eigen::Index line = 0; line < count; ++line)
             {
-                double sum = 0;
-                for (uint32 col = 0; col < inShape.m_Cols - 1; ++col)
+                const auto sample = [&](Eigen::Index i)
                 {
-                    sum += static_cast<double>(inArray(row, col + 1) - inArray(row, col)) / 2. +
-                        static_cast<double>(inArray(row, col));
+                    if (axis == Axis::NONE) return flat(i);
+                    if (axis == Axis::COL) return input(line, i);
+                    return input(i, line);
+                };
+                for (Eigen::Index i = 1; i < length; ++i)
+                {
+                    const double left = static_cast<double>(sample(i - 1));
+                    const double right = static_cast<double>(sample(i));
+                    result(line) += spacing(line, i) * (left + (right - left) * 0.5);
                 }
-
-                returnArray[row] = sum * dx;
             }
-
-            return returnArray;
-        }
-        case Axis::ROW:
-        {
-            return trapz(inArray.transpose(), dx, Axis::COL);
-        }
-        default:
-        {
-            THROW_INVALID_ARGUMENT_ERROR("Unimplemented axis type.");
-            return {}; // get rid of compiler warning
-        }
+            return result;
         }
     }
 
-    /// Integrate along the given axis using the composite trapezoidal rule.
-    /// NumPy Reference: https://www.numpy.org/devdocs/reference/generated/numpy.trapz.html
-    template <typename dtype>
-    Matrix<double> trapz(const Matrix<dtype> &inArrayY, const Matrix<dtype> &inArrayX, Axis inAxis = Axis::NONE)
+    template <typename Derived>
+    Eigen::VectorXd trapz(const Eigen::DenseBase<Derived> &input, double dx = 1.0, Axis axis = Axis::NONE)
     {
-        const Shape inShapeY = inArrayY.shape();
-        const Shape inShapeX = inArrayX.shape();
+        return dx * detail::trapezoidalSum(input, axis, [](Eigen::Index, Eigen::Index) { return 1.0; });
+    }
 
-        if (inShapeY != inShapeX)
+    template <typename Derived, typename Coordinates>
+    Eigen::VectorXd trapz(const Eigen::DenseBase<Derived> &input, const Eigen::DenseBase<Coordinates> &coordinates, Axis axis = Axis::NONE)
+    {
+        if (input.rows() != coordinates.rows() || input.cols() != coordinates.cols())
         {
-            THROW_INVALID_ARGUMENT_ERROR("input x and y arrays should be the same shape.");
+            throw std::invalid_argument("Coordinates must have the same shape as the samples");
         }
-
-        switch (inAxis)
+        const auto flat = detail::rowMajor(coordinates);
+        const auto spacing = [&](Eigen::Index line, Eigen::Index i)
         {
-        case Axis::NONE:
-        {
-            double sum = 0.;
-            for (uint32 i = 0; i < inArrayY.size() - 1; ++i)
-            {
-                const auto dx = static_cast<double>(inArrayX[i + 1] - inArrayX[i]);
-                sum += dx *
-                    (static_cast<double>(inArrayY[i + 1] - inArrayY[i]) / 2. + static_cast<double>(inArrayY[i]));
-            }
-
-            Matrix<double> returnArray = {sum};
-            return returnArray;
-        }
-        case Axis::COL:
-        {
-            Matrix<double> returnArray(inShapeY.m_Rows, 1);
-            for (uint32 row = 0; row < inShapeY.m_Rows; ++row)
-            {
-                double sum = 0;
-                for (uint32 col = 0; col < inShapeY.m_Cols - 1; ++col)
-                {
-                    const auto dx = static_cast<double>(inArrayX(row, col + 1) - inArrayX(row, col));
-                    sum += dx * (static_cast<double>(inArrayY(row, col + 1) - inArrayY(row, col)) / 2. +
-                        static_cast<double>(inArrayY(row, col)));
-                }
-
-                returnArray[row] = sum;
-            }
-
-            return returnArray;
-        }
-        case Axis::ROW:
-        {
-            return trapz(inArrayY.transpose(), inArrayX.transpose(), Axis::COL);
-        }
-        default:
-        {
-            THROW_INVALID_ARGUMENT_ERROR("Unimplemented axis type.");
-            return {}; // get rid of compiler warning
-        }
-        }
+            if (axis == Axis::NONE) return static_cast<double>(flat(i)) - static_cast<double>(flat(i - 1));
+            if (axis == Axis::COL) return static_cast<double>(coordinates(line, i)) - static_cast<double>(coordinates(line, i - 1));
+            return static_cast<double>(coordinates(i, line)) - static_cast<double>(coordinates(i - 1, line));
+        };
+        return detail::trapezoidalSum(input, axis, spacing);
     }
 }

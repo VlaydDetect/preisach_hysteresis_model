@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,15 +6,17 @@
 
 #pragma once
 
-#include "Core/Types.hpp"
-#include "Matrix.hpp"
+#include "Utils/DenseOperations.hpp"
 
 namespace mc
 {
-    /// Return the product of array elements over a given axis.
-    template<typename dtype>
-    Matrix<dtype> prod(const Matrix<dtype>& inArray, Axis inAxis = Axis::NONE)
+    template <typename Derived>
+    auto prod(const Eigen::DenseBase<Derived> &input, Axis axis = Axis::NONE)
     {
-        return inArray.prod(inAxis);
+        using Scalar = typename Derived::Scalar;
+        return detail::reduce(input, axis, [](const auto &values)
+        {
+            return std::accumulate(values.begin(), values.end(), Scalar{1}, std::multiplies<>{});
+        });
     }
 }

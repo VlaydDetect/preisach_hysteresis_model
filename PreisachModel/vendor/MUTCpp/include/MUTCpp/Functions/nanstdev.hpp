@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,77 +6,37 @@
 
 #pragma once
 
-#include <algorithm>
+#include "Utils/DenseOperations.hpp"
 #include <cmath>
-
-#include "Core/StaticAssert.hpp"
-#include "Core/Shape.hpp"
-#include "Core/Types.hpp"
-#include "Functions/nanmean.hpp"
-#include "Matrix.hpp"
-#include "Utils/mathOperations.hpp"
+#include <complex>
+#include <limits>
+#include <vector>
+#include "Core/TypeTraits.hpp"
 
 namespace mc
 {
-    /// Compute the standard deviation along the specified axis, while ignoring NaNs.
-    template <typename dtype>
-    Matrix<double> nanstdev(const Matrix<dtype> &inArray, Axis inAxis = Axis::NONE)
+    template <typename Derived>
+    auto nanstdev(const Eigen::DenseBase<Derived> &input, Axis axis = Axis::NONE)
     {
-        STATIC_ASSERT_FLOAT(dtype);
-
-        switch (inAxis)
+        return detail::reduce(input, axis, [&](const auto &values)
         {
-        case Axis::NONE:
-        {
-            double meanValue = nanmean(inArray, inAxis).item();
-            double sum = 0;
-            double counter = 0;
-            for (auto value : inArray)
+            double sum = 0.0;
+            Eigen::Index count = 0;
+            for (double value : values)
             {
-                if (std::isnan(value))
+                if (!std::isnan(value))
                 {
-                    continue;
+                    sum += value;
+                    ++count;
                 }
-
-                sum += utils::sqr(static_cast<double>(value) - meanValue);
-                ++counter;
             }
-            Matrix<double> returnArray = {std::sqrt(sum / counter)};
-            return returnArray;
-        }
-        case Axis::COL:
-        {
-            const Shape inShape = inArray.shape();
-            Matrix<double> meanValue = nanmean(inArray, inAxis);
-            Matrix<double> returnArray(1, inShape.m_Rows);
-            for (uint32 row = 0; row < inShape.m_Rows; ++row)
+            const double mean = sum / static_cast<double>(count);
+            sum = 0.0;
+            for (double value : values)
             {
-                double sum = 0;
-                double counter = 0;
-                for (uint32 col = 0; col < inShape.m_Cols; ++col)
-                {
-                    if (std::isnan(inArray(row, col)))
-                    {
-                        continue;
-                    }
-
-                    sum += utils::sqr(static_cast<double>(inArray(row, col)) - meanValue[row]);
-                    ++counter;
-                }
-                returnArray(0, row) = std::sqrt(sum / counter);
+                if (!std::isnan(value)) sum += (value - mean) * (value - mean);
             }
-
-            return returnArray;
-        }
-        case Axis::ROW:
-        {
-            return nanstdev(inArray.transpose(), Axis::COL);
-        }
-        default:
-        {
-            THROW_INVALID_ARGUMENT_ERROR("Unimplemented axis type.");
-            return {}; // get rid of compiler warning
-        }
-        }
+            return std::sqrt(sum / static_cast<double>(count));
+        });
     }
 }

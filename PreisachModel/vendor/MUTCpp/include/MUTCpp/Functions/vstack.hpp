@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,26 +6,19 @@
 
 #pragma once
 
-#include <initializer_list>
-#include <vector>
-
-#include "Functions/row_stack.hpp"
-#include "Matrix.hpp"
+#include "Functions/concatenate.hpp"
 
 namespace mc
 {
-    /// Compute the variance along the specified axis.
-    ///
-    template<typename dtype>
-    Matrix<dtype> vstack(std::initializer_list<Matrix<dtype>> inArrayList)
+    template <typename Derived>
+    auto vstack(const std::vector<Derived> &arrays)
     {
-        return detail::row_stack<dtype>(inArrayList.begin(), inArrayList.end());
+        return concatenate(arrays, Axis::ROW);
     }
 
-    /// Compute the variance along the specified axis.
-    template<typename dtype>
-    Matrix<dtype> vstack(std::vector<Matrix<dtype>> inArrayList)
+    template <typename Derived>
+    auto vstack(const std::initializer_list<Derived> &arrays)
     {
-        return detail::row_stack<dtype>(inArrayList.begin(), inArrayList.end());
+        return concatenate(arrays, Axis::ROW);
     }
 }

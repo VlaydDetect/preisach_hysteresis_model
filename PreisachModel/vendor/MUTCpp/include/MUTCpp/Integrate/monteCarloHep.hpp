@@ -6,6 +6,12 @@
 
 #pragma once
 
+#include <chrono>
+#include <iostream>
+#include <numeric>
+#include "Integrate/monteCarloBoost.hpp"
+#include "Utils/Profile.hpp"
+
 #include "Random/rand.hpp"
 #include "Utils/gauss_area.hpp"
 #include "hep/mc.hpp"

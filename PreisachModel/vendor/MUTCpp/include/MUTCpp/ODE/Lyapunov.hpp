@@ -7,8 +7,10 @@
 #pragma once
 
 #include "DynamicSystem.hpp"
-#include "Functions/log.hpp"
-#include "Random/randN.hpp"
+#include <cmath>
+#include <print>
+
+#include "Hysteresis/ArealModel.hpp"
 #include "Utils/doubleToString.hpp"
 #include "Utils/nestedLoop.hpp"
 
@@ -18,47 +20,48 @@ namespace mc
     {
         namespace detail
         {
-            inline std::array<double, 2> divergenceDegree(Ref<DynamicalSystem> system, double timeForward, double e,
-                                                          Eigen::VectorXd v, double T, int M,
-                                                          std::vector<Eigen::MatrixXd> &traj1,
-                                                          std::vector<Eigen::MatrixXd> &traj2)
+            template <int N>
+            std::array<double, 2> divergenceDegree(DynamicalSystem<N> &system, double timeForward, double e,
+                                                          typename DynamicalSystem<N>::State v, double T, int M,
+                                                  std::vector<typename DynamicalSystem<N>::State> &traj1,
+                                                  std::vector<typename DynamicalSystem<N>::State> &traj2)
             {
                 AL_PROFILE_FUNC("divergenceDegree");
 
-                system->Reset();
+                system.Reset();
 
-                system->Forward(timeForward);
-                traj1.push_back(system->GetX());
+                system.Forward(timeForward);
+                traj1.push_back(system.GetX());
 
                 v.normalize();
                 v *= e;
-                v = system->GetX() + v;
+                v = system.GetX() + v;
                 traj2.push_back(v);
 
                 double n = 0.0;
 
                 for (int i = 1; i < M + 1; ++i)
                 {
-                    auto count = static_cast<uint32>(T / system->GetDeltaTime());
+                    auto count = static_cast<uint32>(T / system.GetDeltaTime());
                     while (count--)
                     {
-                        v = system->NextTM(v);
+                        v = system.NextTM(v);
                         traj2.push_back(v);
 
-                        auto traj = system->Forward(1);
-                        traj1.push_back(system->GetX());
+                        auto traj = system.Forward(1);
+                        traj1.push_back(system.GetX());
                     }
-                    v -= system->GetX();
+                    v -= system.GetX();
 
-                    n += mc::log(v.norm() / e);
+                    n += std::log(v.norm() / e);
 
                     v.normalize();
                     v *= e;
-                    v = system->GetX() + v;
+                    v = system.GetX() + v;
                     traj2[traj2.size() - 1] = v;
                 }
 
-                return {n / M, mc::log(T)};
+                return {n / M, std::log(T)};
             }
 
             /**
@@ -68,10 +71,19 @@ namespace mc
              * @param next_x Следующее состояние системы.
              * @return bool  True, если следующая точка сингулярная.
              */
-            inline bool PreisachInputSingularityDetector(const Vec &curr_x, const Vec &next_x)
+            template <int N>
+            bool PreisachInputSingularityDetector(const Eigen::Vector<double, N> &curr_x,
+                                                   const Eigen::Vector<double, N> &next_x)
             {
-                constexpr double eps = 0.001;
-                return !(std::abs(curr_x[1]) < eps) && (curr_x[1] * next_x[1] < 0.0 || std::abs(next_x[1]) < eps);
+                if constexpr (N < 2)
+                {
+                    return false;
+                }
+                else
+                {
+                    constexpr double eps = 0.001;
+                    return !(std::abs(curr_x[1]) < eps) && (curr_x[1] * next_x[1] < 0.0 || std::abs(next_x[1]) < eps);
+                }
             }
         }
         
@@ -81,23 +93,23 @@ namespace mc
              * @brief Вспомогательная функция вычисления усредненного логарифма расстояния для одного значения T.
              */
             inline double ComputeAvgLogDistForT(
-                Ref<ode::ContinuousDS> system,
-                const Vec &initial_dir, double eps, int T_steps, int M,
-                std::vector<Eigen::MatrixXd> &traj1, std::vector<Eigen::MatrixXd> &traj2)
+                ode::ContinuousDS<2> &system,
+                const Eigen::Vector2d &initial_dir, double eps, int T_steps, int M,
+                std::vector<Eigen::Vector2d> &traj1, std::vector<Eigen::Vector2d> &traj2)
             {
                 AL_PROFILE_FUNC("mc::ode::ComputePowerLawExponent::ComputeAvgLogDistForT");
 
-                Vec dir = initial_dir.normalized();
-                const double w02 = system->GetArgs().at("w0").toDouble();
+                Eigen::Vector2d dir = initial_dir.normalized();
+                const double w02 = system.GetArgs().at("w0").toDouble();
 
                 const auto calc_logonormal_dist = [eps, dir, w02](
-                    const Eigen::VectorXd &main_x, Eigen::VectorXd &pert_x,
+                    const Eigen::Vector2d &main_x, Eigen::Vector2d &pert_x,
                     double &sum_log_dist)
                 {
-                    Vec delta = pert_x - main_x;
+                    Eigen::Vector2d delta = pert_x - main_x;
                     // Используем энергетическую метрику
-                    // p(x1, x2) = sqrt(w02 / 2 * (dx)^2 + (dv)^2 / 2)
-                    double dist = mc::sqrt(w02 * mc::square(delta(0)) + mc::square(delta(1))) / mc::sqrt(2.);
+                    // p(x1, x2) = std::sqrt(w02 / 2 * (dx)^2 + (dv)^2 / 2)
+                    double dist = std::sqrt(w02 * (delta(0) * delta(0)) + (delta(1) * delta(1))) / std::sqrt(2.);
 
                     if (dist > 1e-16)
                     {
@@ -114,9 +126,9 @@ namespace mc
                     }
                 };
 
-                Vec main_x = system->GetX();
+                Eigen::Vector2d main_x = system.GetX();
                 // Возмущенная траектория в заданном направлении
-                Vec pert_x = main_x + eps * dir;
+                Eigen::Vector2d pert_x = main_x + eps * dir;
 
                 traj1.push_back(main_x);
                 traj1.push_back(pert_x);
@@ -127,9 +139,9 @@ namespace mc
                 {
                     for (int k = 0; k < T_steps; ++k)
                     {
-                        pert_x = system->NextTM(pert_x);
-                        system->Next();
-                        main_x = system->GetX();
+                        pert_x = system.NextTM(pert_x);
+                        system.Next();
+                        main_x = system.GetX();
 
                         traj1.push_back(main_x);
                         traj2.push_back(pert_x);
@@ -145,45 +157,45 @@ namespace mc
             }
             
             inline mc::json::JsonDocument ComputePowerLawExponent(
-                Ref<ode::ContinuousDS> system,
-                const Vec &initial_dir,
+                ode::ContinuousDS<2> &system,
+                const Eigen::Vector2d &initial_dir,
                 double eps,
                 double T_step, double additional_time = 0.0)
             {
                 AL_PROFILE_FUNC("mc::ode::ComputePowerLawExponent");
                 
-                const double dt = system->GetDeltaTime();
-                const double L = system->GetArgs().at("model").toPreisachModel()->GetL() + 0.1;
-                const double w02 = system->GetArgs().at("w0").toDouble();
+                const double dt = system.GetDeltaTime();
+                const double L = system.GetArgs().at("model").toPreisachModel()->GetL() + 0.1;
+                const double w02 = system.GetArgs().at("w0").toDouble();
 
-                system->SetResetFn([](mc::ode::DSArgs &args, mc::ode::DSArgs &nextArgs, uint32_t)
+                system.SetResetFn([](mc::ode::DSArgs &args, mc::ode::DSArgs &nextArgs, uint32_t)
                 {
                     args.at("model").toPreisachModel()->ResetState();
                     nextArgs.at("model").toPreisachModel()->ResetState();
                 });
                 
-                system->ResetArgs();
-                system->ResetNextArgs();
-                system->Reset();
+                system.ResetArgs();
+                system.ResetNextArgs();
+                system.Reset();
                 
                 // Считаем максимально доступное количество шагов в активной зоне
                 uint32_t max_steps = 0;
-                Eigen::VectorXd pert_x = system->GetX() + eps * initial_dir;
+                Eigen::Vector2d pert_x = system.GetX() + eps * initial_dir;
 
                 double prev_dist = -mc::consts::inf;
                 while (true)
                 {
-                    pert_x = system->NextTM(pert_x);
-                    system->Next();
+                    pert_x = system.NextTM(pert_x);
+                    system.Next();
                     max_steps++;
                     
                     // Защита от зависания, если траектория застряла в аттракторе
                     if (max_steps > static_cast<uint32_t>(200. / dt)) break; 
                     
-                    bool in_bounds = std::abs(system->GetX()(0)) <= L;
+                    bool in_bounds = std::abs(system.GetX()(0)) <= L;
                     
-                    auto delta = system->GetX() - pert_x;
-                    double dist = mc::sqrt(w02 * mc::square(delta(0)) + mc::square(delta(1))) / mc::sqrt(2.);
+                    auto delta = system.GetX() - pert_x;
+                    double dist = std::sqrt(w02 * (delta(0) * delta(0)) + (delta(1) * delta(1))) / std::sqrt(2.);
                     bool is_diverging = (dist - prev_dist) > 1e-5;
                     prev_dist = dist;
 
@@ -201,7 +213,7 @@ namespace mc
                 X.resize(Ts.size());
                 Y.resize(Ts.size());
 
-                std::unordered_map<std::string, std::vector<Eigen::MatrixXd>> trajs1 = {}, trajs2 = {};
+                std::unordered_map<std::string, std::vector<Eigen::Vector2d>> trajs1 = {}, trajs2 = {};
 
                 for (int i = 0; i < Ts.size(); ++i)
                 {
@@ -212,11 +224,11 @@ namespace mc
                     // Если T слишком велико и не помещается даже 1 раз в окно - пропускаем
                     if (M < 1) continue;
                     
-                    system->ResetArgs();
-                    system->ResetNextArgs();
-                    system->Reset();
+                    system.ResetArgs();
+                    system.ResetNextArgs();
+                    system.Reset();
 
-                    std::vector<Eigen::MatrixXd> traj1, traj2;
+                    std::vector<Eigen::Vector2d> traj1, traj2;
                     double avg_log_d = ComputeAvgLogDistForT(system, initial_dir, eps, T_steps, M, traj1, traj2);
 
                     const auto strT = mc::doubleToString(T, 2);
@@ -237,45 +249,46 @@ namespace mc
                 message.AddField("ns", Y);
                 message.AddField("nu", reg.slope);
                 message.AddField("C", reg.intercept);
-                message.AddField("r2", mc::power(reg.r, 2));
+                message.AddField("r2", reg.r * reg.r);
                 message.AddField("trajs1", trajs1);
                 message.AddField("trajs2", trajs2);
 
-                system->ResetArgs();
-                system->ResetNextArgs();
-                system->Reset();
+                system.ResetArgs();
+                system.ResetNextArgs();
+                system.Reset();
 
                 return message;
             }
         }
 
         /// Implements Benettin's mLCE computation algorithm
-        inline std::pair<double, Eigen::VectorXd> Benettin_mLCE(Ref<DynamicalSystem> system, double timeForward,
+        template <int N>
+        std::pair<double, Eigen::VectorXd> Benettin_mLCE(DynamicalSystem<N> &system, double timeForward,
                                                                 double e,
                                                                 double T = 8.0,
                                                                 int M = 30, bool linearize = true)
         {
             AL_PROFILE_FUNC("Benettin_mLCE");
-            system->Reset();
-            system->Forward(timeForward);
+            system.Reset();
+            system.Forward(timeForward);
 
             double mLCE = 0.0;
-            Eigen::VectorXd history = Eigen::VectorXd::Zero(1, M);
+            Eigen::VectorXd history = Eigen::VectorXd::Zero(M);
 
-            Eigen::VectorXd v = Eigen::Rand(1, system->GetDimension());
+            Eigen::Vector<double, N> v = Eigen::Rand(1, N).transpose();
 
             for (int i = 1; i < M + 1; ++i)
             {
-                v = system->GetX() + v.normalized() * e;
-                auto count = static_cast<uint32>(T / system->GetDeltaTime());
+                v = system.GetX() + v.normalized() * e;
+                auto count = static_cast<uint32>(T / system.GetDeltaTime());
                 while (count--)
                 {
-                    v = linearize ? system->NextLTM(v) : system->NextTM(v);
-                    system->Forward(1);
+                    v = linearize ? system.NextLTM(v) : system.NextTM(v);
+                    system.Forward(1);
                 }
-                v -= system->GetX();
+                v -= system.GetX();
 
-                mLCE += log(v.norm() / e);
+                mLCE += std::log(v.norm() / e);
                 history[i - 1] = mLCE / (i * T);
             }
 
@@ -283,7 +296,7 @@ namespace mc
             return {mLCE, history};
         }
 
-        inline json::JsonDocument TrajsCircle(Ref<DynamicalSystem> system, const std::vector<double> &es, double time,
+        inline json::JsonDocument TrajsCircle(DynamicalSystem<3> &system, const std::vector<double> &es, double time,
                                               double timeForward = consts::nan, double areaCoeff = consts::nan)
         {
             std::vector<std::string> esStr(es.size());
@@ -297,24 +310,24 @@ namespace mc
 
             std::vector<Eigen::Vector3d> coords = {
                 {1., 0., 0.},
-                {sqrt(2.) / 2, sqrt(2.) / 2, 0.},
+                {std::sqrt(2.) / 2, std::sqrt(2.) / 2, 0.},
                 {0., 1., 0.},
-                {-sqrt(2.) / 2, sqrt(2.) / 2, 0.},
+                {-std::sqrt(2.) / 2, std::sqrt(2.) / 2, 0.},
                 {-1., 0., 0.},
-                {-sqrt(2.) / 2, -sqrt(2.) / 2, 0.},
+                {-std::sqrt(2.) / 2, -std::sqrt(2.) / 2, 0.},
                 {0., -1., 0.},
-                {sqrt(2.) / 2, -sqrt(2.) / 2, 0.},
+                {std::sqrt(2.) / 2, -std::sqrt(2.) / 2, 0.},
             };
             std::vector<std::string> coordsStr(coords.size());
-            std::ranges::transform(coords, coordsStr.begin(), [](const Eigen::VectorXd &elem)
+            std::ranges::transform(coords, coordsStr.begin(), [](const Eigen::Vector3d &elem)
             {
-                return Eigen::DoubleVectorToString(elem, 4);
+                return mc::doubleToString(elem, 4);
             });
             message.AddField("coords", coordsStr);
 
-            if (!isnan(timeForward))
+            if (!std::isnan(timeForward))
             {
-                system->Forward(timeForward);
+                system.Forward(timeForward);
             }
 
             std::unordered_map<std::string,
@@ -324,13 +337,13 @@ namespace mc
             std::unordered_map<std::string,
                                std::unordered_map<std::string, std::array<std::vector<double>, 4>>> allLoops = {};
 
-            system->SetResetFn([areaCoeff](DSArgs &args, DSArgs &nextArgs, uint32_t)
+            system.SetResetFn([areaCoeff](DSArgs &args, DSArgs &nextArgs, uint32_t)
             {
                 constexpr double L = 1.0;
-                auto model1 = mc::Ref<mc::ArealPreisachModel>::Create(L, false, false);
+                auto model1 = std::make_shared<mc::ArealPreisachModel>(L, false, false);
 
-                auto model2 = mc::Ref<mc::ArealPreisachModel>::Create(L, false, false);
-                if (!isnan(areaCoeff))
+                auto model2 = std::make_shared<mc::ArealPreisachModel>(L, false, false);
+                if (!std::isnan(areaCoeff))
                 {
                     model2->P(L, 0.0, -2);
                     model2->P(areaCoeff * L, 0.0, -1);
@@ -349,34 +362,34 @@ namespace mc
 
                 for (const auto v : coords)
                 {
-                    system->Reset();
+                    system.Reset();
 
                     std::vector<std::vector<double>> mainTraj = {};
-                    mainTraj.emplace_back(Eigen::to_std(system->GetX()));
+                    mainTraj.emplace_back(Eigen::to_std(system.GetX()));
 
-                    Eigen::VectorXd w = system->GetX() + v.normalized() * e;
+                    Eigen::Vector3d w = system.GetX() + v.normalized() * e;
 
                     std::vector<std::vector<double>> secondTraj = {};
                     secondTraj.emplace_back(Eigen::to_std(w));
 
-                    auto count = static_cast<uint32>(time / system->GetDeltaTime());
+                    auto count = static_cast<uint32>(time / system.GetDeltaTime());
                     while (count--)
                     {
-                        auto traj = system->Forward(1);
-                        mainTraj.emplace_back(Eigen::to_std(system->GetX()));
+                        auto traj = system.Forward(1);
+                        mainTraj.emplace_back(Eigen::to_std(system.GetX()));
 
-                        w = system->NextTM(w);
+                        w = system.NextTM(w);
                         secondTraj.emplace_back(Eigen::to_std(w));
                     }
 
                     // TODO:
-                    // auto [in1, out1] = system->GetArgs().at("model").toPreisachModel()->HysteresisLoop();
-                    // auto [in2, out2] = system->GetNextArgs().at("model").toPreisachModel()->HysteresisLoop();
-                    auto [in1, out1] = system->GetArgs().at("model").toPreisachModel()->HysteresisLoop();
-                    auto [in2, out2] = system->GetNextArgs().at("model").toPreisachModel()->HysteresisLoop();
+                    // auto [in1, out1] = system.GetArgs().at("model").toPreisachModel()->HysteresisLoop();
+                    // auto [in2, out2] = system.GetNextArgs().at("model").toPreisachModel()->HysteresisLoop();
+                    auto [in1, out1] = system.GetArgs().at("model").toPreisachModel()->HysteresisLoop();
+                    auto [in2, out2] = system.GetNextArgs().at("model").toPreisachModel()->HysteresisLoop();
 
-                    trajs.insert({Eigen::DoubleVectorToString(v, 4), {mainTraj, secondTraj}});
-                    loops.insert({Eigen::DoubleVectorToString(v, 4), {in1, out1, in2, out2}});
+                    trajs.insert({mc::doubleToString(v, 4), {mainTraj, secondTraj}});
+                    loops.insert({mc::doubleToString(v, 4), {in1, out1, in2, out2}});
                 }
                 allTrajs.insert({doubleToString(e, 2), trajs});
                 allLoops.insert({doubleToString(e, 2), loops});
@@ -411,29 +424,30 @@ namespace mc
          * @return [Eigen::VectorXd, Eigen::MatrixXd]   Спектр из N показателей Ляпунова (где N - размерность системы)
          * и вектор истории каждого из них (построчно).
          */
-        inline LCEResult ComputeLCEs(
-            Ref<ode::DynamicalSystem> system,
+        template <int N>
+        LCEResult ComputeLCEs(
+            DynamicalSystem<N> &system,
             double timeForward,
             double total_time,
             uint32_t ortho_steps,
             std::optional<int> num_lce = std::nullopt,
-            const std::function<bool(const Vec &curr_x, const Vec &next_x)> &singularity_check =
-                detail::PreisachInputSingularityDetector)
+            const std::type_identity_t<std::function<bool(const Eigen::Vector<double, N> &,
+                                                        const Eigen::Vector<double, N> &)>> &singularity_check =
+                detail::PreisachInputSingularityDetector<N>)
         {
-            if (num_lce.has_value())
+            const int n_lce = num_lce.value_or(N);
+            if (n_lce < 1 || n_lce > N)
             {
-                assert(*num_lce <= system->GetDimension());
+                THROW_INVALID_ARGUMENT_ERROR("Number of exponents must be between one and the system dimension");
             }
 
             AL_PROFILE_FUNC("mc::ode::ComputeLCEs");
 
-            system->ResetArgs();
-            system->Reset();
-            system->Forward(timeForward);
+            system.ResetArgs();
+            system.Reset();
+            system.Forward(timeForward);
 
-            const int dim = system->GetDimension();
-            const int n_lce = num_lce.value_or(dim);
-            const double dt = system->GetDeltaTime();
+            const double dt = system.GetDeltaTime();
             const int num_iterations = static_cast<int>(total_time / dt);
 
             LCEResult result;
@@ -441,7 +455,8 @@ namespace mc
             result.history = Eigen::MatrixXd::Zero(ortho_steps, n_lce);
 
             // Инициализация матрицы возмущений единичной матрицей
-            Eigen::MatrixXd W = Eigen::MatrixXd::Identity(dim, dim);
+            using PerturbationBasis = Eigen::Matrix<double, N, Eigen::Dynamic>;
+            PerturbationBasis W = PerturbationBasis::Identity(N, n_lce);
 
             Eigen::VectorXd lce_sums = Eigen::VectorXd::Zero(n_lce);
             Eigen::VectorXd current_norms = Eigen::VectorXd::Zero(n_lce);
@@ -452,9 +467,9 @@ namespace mc
             bool is_singularity_now = false;
             for (int step = 1; step <= num_iterations; ++step)
             {
-                Vec current_x = system->GetX();
+                const auto current_x = system.GetX();
                 // memoize = true, потому что мы предсказываем следующую точку
-                Vec next_x = system->ShiftTrajNext(current_x, system->GetT(), true);
+                const auto next_x = system.ShiftTrajNext(current_x, system.GetT(), true);
 
                 if (is_next_singularity)
                 {
@@ -467,14 +482,14 @@ namespace mc
                 // "Заглядываем" на шаг вперёд (без изменения состояния системы), 
                 // чтобы понять, пересечем ли мы поверхность потери гладкости.
                 // Интегрирование касательного пространства (уравнений в вариациях)
-                Eigen::MatrixXd W_next(dim, dim);
+                PerturbationBasis W_next(N, n_lce);
                 for (int i = 0; i < n_lce; ++i)
                 {
-                    W_next.col(i) = system->NextLTM(W.col(i));
+                    W_next.col(i) = system.NextLTM(W.col(i));
                 }
 
                 // Делаем физический шаг системы (обновляет внутренние m_X и m_T)
-                system->Next();
+                system.Next();
 
                 // Если попали на точку сингулярности ИЛИ подошло время плановой ортогонализации
                 if (is_next_singularity || (!is_singularity_now && (step > 0 && step % orto_step == 0)))
@@ -507,7 +522,7 @@ namespace mc
 
                 // Запись в историю. LCE = (Сумма логарифмов) / Время
                 // Для первого шага предотвращаем деление на ноль
-                double time_divisor = (system->GetT() > 0.0) ? system->GetT() : dt;
+                double time_divisor = (system.GetT() > 0.0) ? system.GetT() : dt;
                 for (int i = 0; i < n_lce; ++i)
                 {
                     result.history(hist_idx, i) = lce_sums(i) / time_divisor;
@@ -517,10 +532,10 @@ namespace mc
             result.history.conservativeResize(hist_idx, Eigen::NoChange);
 
             // Вычисляем итоговые показатели как предел усредненной суммы
-            result.spectrum = lce_sums / system->GetT();
+            result.spectrum = lce_sums / system.GetT();
 
-            system->ResetArgs();
-            system->Reset();
+            system.ResetArgs();
+            system.Reset();
 
             return result;
         }
@@ -552,7 +567,8 @@ namespace mc
             std::optional<uint32_t> m_End = std::nullopt;
         };
 
-        using SolutionFn = std::function<Eigen::VectorXd(Ref<DynamicalSystem> system,
+        template <int N>
+        using SolutionFn = std::function<Eigen::VectorXd(DynamicalSystem<N> &system,
                                                          const std::unordered_map<DSArgs::key_type, Vote> &args)>;
         using SolutionsMetricFn = std::function<MetricResult(const Eigen::VectorXd &)>;
         using MetricsCompareFn = std::function<bool(double, double)>;
@@ -643,7 +659,9 @@ namespace mc
          * @param comparator: compares results of applying metric for solutions
          * @returns vector of CoarseSearchResult
          */
-        inline std::vector<ParamsSearchResult> FindBestParams(Ref<DynamicalSystem> system, const SolutionFn &solve,
+        template <int N>
+        std::vector<ParamsSearchResult> FindBestParams(DynamicalSystem<N> &system,
+                                                      const std::type_identity_t<SolutionFn<N>> &solve,
                                                               const std::unordered_map<
                                                                   DSArgs::key_type, CandidateParams> &candidates,
                                                               const SolutionsMetricFn &metric = GrowthMetric,
@@ -675,11 +693,11 @@ namespace mc
 
             for (const auto &candidate : mc::utils::getNestedCombinations(coarse_grid))
             {
-                system->Reset();
+                system.Reset();
 
                 for (const auto &[param_name, param_value] : candidate)
                 {
-                    system->SetArg(param_name, param_value);
+                    system.SetArg(param_name, param_value);
                 }
 
                 Eigen::VectorXd solution = solve(system, candidate);
@@ -694,7 +712,7 @@ namespace mc
 
                 for (const auto &coarse_result : coarse_results)
                 {
-                    if (!isnan(coarse_result.metric.m_MetricValue))
+                    if (!std::isnan(coarse_result.metric.m_MetricValue))
                     {
                         if (!best_metric.has_value() || comparator(coarse_result.metric.m_MetricValue,
                                                                    best_metric.value().m_MetricValue))
@@ -725,16 +743,19 @@ namespace mc
         //#endregion ------------------------------------------ Find Best Params ------------------------------------------
 
         // TODO: remove
-        inline mc::json::JsonDocument DivergenceDegreeRegressionData(Ref<DynamicalSystem> system,
+        template <int N, typename Derived>
+        mc::json::JsonDocument DivergenceDegreeRegressionData(DynamicalSystem<N> &system,
                                                                      double timeForward,
-                                                                     double e, const Eigen::VectorXd &v,
+                                                                     double e, const Eigen::MatrixBase<Derived> &v,
                                                                      const Eigen::VectorXd &Ts, int M)
         {
             AL_PROFILE_FUNC("FindDivergenceDegree");
 
-            system->Reset();
+            using State = typename DynamicalSystem<N>::State;
+            const State direction = DynamicalSystem<N>::CheckedState(v);
+            system.Reset();
 
-            std::unordered_map<std::string, std::vector<Eigen::MatrixXd>>
+            std::unordered_map<std::string, std::vector<State>>
                 trajs1 = {}, trajs2 = {};
             std::vector<double> ns;
 
@@ -745,8 +766,8 @@ namespace mc
 
             for (const auto &T : Ts)
             {
-                std::vector<Eigen::MatrixXd> traj1, traj2;
-                const auto [n, t] = detail::divergenceDegree(system, timeForward, e, v, T, M, traj1, traj2);
+                std::vector<State> traj1, traj2;
+                const auto [n, t] = detail::divergenceDegree(system, timeForward, e, direction, T, M, traj1, traj2);
 
                 const auto strT = mc::doubleToString(T, 2);
 

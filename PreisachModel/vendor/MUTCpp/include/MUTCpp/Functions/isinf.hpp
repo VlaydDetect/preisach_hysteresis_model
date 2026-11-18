@@ -9,13 +9,13 @@
 #include <cmath>
 
 #include "Core/StaticAssert.hpp"
-#include "Core/Algorithm.hpp"
-#include "Matrix.hpp"
+#include <Eigen/Core>
 
 namespace mc
 {
     /// Test for inf and return result as a boolean.
     template <typename dtype>
+        requires (std::is_arithmetic_v<dtype> || mc::is_complex_v<dtype>)
     bool isinf(dtype inValue) noexcept
     {
         STATIC_ASSERT_FLOAT(dtype);
@@ -31,15 +31,12 @@ namespace mc
     ///
     /// @return Matrix
     ///
-    template <typename dtype>
-    Matrix<bool> isinf(const Matrix<dtype> &inArray)
+    template <typename Derived>
+    auto isinf(const Eigen::DenseBase<Derived> &inArray)
     {
-        Matrix<bool> returnArray(inArray.shape());
-        algo::transform(inArray.cbegin(),
-                        inArray.cend(),
-                        returnArray.begin(),
-                        [](dtype inValue) noexcept -> bool { return isinf(inValue); });
-
-        return returnArray;
+        return inArray.derived().unaryExpr([](const auto &inValue)
+        {
+            return mc::isinf(inValue);
+        }).eval();
     }
 }

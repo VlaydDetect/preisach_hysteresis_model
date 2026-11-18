@@ -6,14 +6,14 @@
 
 #pragma once
 
+#include <Eigen/Core>
+
 #include <algorithm>
 #include <random>
 #include <string>
 
 #include "Core/Error.hpp"
 #include "Core/StaticAssert.hpp"
-#include "Core/Shape.hpp"
-#include "Matrix.hpp"
 #include "Random/generator.hpp"
 
 namespace mc
@@ -44,12 +44,12 @@ namespace mc
             /// Create an array of the given shape and populate it with
             /// random samples from a "normal" distribution.
             /// @param generator: instance of a random number generator
-            /// @param inShape
+            /// @param rows, columns
             /// @param inMean: Mean value of the underlying normal distribution. Default is 0.
             /// @param inSigma: Standard deviation of the underlying normal distribution. Should be greater than zero.
             ///     Default is 1.
             template <typename dtype, typename GeneratorType = std::mt19937>
-            Matrix<dtype> normal(GeneratorType &generator, const Shape &inShape, dtype inMean = 0, dtype inSigma = 1)
+            Eigen::MatrixX<dtype> normal(GeneratorType &generator, Eigen::Index rows, Eigen::Index columns, dtype inMean = 0, dtype inSigma = 1)
             {
                 STATIC_ASSERT_ARITHMETIC(dtype);
 
@@ -58,12 +58,12 @@ namespace mc
                     THROW_INVALID_ARGUMENT_ERROR("input sigma must be greater than zero.");
                 }
 
-                Matrix<dtype> returnArray(inShape);
+                Eigen::Matrix<dtype, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> returnArray(rows, columns);
 
                 std::normal_distribution<dtype> dist(inMean, inSigma);
 
-                std::for_each(returnArray.begin(),
-                              returnArray.end(),
+                std::for_each(returnArray.data(),
+                              returnArray.data() + returnArray.size(),
                               [&generator, &dist](dtype &value) -> void { value = dist(generator); });
 
                 return returnArray;
@@ -82,14 +82,14 @@ namespace mc
 
         /// Create an array of the given shape and populate it with
         /// random samples from a "normal" distribution.
-        /// @param inShape
+        /// @param rows, columns
         /// @param inMean: Mean value of the underlying normal distribution. Default is 0.
         /// @param inSigma: Standard deviation of the underlying normal distribution. Should be greater than zero.
         ///     Default is 1.
         template <typename dtype>
-        Matrix<dtype> normal(const Shape &inShape, dtype inMean = 0, dtype inSigma = 1)
+        Eigen::MatrixX<dtype> normal(Eigen::Index rows, Eigen::Index columns, dtype inMean = 0, dtype inSigma = 1)
         {
-            return detail::normal(generator_, inShape, inMean, inSigma);
+            return detail::normal(generator_, rows, columns, inMean, inSigma);
         }
     }
 }

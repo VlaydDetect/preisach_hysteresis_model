@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,18 +6,14 @@
 
 #pragma once
 
-#include <functional>
-
-#include "Core/Algorithm.hpp"
-#include "Matrix.hpp"
+#include <Eigen/Core>
+#include <utility>
 
 namespace mc
 {
-    /// Apply the input function element wise to the input
-    /// array in place.
-    template<typename dtype>
-    void applyFunction(Matrix<dtype>& inArray, const std::function<dtype(dtype)>& inFunc)
+    template <typename Derived, typename Function>
+    void applyFunction(Eigen::DenseBase<Derived> &input, Function function)
     {
-        algo::transform(inArray.begin(), inArray.end(), inArray.begin(), inFunc);
+        input.derived() = input.derived().unaryExpr(std::move(function)).eval();
     }
 }

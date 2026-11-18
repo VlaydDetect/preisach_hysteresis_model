@@ -6,11 +6,8 @@
 
 #pragma once
 
-#include "Functions/isnan.hpp"
-#include "Debug/Profile.hpp"
-#include "Eigen/utils.hpp"
+#include "MUTCpp/Utils/Profile.hpp"
 #include "MUTCpp/Utils/peaks_utils.hpp"
-#include "Vector/StaticVector.hpp"
 
 namespace mc
 {
@@ -81,11 +78,9 @@ namespace mc
     ///
     /// @note:
     /// Some additional comments on specifying conditions:
-    /// - Almost all conditions (excluding `distance` and 'wlen') can be given as half-open or
-    ///   closed intervals, e.g., ``1`` or ``(1, consts::nan)`` defines the half-open
-    ///   interval [1, @f$\infinity@f$] while ``(consts::nan, 1)`` defines the interval
-    ///   [@f$-\infinity@f$, 1]. The empty open interval ``(@f$\infinity@f$, @f$\infinity@f$)`` can be specified
-    ///   as well, which returns the matching properties without exclusion of peaks.
+    /// - Bounds are empty by default. Use `{lower}`, `{lower, upper}` or
+    ///   `{std::nullopt, upper}` to select an interval. An explicit NaN
+    ///   opens one end and allows requesting properties without filtering.
     /// - The border is always included in the interval used to select valid peaks.
     /// - The conditions are evaluated in the following order: `plateau_size`,
     ///   `height`, `threshold`, `distance`, `prominence`, `width`. In most cases,
@@ -123,17 +118,17 @@ namespace mc
     ///     and the second, if supplied as the maximal required plateau size.
     /// @return Pair of matrix of peaks and `@link PeaksProperties`.
     inline std::pair<ArrayXI, PeaksProperties> find_peaks(const ArrayXd &x,
-                                                          const StaticVector<double, 2> &height = {},
-                                                          const StaticVector<double, 2> &threshold = {},
+                                                          const PeakBounds &height = {},
+                                                          const PeakBounds &threshold = {},
                                                           double distance = consts::nan,
-                                                          const StaticVector<double, 2> &prominence = {},
-                                                          const StaticVector<double, 2> &width = {},
+                                                          const PeakBounds &prominence = {},
+                                                          const PeakBounds &width = {},
                                                           int wlen = 0, double rel_height = consts::nan,
-                                                          const StaticVector<double, 2> &plateau_size = {})
+                                                          const PeakBounds &plateau_size = {})
     {
         AL_PROFILE_FUNC("find_peaks");
 
-        if (!isnan(distance) && distance < 1)
+        if (!std::isnan(distance) && distance < 1)
         {
             THROW_INVALID_ARGUMENT_ERROR("`distance` must be greater or equal to 1");
         }
@@ -156,7 +151,8 @@ namespace mc
             });
         };
 
-        if (!plateau_size.empty())
+        const auto has_bounds = [](const PeakBounds &bounds) { return bounds[0] || bounds[1]; };
+        if (has_bounds(plateau_size))
         {
             // Evaluate plateau size
             properties.plateau_sizes = (right_edges - left_edges) + 1;
@@ -170,7 +166,7 @@ namespace mc
             if (peaks.size() == 0) return {peaks, properties}; // Ранний выход
         }
 
-        if (!height.empty())
+        if (has_bounds(height))
         {
             // Evaluate height condition
             properties.peak_heights = x(peaks);
@@ -181,7 +177,7 @@ namespace mc
             if (peaks.size() == 0) return {peaks, properties};
         }
 
-        if (!threshold.empty())
+        if (has_bounds(threshold))
         {
             // Evaluate threshold condition
             auto [tmin, tmax] = unpack_condition_args(threshold);
@@ -194,14 +190,14 @@ namespace mc
             if (peaks.size() == 0) return {peaks, properties};
         }
 
-        if (!isnan(distance))
+        if (!std::isnan(distance))
         {
             auto keep = select_by_peak_distance(peaks, x(peaks), distance);
             apply_mask(keep);
             if (peaks.size() == 0) return {peaks, properties};
         }
 
-        if (!prominence.empty() || !width.empty())
+        if (has_bounds(prominence) || has_bounds(width))
         {
             // Calculate prominence (required for both conditions)
             wlen = arg_wlen_as_expected(wlen);
@@ -211,7 +207,7 @@ namespace mc
             properties.right_bases = new_right_bases;
         }
 
-        if (!prominence.empty())
+        if (has_bounds(prominence))
         {
             // Evaluate prominence condition
             auto [pmin, pmax] = unpack_condition_args(prominence);
@@ -221,7 +217,7 @@ namespace mc
             if (peaks.size() == 0) return {peaks, properties};
         }
 
-        if (!width.empty())
+        if (has_bounds(width))
         {
             // Calculate widths
             auto [new_widths, new_width_heights, new_left_ips, new_right_ips] = peak_widths(

@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,56 +6,32 @@
 
 #pragma once
 
-#include "Core/Algorithm.hpp"
-#include "Core/Types.hpp"
-#include "Matrix.hpp"
+#include "Utils/DenseOperations.hpp"
 
 namespace mc
 {
-    /// Reverse the order of elements in an array along the given axis.
-    template<typename dtype>
-    Matrix<dtype> flip(const Matrix<dtype>& inArray, Axis inAxis = Axis::NONE)
+    template <typename Derived>
+    Eigen::MatrixX<typename Derived::Scalar> flip(const Eigen::DenseBase<Derived> &input, Axis axis = Axis::NONE)
     {
-        switch (inAxis)
+        const auto &values = input.derived();
+        switch (axis)
         {
-        case Axis::NONE:
-        {
-            Matrix<dtype> returnArray(inArray);
-            algo::reverse(returnArray.begin(), returnArray.end());
-            return returnArray;
+        case Axis::NONE: return values.reverse();
+        case Axis::COL: return values.rowwise().reverse();
+        case Axis::ROW: return values.colwise().reverse();
         }
-        case Axis::COL:
-        {
-            Matrix<dtype> returnArray(inArray);
-            for (uint32 row = 0; row < inArray.shape().rows; ++row)
-            {
-                algo::reverse(returnArray.begin(row), returnArray.end(row));
-            }
-            return returnArray;
-        }
-        case Axis::ROW:
-        {
-            return flip(inArray.transpose(), Axis::COL).transpose();
-        }
-        default:
-        {
-            THROW_INVALID_ARGUMENT_ERROR("Unimplemented axis type.");
-            return {}; // get rid of compiler warning
-        }
-        }
+        throw std::invalid_argument("Unsupported axis");
     }
 
-    /// Flip array in the left/right direction.
-    template<typename dtype>
-    Matrix<dtype> fliplr(const Matrix<dtype>& inArray)
+    template <typename Derived>
+    auto flipud(const Eigen::DenseBase<Derived> &input)
     {
-        return flip(inArray, Axis::COL);
+        return flip(input, Axis::ROW);
     }
 
-    /// Flip array in the up/down direction.
-    template<typename dtype>
-    Matrix<dtype> flipud(const Matrix<dtype>& inArray)
+    template <typename Derived>
+    auto fliplr(const Eigen::DenseBase<Derived> &input)
     {
-        return flip(inArray, Axis::ROW);
+        return flip(input, Axis::COL);
     }
 }

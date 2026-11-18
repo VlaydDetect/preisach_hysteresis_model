@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,30 +6,15 @@
 
 #pragma once
 
-#include <algorithm>
-
-#include "Matrix.hpp"
+#include "Utils/DenseOperations.hpp"
 #include "Random/generator.hpp"
 
-namespace mc
+namespace mc::random
 {
-    namespace random
+    template <typename Derived>
+    void shuffle(Eigen::DenseBase<Derived> &input)
     {
-        namespace detail
-        {
-            /// Modify a sequence in-place by shuffling its contents.
-            template <typename dtype, typename GeneratorType = std::mt19937>
-            void shuffle(GeneratorType &generator, Matrix<dtype> &inArray)
-            {
-                std::shuffle(inArray.begin(), inArray.end(), generator);
-            }
-        }
-
-        /// Modify a sequence in-place by shuffling its contents.
-        template <typename dtype>
-        void shuffle(Matrix<dtype> &inArray)
-        {
-            return detail::shuffle(generator_, inArray);
-        }
+        auto values = mc::detail::rowMajor(input);
+        std::shuffle(values.begin(), values.end(), generator_);
     }
 }

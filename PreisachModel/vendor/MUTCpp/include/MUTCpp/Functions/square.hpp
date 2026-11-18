@@ -6,14 +6,16 @@
 
 #pragma once
 
-#include "Core/Algorithm.hpp"
-#include "Matrix.hpp"
+#include <Eigen/Core>
+
+#include "Core/StaticAssert.hpp"
 #include "Utils/mathOperations.hpp"
 
 namespace mc
 {
     /// Return the square of an array.
     template <typename dtype>
+        requires (std::is_arithmetic_v<dtype> || mc::is_complex_v<dtype>)
     constexpr dtype square(dtype inValue) noexcept
     {
         STATIC_ASSERT_ARITHMETIC_OR_COMPLEX(dtype);
@@ -22,15 +24,12 @@ namespace mc
     }
 
     /// Return the square of an array, element-wise.
-    template <typename dtype>
-    Matrix<dtype> square(const Matrix<dtype> &inArray)
+    template <typename Derived>
+    auto square(const Eigen::DenseBase<Derived> &inArray)
     {
-        Matrix<dtype> returnArray(inArray.shape());
-        algo::transform(inArray.cbegin(),
-                        inArray.cend(),
-                        returnArray.begin(),
-                        [](dtype inValue) noexcept -> dtype { return square(inValue); });
-
-        return returnArray;
+        return inArray.derived().unaryExpr([](const auto &inValue)
+        {
+            return mc::square(inValue);
+        }).eval();
     }
 }

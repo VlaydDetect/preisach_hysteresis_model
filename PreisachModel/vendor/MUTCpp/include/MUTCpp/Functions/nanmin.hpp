@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,34 +6,21 @@
 
 #pragma once
 
+#include <Eigen/Core>
 #include <cmath>
-
-#include "Core/DtypeInfo.hpp"
-#include "Core/StaticAssert.hpp"
-#include "Core/Algorithm.hpp"
-#include "Core/Types.hpp"
+#include <limits>
 #include "Functions/min.hpp"
-#include "Matrix.hpp"
 
 namespace mc
 {
-    /// Return the minimum of an array or maximum along an axis ignoring NaNs.
-    template <typename dtype>
-    Matrix<dtype> nanmin(const Matrix<dtype> &inArray, Axis inAxis = Axis::NONE)
+    template <typename Derived>
+    auto nanmin(const Eigen::DenseBase<Derived> &input, Axis axis = Axis::NONE)
     {
-        STATIC_ASSERT_FLOAT(dtype);
-
-        Matrix<dtype> arrayCopy(inArray);
-        algo::for_each(arrayCopy.begin(),
-                       arrayCopy.end(),
-                       [](dtype &value) noexcept -> void
-                       {
-                           if (std::isnan(value))
-                           {
-                               value = DtypeInfo<dtype>::max();
-                           };
-                       });
-
-        return min(arrayCopy, inAxis);
+        using T = typename Derived::Scalar;
+        const auto cleaned = input.derived().unaryExpr([](T value)
+        {
+            return std::isnan(value) ? std::numeric_limits<T>::max() : value;
+        }).eval();
+        return mc::min(cleaned, axis);
     }
 }

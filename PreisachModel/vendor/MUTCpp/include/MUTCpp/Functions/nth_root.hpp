@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,33 +6,25 @@
 
 #pragma once
 
-#include "Core/StaticAssert.hpp"
-#include "Core/Algorithm.hpp"
-#include "Matrix.hpp"
-#include "Utils/mathOperations.hpp"
+#include <Eigen/Core>
+#include <cmath>
+#include <algorithm>
 
 namespace mc
 {
-    /// Return the nth-root of a value.
-    template <typename dtype1, typename dtype2>
-    double nth_root(dtype1 inValue, dtype2 inRoot) noexcept
+    template <typename T>
+        requires std::is_arithmetic_v<T>
+    auto nth_root(T value, double root)
     {
-        STATIC_ASSERT_ARITHMETIC(dtype1);
-        STATIC_ASSERT_ARITHMETIC(dtype2);
-
-        return utils::powerf(static_cast<double>(inValue), 1. / static_cast<double>(inRoot));
+        return std::pow(value, 1.0 / root);
     }
 
-    /// Return the nth-root of an array.
-    template <typename dtype1, typename dtype2>
-    Matrix<double> nth_root(const Matrix<dtype1> &inArray, dtype2 inRoot)
+    template <typename Derived>
+    auto nth_root(const Eigen::DenseBase<Derived> &input, double root)
     {
-        Matrix<double> returnArray(inArray.shape());
-        algo::transform(inArray.cbegin(),
-                        inArray.cend(),
-                        returnArray.begin(),
-                        [inRoot](dtype1 inValue) noexcept -> double { return nth_root(inValue, inRoot); });
-
-        return returnArray;
+        return input.derived().unaryExpr([&](const auto &value)
+        {
+            return mc::nth_root(value, root);
+        }).eval();
     }
 }

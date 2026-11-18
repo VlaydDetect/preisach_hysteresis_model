@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,19 +6,13 @@
 
 #pragma once
 
-#include "Core/Types.hpp"
-#include "Matrix.hpp"
+#include "Functions/diagonal.hpp"
 
 namespace mc
 {
-    /// Return the sum along diagonals of the array.
-    /// @param inArray
-    /// @param inOffset: (Offset from main diagonal, default = 0, negative=above, positive=below)
-    /// @param inAxis (Optional, default ROW)
-    /// @return Matrix
-    template <typename dtype>
-    dtype trace(const Matrix<dtype> &inArray, int16 inOffset = 0, Axis inAxis = Axis::ROW) noexcept
+    template <typename Derived>
+    typename Derived::Scalar trace(const Eigen::DenseBase<Derived> &input, Eigen::Index offset = 0, Axis axis = Axis::ROW)
     {
-        return inArray.trace(inOffset, inAxis);
+        return diagonal(input, offset, axis).sum();
     }
 }

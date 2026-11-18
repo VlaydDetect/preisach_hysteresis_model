@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,34 +6,18 @@
 
 #pragma once
 
-#include "Core/StaticAssert.hpp"
-#include "Core/Types.hpp"
-#include "Matrix.hpp"
+#include "Utils/DenseOperations.hpp"
+#include <cstdlib>
 
 namespace mc
 {
-    /// Create a two-dimensional array with the flattened input as a diagonal.
-    /// @param inArray
-    /// @param k Diagonal to set; 0, the default, corresponds to the �main� diagonal,
-    /// a positive (negative) k giving the number of the diagonal above (below) the main.
-    /// @return Matrix
-    template <typename dtype>
-    Matrix<dtype> diagflat(const Matrix<dtype> &inArray, int32 k = 0)
+    template <typename Derived>
+    Eigen::MatrixX<typename Derived::Scalar> diagflat(const Eigen::DenseBase<Derived> &input, Eigen::Index offset = 0)
     {
-        STATIC_ASSERT_ARITHMETIC_OR_COMPLEX(dtype);
-
-        const auto absK = static_cast<uint32>(std::abs(k));
-        Matrix<dtype> returnArray(inArray.size() + absK);
-
-        const uint32 rowOffset = k < 0 ? absK : 0;
-        const uint32 colOffset = k > 0 ? absK : 0;
-
-        returnArray.zeros();
-        for (uint32 i = 0; i < inArray.size(); ++i)
-        {
-            returnArray(i + rowOffset, i + colOffset) = inArray[i];
-        }
-
-        return returnArray;
+        using T = typename Derived::Scalar;
+        const Eigen::Index size = input.size() + std::abs(offset);
+        Eigen::MatrixX<T> result = Eigen::MatrixX<T>::Zero(size, size);
+        if (input.size() != 0) result.diagonal(offset) = detail::rowMajor(input);
+        return result;
     }
 }

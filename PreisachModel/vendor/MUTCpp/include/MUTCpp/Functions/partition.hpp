@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,26 +6,24 @@
 
 #pragma once
 
-#include "Core/Types.hpp"
-#include "Matrix.hpp"
+#include "Utils/DenseOperations.hpp"
 
 namespace mc
 {
-    /// Rearranges the elements in the array in such a way that
-    /// the value of the element in kth position is in the position it
-    /// would be in a sorted array. All elements smaller than the kth
-    /// element are moved before this element and all equal or greater
-    /// are moved behind it. The ordering of the elements in the two
-    /// partitions is undefined.
-    /// @param inArray
-    /// @param inKth: kth element
-    /// @param inAxis (Optional, default NONE)
-    /// @return Matrix
-    template <typename dtype>
-    Matrix<dtype> partition(const Matrix<dtype> &inArray, uint32 inKth, Axis inAxis = Axis::NONE)
+    template <typename Derived>
+    Eigen::MatrixX<typename Derived::Scalar> partition(const Eigen::DenseBase<Derived> &input, Eigen::Index kth, Axis axis = Axis::NONE)
     {
-        Matrix<dtype> returnArray(inArray);
-        returnArray.partition(inKth, inAxis);
-        return returnArray;
+        auto transformed = detail::mapAxis(input, axis, 0, [&](const auto &slice)
+        {
+            Eigen::RowVectorX<typename Derived::Scalar> values = detail::rowMajor(slice).transpose();
+            if (kth < 0 || kth >= values.size()) throw std::out_of_range("Partition index");
+            std::nth_element(values.begin(), values.begin() + kth, values.end());
+            return values;
+        });
+        if (axis == Axis::NONE)
+        {
+            return transformed.template reshaped<Eigen::RowMajor>(input.rows(), input.cols()).eval();
+        }
+        return transformed;
     }
 }

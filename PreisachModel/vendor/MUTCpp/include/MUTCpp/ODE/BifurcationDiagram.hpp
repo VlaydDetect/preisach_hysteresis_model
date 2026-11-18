@@ -7,7 +7,7 @@
 #pragma once
 
 #include "Functions/find_extrema.hpp"
-#include "DSArgs.hpp"
+#include "DynamicSystem.hpp"
 #include "Json/JsonDocument.hpp"
 
 namespace mc
@@ -84,14 +84,15 @@ namespace mc
             }
         }
 
-        inline json::JsonDocument BifurcationDiagram(Ref<DynamicalSystem> system,
+        template <int N>
+        json::JsonDocument BifurcationDiagram(DynamicalSystem<N> &system,
                                                      const std::pair<std::string, std::vector<Vote>> &bifurcationParam,
                                                      double researchTime,
                                                      double timeForward,
                                                      uint32_t var_idx = 0)
         {
-            system->ResetArgs();
-            system->Reset();
+            system.ResetArgs();
+            system.Reset();
 
             const auto &[param_name, param_value] = bifurcationParam;
 
@@ -100,19 +101,19 @@ namespace mc
 
             WriteVotesToDoc(message, param_name, param_value, param_value[0].Type());
 
-            Eigen::MatrixXd trajs =
+            detail::MatrixRowMajor trajs =
                 detail::MatrixRowMajor::Zero(param_value.size(),
-                                             static_cast<Eigen::Index>(researchTime / system->GetDeltaTime()) + 1);
+                                             static_cast<Eigen::Index>(researchTime / system.GetDeltaTime()) + 1);
 
             for (int i = 0; i < param_value.size(); ++i)
             {
-                system->Reset();
-                system->SetArg(param_name, param_value[i]);
+                system.Reset();
+                system.SetArg(param_name, param_value[i]);
 
-                system->Forward(timeForward);
+                system.Forward(timeForward);
 
-                const auto traj = system->Forward(researchTime);
-                trajs.row(i) = traj.col(var_idx);
+                const auto traj = system.Forward(researchTime);
+                trajs.row(i) = traj.col(var_idx).transpose();
             }
 
             const auto biff_data = detail::extract_bifurcation_extrema(param_value, trajs);
@@ -123,8 +124,8 @@ namespace mc
 
             // message.AddField("trajs", trajs);
 
-            system->ResetArgs();
-            system->Reset();
+            system.ResetArgs();
+            system.Reset();
             
             return message;
         }

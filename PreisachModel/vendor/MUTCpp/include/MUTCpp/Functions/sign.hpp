@@ -10,8 +10,7 @@
 
 #include "Core/Types.hpp"
 #include "Core/StaticAssert.hpp"
-#include "Core/Algorithm.hpp"
-#include "Matrix.hpp"
+#include <Eigen/Core>
 
 namespace mc
 {
@@ -19,6 +18,7 @@ namespace mc
     /// The sign function returns - 1 if x < 0, 0 if x == 0, 1 if x > 0.
     /// nan is returned for nan inputs.
     template <typename dtype>
+        requires (std::is_arithmetic_v<dtype> || mc::is_complex_v<dtype>)
     int8 sign(dtype inValue) noexcept
     {
         STATIC_ASSERT_ARITHMETIC_OR_COMPLEX(dtype);
@@ -39,15 +39,12 @@ namespace mc
     /// Returns an element-wise indication of the sign of a number.
     /// The sign function returns - 1 if x < 0, 0 if x == 0, 1 if x > 0.
     /// nan is returned for nan inputs.
-    template <typename dtype>
-    Matrix<int8> sign(const Matrix<dtype> &inArray)
+    template <typename Derived>
+    auto sign(const Eigen::DenseBase<Derived> &inArray)
     {
-        Matrix<int8> returnArray(inArray.shape());
-        algo::transform(inArray.cbegin(),
-                        inArray.cend(),
-                        returnArray.begin(),
-                        [](dtype inValue) noexcept -> int8 { return sign(inValue); });
-
-        return returnArray;
+        return inArray.derived().unaryExpr([](const auto &inValue)
+        {
+            return mc::sign(inValue);
+        }).eval();
     }
 }

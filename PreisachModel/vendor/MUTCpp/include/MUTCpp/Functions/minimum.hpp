@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,45 +6,39 @@
 
 #pragma once
 
+#include "Utils/DenseOperations.hpp"
 #include <cmath>
-#include <complex>
-#include <string>
-
-#include "Core/Error.hpp"
-#include "Core/StaticAssert.hpp"
-#include "Core/Algorithm.hpp"
-#include "Matrix.hpp"
-#include "Matrix/MatrixBroadcast.hpp"
 
 namespace mc
 {
-    /// Element-wise minimum of array elements.
-    template <typename dtype>
-    Matrix<dtype> minimum(const Matrix<dtype> &inArray1, const Matrix<dtype> &inArray2)
+    template <typename T>
+        requires std::is_arithmetic_v<T>
+    T minimum(T left, T right)
     {
-        STATIC_ASSERT_ARITHMETIC_OR_COMPLEX(dtype);
-
-        const auto comparitor = [](const dtype &lhs, const dtype &rhs) noexcept -> bool { return lhs < rhs; };
-        return broadcast::broadcaster<dtype>(inArray1,
-                                             inArray2,
-                                             [&comparitor](const dtype &value1, const dtype &value2)
-                                             {
-                                                 return std::min(value1, value2, comparitor);
-                                             });
+        return static_cast<T>(std::min(left, right));
     }
 
-    /// Element-wise minimum of array elements.
-    template <typename dtype>
-    Matrix<dtype> minimum(const Matrix<dtype> &inArray, const dtype &inScalar)
+    template <typename Left, typename Right>
+    auto minimum(const Eigen::DenseBase<Left> &left, const Eigen::DenseBase<Right> &right)
     {
-        const Matrix<dtype> inArray2 = {inScalar};
-        return minimum(inArray, inArray2);
+        return detail::broadcast(left, right, [](auto a, auto b)
+        {
+            return mc::minimum(a, static_cast<decltype(a)>(b));
+        });
     }
 
-    /// Element-wise minimum of array elements.
-    template <typename dtype>
-    Matrix<dtype> minimum(const dtype &inScalar, const Matrix<dtype> &inArray)
+    template <typename Derived>
+    auto minimum(const Eigen::DenseBase<Derived> &input, typename Derived::Scalar other)
     {
-        return minimum(inArray, inScalar);
+        return input.derived().unaryExpr([&](const auto &value)
+        {
+            return mc::minimum(value, other);
+        }).eval();
+    }
+
+    template <typename Derived>
+    auto minimum(typename Derived::Scalar other, const Eigen::DenseBase<Derived> &input)
+    {
+        return minimum(input, other);
     }
 }

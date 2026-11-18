@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,37 +6,21 @@
 
 #pragma once
 
-#include <complex>
-
-#include "Core/DtypeInfo.hpp"
-#include "Core/StaticAssert.hpp"
-#include "Core/Algorithm.hpp"
-#include "Matrix.hpp"
+#include "Utils/DenseOperations.hpp"
+#include "Utils/essentiallyEqual.hpp"
 
 namespace mc
 {
-    /// Returns True if input arrays are shape consistent and all elements equal.
-    ///
-    /// Shape consistent means they are either the same shape, or one input array
-    /// can be broadcasted to create the same shape as the other one.
-    template<typename dtype>
-    bool array_equiv(const Matrix<dtype>& inArray1, const Matrix<dtype>& inArray2) noexcept
+    template <typename Left, typename Right>
+    bool array_equiv(const Eigen::DenseBase<Left> &left, const Eigen::DenseBase<Right> &right)
     {
-        STATIC_ASSERT_ARITHMETIC_OR_COMPLEX(dtype);
-
-        if (inArray1.size() != inArray2.size())
+        if (left.size() != right.size()) return false;
+        const auto a = detail::rowMajor(left);
+        const auto b = detail::rowMajor(right);
+        return std::equal(a.begin(), a.end(), b.begin(), [](auto x, auto y)
         {
-            return false;
-        }
-
-        if (DtypeInfo<dtype>::isInteger())
-        {
-            return algo::equal(inArray1.cbegin(), inArray1.cend(), inArray2.cbegin());
-        }
-
-        const auto comparitor = [](dtype value1, dtype value2) noexcept -> bool
-        { return utils::essentiallyEqual(value1, value2); };
-
-        return algo::equal(inArray1.cbegin(), inArray1.cend(), inArray2.cbegin(), comparitor);
+            if constexpr (std::is_integral_v<decltype(x)> && std::is_integral_v<decltype(y)>) return x == y;
+            else return utils::essentiallyEqual(x, static_cast<decltype(x)>(y));
+        });
     }
 }

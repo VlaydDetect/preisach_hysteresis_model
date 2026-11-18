@@ -6,10 +6,11 @@
 
 #pragma once
 
+#include <functional>
+#include <optional>
+
 #include "ModelBase.hpp"
-#include "MUTCpp/Integrate.hpp"
 #include "Utils/gauss_area.hpp"
-#include "hep/mc.hpp"
 
 namespace mc
 {
@@ -266,7 +267,6 @@ namespace mc
     private:
         double m_PreviousArea = 0.0;
         bool m_IsDownZero = false;
-        Matrix<double> m_D = {0.0, 0.0};
 
         std::optional<EverettFunction> m_EverettFunction = std::nullopt;
     };
@@ -277,10 +277,10 @@ namespace mc
         DoubleArealPreisachModel(double L, double d, double k, bool keepDerivative = false) :
             DoublePreisachModel(L, d, k, keepDerivative)
         {
-            m_UpperModel = Ref<ArealPreisachModel>::Create(m_L, keepDerivative);
+            m_UpperModel = std::make_unique<ArealPreisachModel>(m_L, keepDerivative);
             m_UpperModel->SetBounds({d, 2. * L + d});
 
-            m_LowerModel = Ref<ArealPreisachModel>::Create(m_L, keepDerivative);
+            m_LowerModel = std::make_unique<ArealPreisachModel>(m_L, keepDerivative);
             m_LowerModel->SetBounds({-2. * L - d, -d});
         }
 

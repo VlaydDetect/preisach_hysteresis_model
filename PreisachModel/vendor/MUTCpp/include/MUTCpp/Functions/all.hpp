@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,14 +6,22 @@
 
 #pragma once
 
-#include "Matrix.hpp"
+#include "Utils/DenseOperations.hpp"
+#include "Utils/essentiallyEqual.hpp"
 
 namespace mc
 {
-    /// Test whether all array elements along a given axis evaluate to True.
-    template<typename dtype>
-    Matrix<bool> all(const Matrix<dtype>& inArray, Axis inAxis = Axis::NONE)
+    template <typename Derived>
+    auto all(const Eigen::DenseBase<Derived> &input, Axis axis = Axis::NONE)
     {
-        return inArray.all(inAxis);
+        using Scalar = typename Derived::Scalar;
+        return detail::reduce(input, axis, [](const auto &values)
+        {
+            const auto isNonzero = [](const Scalar &value)
+            {
+                return !utils::essentiallyEqual(value, Scalar{});
+            };
+            return values.unaryExpr(isNonzero).all();
+        });
     }
 }

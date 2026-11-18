@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,31 +6,18 @@
 
 #pragma once
 
-#include "Core/Constants.hpp"
-#include "Core/Shape.hpp"
-#include "Functions/full.hpp"
-#include "Matrix.hpp"
+#include <Eigen/Core>
+#include <limits>
 
 namespace mc
 {
-    /// Return a new array of given shape and type, filled with nans.
-    /// Only really works for dtype = float/double
-    inline Matrix<double> nans(uint32 inSquareSize)
+    inline Eigen::MatrixXd nans(Eigen::Index rows, Eigen::Index columns)
     {
-        return full(inSquareSize, consts::nan);
+        return Eigen::MatrixXd::Constant(rows, columns, std::numeric_limits<double>::quiet_NaN());
     }
-    
-    /// Return a new array of given shape and type, filled with nans.
-    /// Only really works for dtype = float/double
-    inline Matrix<double> nans(uint32 inNumRows, uint32 inNumCols)
+
+    inline Eigen::MatrixXd nans(Eigen::Index size)
     {
-        return full(inNumRows, inNumCols, consts::nan);
-    }
-    
-    /// Return a new array of given shape and type, filled with nans.
-    /// Only really works for dtype = float/double
-    inline Matrix<double> nans(const Shape& inShape)
-    {
-        return full(inShape, consts::nan);
+        return nans(size, size);
     }
 }

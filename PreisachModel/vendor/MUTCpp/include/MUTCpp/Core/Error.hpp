@@ -30,7 +30,7 @@ namespace mc {
         /// @param msg: the message to throw (default "")
         ///
         template<typename ErrorType>
-        void throwError(const std::string &file, const std::string &function, const uint32 line,
+        [[noreturn]] void throwError(const std::string &file, const std::string &function, const uint32 line,
                         const std::string &msg = "") {
             std::string errMsg =
                     "File: " + file + "\n\tFunction: " + function + "\n\tLine: " + std::to_string(line) + "\n\tError: "

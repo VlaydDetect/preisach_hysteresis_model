@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,167 +6,45 @@
 
 #pragma once
 
-#include "Functions/round.hpp"
-#include "Linalg/det.hpp"
-#include "Matrix.hpp"
 #include "Rotations/Quaternion.hpp"
-#include "Utils/essentiallyEqual.hpp"
-#include "Vector/Vec3.hpp"
+#include "Functions/round.hpp"
+#include <Eigen/LU>
 
-namespace mc
+namespace mc::rotations
 {
-    namespace rotations
+    class DCM
     {
-        /// Factory methods for generating direction cosine matrices and vectors
-        class DCM
+    public:
+        static Eigen::Matrix3d eulerAngles(double roll, double pitch, double yaw)
         {
-        public:
-            //============================================================================
-            // Method Description:
-            /// returns a direction cosine matrix that rotates according
-            /// to the input euler angles
-            ///
-            /// @param roll: euler roll angle in radians
-            /// @param pitch: euler pitch angle in radians
-            /// @param yaw: euler yaw angle in radians
-            /// @return Matrix
-            ///
-            static Matrix<double> eulerAngles(double roll, double pitch, double yaw)
-            {
-                return Quaternion(roll, pitch, yaw).toDCM();
-            }
+            return Quaternion(roll, pitch, yaw).toDCM();
+        }
 
-            //============================================================================
-            // Method Description:
-            /// returns a direction cosine matrix that rotates according
-            /// to the input euler angles
-            ///
-            /// @param angles: euler roll, pitch, angles
-            /// @return Matrix
-            ///
-            static Matrix<double> eulerAngles(const Matrix<double> &angles)
-            {
-                return Quaternion(angles).toDCM();
-            }
+        static Eigen::Matrix3d eulerAngles(const Eigen::Vector3d &angles)
+        {
+            return eulerAngles(angles.x(), angles.y(), angles.z());
+        }
 
-            //============================================================================
-            // Method Description:
-            /// returns a direction cosine matrix that rotates about
-            /// the input axis by the input angle
-            ///
-            /// @param inAxis: euler axis cartesian vector with x,y,z components
-            /// @param inAngle: euler angle in radians
-            /// @return Matrix
-            ///
-            static Matrix<double> eulerAxisAngle(const Matrix<double> &inAxis, double inAngle)
-            {
-                return Quaternion(inAxis, inAngle).toDCM();
-            }
+        static Eigen::Matrix3d eulerAxisAngle(const Eigen::Vector3d &axis, double angle)
+        {
+            return Quaternion(axis, angle).toDCM();
+        }
 
-            //============================================================================
-            // Method Description:
-            /// returns a direction cosine matrix that rotates about
-            /// the input axis by the input angle
-            ///
-            /// @param inAxis: euler axis cartesian vector with x,y,z components
-            /// @param inAngle: euler angle in radians
-            /// @return Matrix
-            ///
-            static Matrix<double> eulerAxisAngle(const Vec3 &inAxis, double inAngle)
-            {
-                return Quaternion(inAxis, inAngle).toDCM();
-            }
+        template <typename Derived>
+        static bool isValid(const Eigen::DenseBase<Derived> &input)
+        {
+            if (input.rows() != input.cols()) return false;
+            const Eigen::MatrixXd matrix = input.derived().matrix().template cast<double>();
+            return utils::essentiallyEqual(round(matrix.determinant(), 2), 1.0) &&
+                   utils::essentiallyEqual(round(matrix.transpose().determinant(), 2), 1.0);
+        }
 
-            //============================================================================
-            // Method Description:
-            /// returns whether the input array is a direction cosine
-            /// matrix
-            ///
-            /// @param inArray
-            /// @return bool
-            ///
-            static bool isValid(const Matrix<double> &inArray)
-            {
-                const Shape inShape = inArray.shape();
-                return inShape.m_Rows == inShape.m_Cols &&
-                    utils::essentiallyEqual(round(linalg::det<double>(inArray), 2), 1.) &&
-                    utils::essentiallyEqual(round(linalg::det<double>(inArray.transpose()), 2), 1.);
-            }
+        static double roll(const Eigen::Matrix3d &dcm) { return Quaternion(dcm).roll(); }
+        static double pitch(const Eigen::Matrix3d &dcm) { return Quaternion(dcm).pitch(); }
+        static double yaw(const Eigen::Matrix3d &dcm) { return Quaternion(dcm).yaw(); }
 
-            //============================================================================
-            // Method Description:
-            /// The euler roll angle in radians
-            ///
-            /// @param dcm: a valid direction cosine matrix
-            /// @return euler roll angle in radians
-            ///
-            static double roll(const Matrix<double> &dcm)
-            {
-                return Quaternion(dcm).roll();
-            }
-
-            //============================================================================
-            // Method Description:
-            /// The euler pitch angle in radians
-            ///
-            /// @param dcm: a valid direction cosine matrix
-            /// @return euler pitch angle in radians
-            ///
-            static double pitch(const Matrix<double> &dcm)
-            {
-                return Quaternion(dcm).pitch();
-            }
-
-            //============================================================================
-            // Method Description:
-            /// The euler yaw angle in radians
-            ///
-            /// @param dcm: a valid direction cosine matrix
-            /// @return euler yaw angle in radians
-            ///
-            static double yaw(const Matrix<double> &dcm)
-            {
-                return Quaternion(dcm).yaw();
-            }
-
-            //============================================================================
-            // Method Description:
-            /// returns a direction cosine matrix that rotates about
-            /// the x axis by the input angle
-            ///
-            /// @param inAngle (in radians)
-            /// @return Matrix<double>
-            ///
-            static Matrix<double> xRotation(double inAngle)
-            {
-                return DCM::eulerAxisAngle(Vec3{1., 0., 0.}, inAngle);
-            }
-
-            //============================================================================
-            // Method Description:
-            /// returns a direction cosine matrix that rotates about
-            /// the x axis by the input angle
-            ///
-            /// @param inAngle (in radians)
-            /// @return Matrix<double>
-            ///
-            static Matrix<double> yRotation(double inAngle)
-            {
-                return DCM::eulerAxisAngle(Vec3{0., 1., 0.}, inAngle);
-            }
-
-            //============================================================================
-            // Method Description:
-            /// returns a direction cosine matrix that rotates about
-            /// the x axis by the input angle
-            ///
-            /// @param inAngle (in radians)
-            /// @return Matrix<double>
-            ///
-            static Matrix<double> zRotation(double inAngle)
-            {
-                return DCM::eulerAxisAngle(Vec3{0., 0., 1.}, inAngle);
-            }
-        };
-    }
+        static Eigen::Matrix3d xRotation(double angle) { return Quaternion::xRotation(angle).toDCM(); }
+        static Eigen::Matrix3d yRotation(double angle) { return Quaternion::yRotation(angle).toDCM(); }
+        static Eigen::Matrix3d zRotation(double angle) { return Quaternion::zRotation(angle).toDCM(); }
+    };
 }

@@ -12,7 +12,8 @@
 #include "Functions/logb.hpp"
 #include "Functions/logspace.hpp"
 #include "Functions/nth_root.hpp"
-#include "Matrix.hpp"
+#include <Eigen/Core>
+#include "Core/Types.hpp"
 #include "Utils/essentiallyEqual.hpp"
 
 namespace mc
@@ -33,7 +34,7 @@ namespace mc
     /// @return Matrix
     ///
     template <typename dtype>
-    Matrix<double> geomspace(dtype start, dtype stop, uint32 num = 50, EndPoint endPoint = EndPoint::YES)
+    Eigen::RowVectorX<double> geomspace(dtype start, dtype stop, uint32 num = 50, EndPoint endPoint = EndPoint::YES)
     {
         STATIC_ASSERT_ARITHMETIC_OR_COMPLEX(dtype);
 
@@ -44,11 +45,13 @@ namespace mc
 
         if (num == 1)
         {
-            return {static_cast<double>(start)};
+            return Eigen::RowVectorX<double>::Constant(1, static_cast<double>(start));
         }
         if (num == 2 && endPoint == EndPoint::YES)
         {
-            return {static_cast<double>(start), static_cast<double>(stop)};
+            Eigen::RowVectorX<double> values(2);
+            values << static_cast<double>(start), static_cast<double>(stop);
+            return values;
         }
 
         const auto base = nth_root(stop / start, num - 1);

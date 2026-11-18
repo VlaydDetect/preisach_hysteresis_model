@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,15 +6,22 @@
 
 #pragma once
 
-#include "Core/Types.hpp"
-#include "Matrix.hpp"
+#include "Utils/DenseOperations.hpp"
+#include "Utils/essentiallyEqual.hpp"
 
 namespace mc
 {
-    /// Find the indices of array elements that are non-zero, grouped by element.
-    template<typename dtype>
-    Matrix<uint32> argwhere(const Matrix<dtype>& inArray)
+    template <typename Derived>
+    Eigen::RowVectorX<Eigen::Index> argwhere(const Eigen::DenseBase<Derived> &input)
     {
-        return inArray.flatnonzero();
+        using T = typename Derived::Scalar;
+        const auto values = detail::rowMajor(input);
+        Eigen::RowVectorX<Eigen::Index> indices(values.size());
+        Eigen::Index count = 0;
+        for (Eigen::Index i = 0; i < values.size(); ++i)
+        {
+            if (!utils::essentiallyEqual(values(i), T{})) indices(count++) = i;
+        }
+        return indices.head(count);
     }
 }

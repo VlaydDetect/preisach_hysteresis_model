@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,26 +6,17 @@
 
 #pragma once
 
+#include "Functions/argwhere.hpp"
 #include <limits>
-
-#include "Core/Types.hpp"
-#include "Matrix.hpp"
 
 namespace mc
 {
-    /// Find flat indices of nonzero elements.
-    /// @param mask: the mask to apply to the array
-    /// @param n: the first n indices to return (optional, default all)
-    /// @return Matrix
-    inline Matrix<uint32> find(const Matrix<bool> &mask, uint32 n = std::numeric_limits<uint32>::max())
+    template <typename Derived>
+    requires std::is_same_v<typename Derived::Scalar, bool>
+    Eigen::RowVectorX<Eigen::Index> find(const Eigen::DenseBase<Derived> &mask, Eigen::Index count = (std::numeric_limits<Eigen::Index>::max)())
     {
-        Matrix<uint32> indices = mask.flatnonzero();
-
-        if (indices.size() <= n)
-        {
-            return indices;
-        }
-
-        return indices[Slice(0, n)];
+        if (count < 0) throw std::invalid_argument("Find count cannot be negative");
+        const auto indices = argwhere(mask);
+        return indices.head((std::min)(count, indices.size()));
     }
 }

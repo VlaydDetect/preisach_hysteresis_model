@@ -6,16 +6,12 @@
 
 #pragma once
 
-#include <cassert>
 #include <set>
 #include <map>
 
 #include <Eigen/Dense>
-#include "Eigen/utils.hpp"
+#include "MUTCpp/Utils/Eigen.hpp"
 
-#include "Matrix/MatrixCore.hpp"
-#include "Vector/Vec2.hpp"
-#include "Vector/Vec3.hpp"
 #include "vendor/json/nlohmann_json.hpp"
 
 #define ASSIGN_FIELDS(container, data)  \

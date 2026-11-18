@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,49 +6,38 @@
 
 #pragma once
 
+#include <Eigen/Core>
+#include "Core/Enums.hpp"
+#include <stdexcept>
 #include <vector>
-
-#include "split.hpp"
-#include "range.hpp"
-#include "Matrix.hpp"
 
 namespace mc
 {
-    /// Write an array to an STL vector of vectors
-    /// @return std::vector
-    template <typename dtype>
-    [[nodiscard]] std::vector<std::vector<dtype>> toVector(Matrix<dtype> inArray, Axis inAxis = Axis::ROW)
+    template <typename Derived>
+    [[nodiscard]] std::vector<std::vector<typename Derived::Scalar>> toVector(const Eigen::DenseBase<Derived> &input, Axis axis = Axis::ROW)
     {
-        if (inArray.isempty())
+        if (input.size() == 0) return {};
+        if (axis != Axis::ROW && axis != Axis::COL) throw std::invalid_argument("Unsupported axis");
+        std::vector<std::vector<typename Derived::Scalar>> result;
+        const auto &values = input.derived();
+        if (axis == Axis::ROW)
         {
-            return {};
+            result.reserve(values.rows());
+            for (Eigen::Index i = 0; i < values.rows(); ++i)
+            {
+                const auto row = values.row(i);
+                result.emplace_back(row.begin(), row.end());
+            }
         }
-        
-        switch (inAxis)
+        else
         {
-        case Axis::ROW:
-        {
-            std::vector<Matrix<dtype>> splitted = split(inArray, range(1,inArray.numRows()), Axis::ROW);
-            std::vector<std::vector<dtype>> res(inArray.numRows());
-            algo::transform(splitted.begin(), splitted.end(), res.begin(),
-                            [](auto &elem) { return elem.toFlattenVector(); });
-            return res;
+            result.reserve(values.cols());
+            for (Eigen::Index i = 0; i < values.cols(); ++i)
+            {
+                const auto col = values.col(i);
+                result.emplace_back(col.begin(), col.end());
+            }
         }
-
-        case Axis::COL:
-        {
-            std::vector<Matrix<dtype>> splitted = split(inArray, range(1, inArray.numCols()), Axis::COL);
-            std::vector<std::vector<dtype>> res(inArray.numCols());
-            algo::transform(splitted.begin(), splitted.end(), res.begin(),
-                            [](auto &elem) { return elem.toFlattenVector(); });
-            return res;
-        }
-
-        case Axis::NONE:
-        {
-            THROW_INVALID_ARGUMENT_ERROR("Unimplemented axis type.");
-            return {}; // get rid of compiler warning
-        }
-        }
+        return result;
     }
 }

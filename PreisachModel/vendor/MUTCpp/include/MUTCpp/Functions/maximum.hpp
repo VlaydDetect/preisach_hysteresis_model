@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,45 +6,39 @@
 
 #pragma once
 
+#include "Utils/DenseOperations.hpp"
 #include <cmath>
-#include <complex>
-#include <string>
-
-#include "Core/Error.hpp"
-#include "Core/StaticAssert.hpp"
-#include "Core/Algorithm.hpp"
-#include "Matrix.hpp"
-#include "Matrix/MatrixBroadcast.hpp"
 
 namespace mc
 {
-    /// Element-wise maximum of array elements.
-    template <typename dtype>
-    Matrix<dtype> maximum(const Matrix<dtype> &inArray1, const Matrix<dtype> &inArray2)
+    template <typename T>
+        requires std::is_arithmetic_v<T>
+    T maximum(T left, T right)
     {
-        STATIC_ASSERT_ARITHMETIC_OR_COMPLEX(dtype);
-
-        const auto comparitor = [](const dtype &lhs, const dtype &rhs) noexcept -> bool { return lhs < rhs; };
-        return broadcast::broadcaster<dtype>(inArray1,
-                                             inArray2,
-                                             [&comparitor](const dtype &value1, const dtype &value2)
-                                             {
-                                                 return std::max(value1, value2, comparitor);
-                                             });
+        return static_cast<T>(std::max(left, right));
     }
 
-    /// Element-wise maximum of array elements.
-    template <typename dtype>
-    Matrix<dtype> maximum(const Matrix<dtype> &inArray, const dtype &inScalar)
+    template <typename Left, typename Right>
+    auto maximum(const Eigen::DenseBase<Left> &left, const Eigen::DenseBase<Right> &right)
     {
-        const Matrix<dtype> inArray2 = {inScalar};
-        return maximum(inArray, inArray2);
+        return detail::broadcast(left, right, [](auto a, auto b)
+        {
+            return mc::maximum(a, static_cast<decltype(a)>(b));
+        });
     }
 
-    /// Element-wise maximum of array elements.
-    template <typename dtype>
-    Matrix<dtype> maximum(const dtype &inScalar, const Matrix<dtype> &inArray)
+    template <typename Derived>
+    auto maximum(const Eigen::DenseBase<Derived> &input, typename Derived::Scalar other)
     {
-        return maximum(inArray, inScalar);
+        return input.derived().unaryExpr([&](const auto &value)
+        {
+            return mc::maximum(value, other);
+        }).eval();
+    }
+
+    template <typename Derived>
+    auto maximum(typename Derived::Scalar other, const Eigen::DenseBase<Derived> &input)
+    {
+        return maximum(input, other);
     }
 }

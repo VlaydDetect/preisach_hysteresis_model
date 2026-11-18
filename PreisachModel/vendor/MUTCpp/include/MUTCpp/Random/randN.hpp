@@ -6,12 +6,12 @@
 
 #pragma once
 
+#include <Eigen/Core>
+
 #include <algorithm>
 #include <random>
 
 #include "Core/StaticAssert.hpp"
-#include "Core/Shape.hpp"
-#include "Matrix.hpp"
 #include "Random/generator.hpp"
 
 namespace mc
@@ -33,16 +33,16 @@ namespace mc
             /// Create an array of the given shape and populate it with
             /// random samples from the "standard normal" distribution.
             template <typename dtype, typename GeneratorType = std::mt19937>
-            Matrix<dtype> randN(GeneratorType &generator, const Shape &inShape)
+            Eigen::MatrixX<dtype> randN(GeneratorType &generator, Eigen::Index rows, Eigen::Index columns)
             {
                 STATIC_ASSERT_FLOAT(dtype);
 
-                Matrix<dtype> returnArray(inShape);
+                Eigen::Matrix<dtype, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> returnArray(rows, columns);
 
                 std::normal_distribution<dtype> dist;
 
-                std::for_each(returnArray.begin(),
-                              returnArray.end(),
+                std::for_each(returnArray.data(),
+                              returnArray.data() + returnArray.size(),
                               [&generator, &dist](dtype &value) -> void { value = dist(generator); });
 
                 return returnArray;
@@ -59,9 +59,9 @@ namespace mc
         /// Create an array of the given shape and populate it with
         /// random samples from the "standard normal" distribution.
         template <typename dtype>
-        Matrix<dtype> randN(const Shape &inShape)
+        Eigen::MatrixX<dtype> randN(Eigen::Index rows, Eigen::Index columns)
         {
-            return detail::randN<dtype>(generator_, inShape);
+            return detail::randN<dtype>(generator_, rows, columns);
         }
     }
 }

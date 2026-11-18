@@ -12,14 +12,14 @@
 
 #include <Eigen/Dense>
 
+#include <algorithm>
+#include <cmath>
+
+#include "Core/Constants.hpp"
 #include "Core/Error.hpp"
-#include "Core/Types.hpp"
-#include "Functions/abs.hpp"
-#include "Functions/exp.hpp"
 #include "Functions/expm1.hpp"
-#include "Functions/isinf.hpp"
-#include "Functions/log.hpp"
-#include "Functions/log1p.hpp"
+#include "Utils/essentiallyEqual.hpp"
+#include "Core/Types.hpp"
 #include "Json/JsonDocument.hpp"
 
 namespace mc
@@ -169,7 +169,7 @@ namespace mc
                 const ddouble bi = static_cast<ddouble>(b.derived().coeff(i));
                 ddouble ci = static_cast<ddouble>(c.derived().coeff(i));
 
-                if (mc::isinf(ai) || mc::isinf(bi) || mc::isinf(ci))
+                if (std::isinf(ai) || std::isinf(bi) || std::isinf(ci))
                 {
                     THROW_INVALID_ARGUMENT_ERROR("SzaboEverett: parameters must be finite");
                 }
@@ -180,7 +180,7 @@ namespace mc
                 }
 
                 // phi written through cosh is insensitive to sign(c).
-                ci = mc::abs(ci);
+                ci = std::abs(ci);
 
                 Component p;
                 p.a = ai;
@@ -191,9 +191,9 @@ namespace mc
 
                 p.r = bi / ci;
 
-                const ddouble abs_r = mc::abs(p.r);
+                const ddouble abs_r = std::abs(p.r);
 
-                p.k = mc::exp(-2.0L * abs_r);
+                p.k = std::exp(-2.0L * abs_r);
 
                 // 1 - exp(-2 |r|), without loss near r = 0.
                 p.s = -mc::expm1(-2.0L * abs_r);
@@ -292,7 +292,7 @@ namespace mc
 
                     double value = this->operator()(x, y);
 
-                    if (mc::isinf(value))
+                    if (std::isinf(value))
                     {
                         THROW_RUNTIME_ERROR("GetSurfaceData: Everett function returned a non-finite value");
                     }
@@ -312,7 +312,7 @@ namespace mc
                     }
                     else if (value < 0.0)
                     {
-                        const double scale = mc::max(1.0, mc::abs(value));
+                        const double scale = std::max(1.0, std::abs(value));
 
                         const double tolerance = 128.0 * std::numeric_limits<double>::epsilon() * scale;
 
@@ -453,11 +453,11 @@ namespace mc
             // Never evaluates exp(+large_number).
             if (x >= 0.0L)
             {
-                const ddouble e = mc::exp(-x);
+                const ddouble e = std::exp(-x);
                 return 1.0L / (1.0L + e);
             }
 
-            const ddouble e = mc::exp(x);
+            const ddouble e = std::exp(x);
             return e / (1.0L + e);
         }
 
@@ -475,8 +475,8 @@ namespace mc
             {
                 if (u >= 0.0L)
                 {
-                    const ddouble eu = mc::exp(-u);
-                    const ddouble ev = eu * mc::exp(-delta);
+                    const ddouble eu = std::exp(-u);
+                    const ddouble ev = eu * std::exp(-delta);
 
                     const ddouble numerator = eu * (-mc::expm1(-delta));
 
@@ -485,8 +485,8 @@ namespace mc
 
                 if (v <= 0.0L)
                 {
-                    const ddouble eu = mc::exp(u);
-                    const ddouble ev = eu * mc::exp(delta);
+                    const ddouble eu = std::exp(u);
+                    const ddouble ev = eu * std::exp(delta);
 
                     const ddouble numerator = eu * mc::expm1(delta);
 
@@ -503,7 +503,7 @@ namespace mc
         // R(0) = 1/2.
         static ddouble Log1pRemainderRatio(ddouble z) noexcept
         {
-            if (mc::abs(z) < 1.0e-4L)
+            if (std::abs(z) < 1.0e-4L)
             {
                 // z - log(1+z)
                 // = z^2/2 - z^3/3 + z^4/4 - ...
@@ -526,7 +526,7 @@ namespace mc
                 return result;
             }
 
-            return (z - mc::log1p(z)) / (z * z);
+            return (z - std::log1p(z)) / (z * z);
         }
 
         static ddouble EvaluateComponent(ddouble x, ddouble y, const Component &p) noexcept
@@ -609,7 +609,7 @@ namespace mc
 
             ddouble normalized;
 
-            if (mc::abs(z) < 0.125L)
+            if (std::abs(z) < 0.125L)
             {
                 // Rewrite so there is no s^2 cancellation:
                 //
@@ -624,7 +624,7 @@ namespace mc
             {
                 // Here cancellation is not dangerous.
                 // log(Dy/Dx) is equal to log(1+z).
-                const ddouble logRatio = mc::log(Dy) - mc::log(Dx);
+                const ddouble logRatio = std::log(Dy) - std::log(Dx);
 
                 normalized = (p.k / (p.s * p.s)) * (z - logRatio);
             }

@@ -10,13 +10,13 @@
 #include <complex>
 
 #include "MUTCpp/Core/StaticAssert.hpp"
-#include "MUTCpp/Core/Algorithm.hpp"
-#include "MUTCpp/Matrix.hpp"
+#include <Eigen/Core>
 
 namespace mc
 {
     /// Trigonometric inverse cosine
     template <typename dtype>
+        requires (std::is_arithmetic_v<dtype> || mc::is_complex_v<dtype>)
     auto arccos(dtype inValue) noexcept
     {
         STATIC_ASSERT_ARITHMETIC_OR_COMPLEX(dtype);
@@ -25,15 +25,12 @@ namespace mc
     }
 
     /// Trigonometric inverse cosine, element-wise.
-    template <typename dtype>
-    auto arccos(const Matrix<dtype> &inArray)
+    template <typename Derived>
+    auto arccos(const Eigen::DenseBase<Derived> &inArray)
     {
-        Matrix<decltype(arccos(dtype{0}))> returnArray(inArray.shape());
-        algo::transform(inArray.cbegin(),
-                        inArray.cend(),
-                        returnArray.begin(),
-                        [](dtype inValue) noexcept -> auto { return arccos(inValue); });
-
-        return returnArray;
+        return inArray.derived().unaryExpr([](const auto &inValue)
+        {
+            return mc::arccos(inValue);
+        }).eval();
     }
 }

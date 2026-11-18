@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,88 +6,61 @@
 
 #pragma once
 
+#include "Utils/DenseOperations.hpp"
 #include <initializer_list>
 #include <vector>
-
-#include "Core/Algorithm.hpp"
-#include "Core/Shape.hpp"
-#include "Core/Types.hpp"
-#include "Functions/column_stack.hpp"
-#include "Functions/row_stack.hpp"
 
 namespace mc
 {
     namespace detail
     {
-        /// Join a sequence of arrays along an existing axis.
-        /// @param begin: the begin iterator
-        /// @param end: the end iterator
-        /// @param inAxis (Optional, default NONE)
-        /// @return Matrix
-        template <typename dtype, typename Iterator>
-        Matrix<dtype> concatenate(Iterator begin, Iterator end, Axis inAxis = Axis::NONE)
+        template <typename Range>
+        auto concatenate(const Range &arrays, Axis axis)
         {
-            switch (inAxis)
+            using T = typename Range::value_type::Scalar;
+            if (axis != Axis::NONE && axis != Axis::ROW && axis != Axis::COL)
             {
-            case Axis::NONE:
-            {
-                uint32 finalSize = 0;
-                auto iter = begin;
-                while (iter != end)
-                {
-                    const auto &ndarray = *iter++;
-                    finalSize += ndarray.size();
-                }
+                throw std::invalid_argument("Unsupported axis");
+            }
 
-                Matrix<dtype> returnArray(1, finalSize);
-                uint32 offset = 0;
-                iter = begin;
-                while (iter != end)
+            Eigen::Index length = 0;
+            Eigen::Index width = -1;
+            for (const auto &array : arrays)
+            {
+                if (array.rows() == 0 && array.cols() == 0) continue;
+                if (axis != Axis::NONE)
                 {
-                    const auto &ndarray = *iter++;
-                    algo::copy(ndarray.cbegin(), ndarray.cend(), returnArray.begin() + offset);
-                    offset += ndarray.size();
+                    const auto other = axis == Axis::ROW ? array.cols() : array.rows();
+                    if (width < 0) width = other;
+                    else if (width != other) throw std::invalid_argument("Incompatible concatenation dimensions");
                 }
-
-                return returnArray;
+                length += axisSize(array.rows(), array.cols(), axis);
             }
-            case Axis::ROW:
+            width = (std::max)(Eigen::Index{}, width);
+            Eigen::MatrixX<T> result(axis == Axis::NONE ? 1 : (axis == Axis::ROW ? length : width),
+                                     axis == Axis::ROW ? width : length);
+            Eigen::Index next = 0;
+            for (const auto &array : arrays)
             {
-                return row_stack<dtype>(begin, end);
+                if (array.rows() == 0 && array.cols() == 0) continue;
+                if (axis == Axis::ROW) result.middleRows(next, array.rows()) = array.matrix();
+                else if (axis == Axis::COL) result.middleCols(next, array.cols()) = array.matrix();
+                else result.row(0).segment(next, array.size()) = rowMajor(array).transpose().matrix();
+                next += axisSize(array.rows(), array.cols(), axis);
             }
-            case Axis::COL:
-            {
-                return column_stack<dtype>(begin, end);
-            }
-            default:
-            {
-                THROW_INVALID_ARGUMENT_ERROR("Unimplemented axis type.");
-                return {}; // get rid of compiler warning
-            }
-            }
+            return result;
         }
     }
 
-    /// Join a sequence of arrays along an existing axis.
-    template <typename dtype>
-    Matrix<dtype> concatenate(const std::initializer_list<Matrix<dtype>> &inArrayList, Axis inAxis = Axis::NONE)
+    template <typename Derived>
+    auto concatenate(const std::vector<Derived> &arrays, Axis axis = Axis::NONE)
     {
-        return detail::concatenate<dtype>(inArrayList.begin(), inArrayList.end(), inAxis);
+        return detail::concatenate(arrays, axis);
     }
 
-    //============================================================================
-    // Method Description:
-    /// Join a sequence of arrays along an existing axis.
-    ///
-    /// NumPy Reference: https://www.numpy.org/devdocs/reference/generated/numpy.concatenate.html
-    ///
-    /// @param inArrayList
-    /// @param inAxis (Optional, default NONE)
-    /// @return Matrix
-    ///
-    template <typename dtype>
-    Matrix<dtype> concatenate(const std::vector<Matrix<dtype>> &inArrayList, Axis inAxis = Axis::NONE)
+    template <typename Derived>
+    auto concatenate(const std::initializer_list<Derived> &arrays, Axis axis = Axis::NONE)
     {
-        return detail::concatenate<dtype>(inArrayList.begin(), inArrayList.end(), inAxis);
+        return detail::concatenate(arrays, axis);
     }
 }

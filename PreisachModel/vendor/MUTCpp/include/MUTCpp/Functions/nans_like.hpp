@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,16 +6,14 @@
 
 #pragma once
 
-#include "Matrix.hpp"
+#include <Eigen/Core>
+#include <limits>
 
 namespace mc
 {
-    /// Return a new array of given shape and type, filled with nans.
-    template<typename dtype>
-    Matrix<double> nans_like(const Matrix<dtype>& inArray)
+    template <typename Derived>
+    Eigen::MatrixXd nans_like(const Eigen::DenseBase<Derived> &input)
     {
-        Matrix<double> returnArray(inArray.shape());
-        returnArray.nans();
-        return returnArray;
+        return Eigen::MatrixXd::Constant(input.rows(), input.cols(), std::numeric_limits<double>::quiet_NaN());
     }
 }

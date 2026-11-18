@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,29 +6,17 @@
 
 #pragma once
 
-#include <set>
-#include <vector>
-
-#include "Core/StaticAssert.hpp"
-#include "Core/Algorithm.hpp"
-#include "Matrix.hpp"
+#include "Functions/unique.hpp"
 
 namespace mc
 {
-    /// Find the intersection of two arrays.
-    ///
-    /// Return the sorted, unique values that are in both of the input arrays.
-    template<typename dtype>
-    Matrix<dtype> intersect1d(const Matrix<dtype>& inArray1, const Matrix<dtype>& inArray2)
+    template <typename Left, typename Right>
+    Eigen::RowVectorX<typename Left::Scalar> intersect1d(const Eigen::DenseBase<Left> &left, const Eigen::DenseBase<Right> &right)
     {
-        STATIC_ASSERT_ARITHMETIC(dtype);
-
-        std::vector<dtype>    res(inArray1.size() + inArray2.size());
-        const std::set<dtype> in1(inArray1.cbegin(), inArray1.cend());
-        const std::set<dtype> in2(inArray2.cbegin(), inArray2.cend());
-
-        const auto iter = algo::set_intersection(in1.begin(), in1.end(), in2.begin(), in2.end(), res.begin());
-        res.resize(iter - res.begin());
-        return Matrix<dtype>(res);
+        const auto a = unique(left);
+        const auto b = unique(right);
+        Eigen::RowVectorX<typename Left::Scalar> values(a.size() + b.size());
+        const auto end = std::set_intersection(a.begin(), a.end(), b.begin(), b.end(), values.begin());
+        return values.head(std::distance(values.begin(), end));
     }
 }

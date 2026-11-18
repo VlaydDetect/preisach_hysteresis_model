@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,70 +6,32 @@
 
 #pragma once
 
+#include "Utils/DenseOperations.hpp"
 #include <complex>
-
-#include "Core/Error.hpp"
-#include "Core/StaticAssert.hpp"
-#include "Core/Algorithm.hpp"
-#include "Matrix.hpp"
 
 namespace mc
 {
-    /// Returns a std::complex from the input real and imag components
-    /// @param inReal: the real component of the complex number
-    template<typename dtype>
-    auto complex(dtype inReal)
+    template <typename T>
+    std::complex<T> complex(T real, T imaginary = T{})
     {
-        STATIC_ASSERT_ARITHMETIC(dtype);
-
-        return std::complex<dtype>(inReal);
-    }
-    
-    /// Returns a std::complex from the input real and imag components
-    /// @param inReal: the real component of the complex number
-    /// @param inImag: the imaginary component of the complex number
-    template<typename dtype>
-    auto complex(dtype inReal, dtype inImag)
-    {
-        STATIC_ASSERT_ARITHMETIC(dtype);
-
-        return std::complex<dtype>(inReal, inImag);
+        return {real, imaginary};
     }
 
-    /// Returns a std::complex from the input real and imag components
-    /// @param inReal: the real component of the complex number
-    /// @return Matrix
-    template<typename dtype>
-    auto complex(const Matrix<dtype>& inReal)
+    template <typename Derived>
+    auto complex(const Eigen::DenseBase<Derived> &input)
     {
-        Matrix<decltype(mc::complex(dtype{ 0 }))> returnArray(inReal.shape());
-        algo::transform(inReal.cbegin(),
-                                  inReal.cend(),
-                                  returnArray.begin(),
-                                  [](dtype real) -> auto { return mc::complex(real); });
-
-        return returnArray;
-    }
-
-    /// Returns a std::complex from the input real and imag components
-    /// @param inReal: the real component of the complex number
-    /// @param inImag: the imaginary component of the complex number
-    /// @return Matrix
-    template<typename dtype>
-    auto complex(const Matrix<dtype>& inReal, const Matrix<dtype>& inImag)
-    {
-        if (inReal.shape() != inImag.shape())
+        return input.derived().unaryExpr([&](const auto &value)
         {
-            THROW_INVALID_ARGUMENT_ERROR("Input real array must be the same shape as input imag array");
-        }
+            return std::complex<typename Derived::Scalar>(value);
+        }).eval();
+    }
 
-        Matrix<decltype(mc::complex(dtype{ 0 }, dtype{ 0 }))> returnArray(inReal.shape());
-        algo::transform(inReal.cbegin(),
-                                  inReal.cend(),
-                                  inImag.cbegin(),
-                                  returnArray.begin(),
-                                  [](dtype real, dtype imag) -> auto { return mc::complex(real, imag); });
-
-        return returnArray;
+    template <typename Left, typename Right>
+    auto complex(const Eigen::DenseBase<Left> &left, const Eigen::DenseBase<Right> &right)
+    {
+        return detail::broadcast(left, right, [](auto a, auto b)
+        {
+            return std::complex<decltype(a)>(a, b);
+        });
     }
 }

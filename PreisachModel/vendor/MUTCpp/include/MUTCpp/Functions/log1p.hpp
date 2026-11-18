@@ -9,14 +9,14 @@
 #include <cmath>
 
 #include "Core/StaticAssert.hpp"
-#include "Core/Algorithm.hpp"
-#include "Matrix.hpp"
+#include <Eigen/Core>
 
 namespace mc
 {
     /// Return the natural logarithm of one plus the input array.
     /// Calculates log(1 + x).
     template <typename dtype>
+        requires (std::is_arithmetic_v<dtype> || mc::is_complex_v<dtype>)
     auto log1p(dtype inValue) noexcept
     {
         STATIC_ASSERT_ARITHMETIC(dtype);
@@ -26,15 +26,12 @@ namespace mc
 
     /// Return the natural logarithm of one plus the input array, element-wise.
     /// Calculates log(1 + x).
-    template <typename dtype>
-    auto log1p(const Matrix<dtype> &inArray)
+    template <typename Derived>
+    auto log1p(const Eigen::DenseBase<Derived> &inArray)
     {
-        Matrix<decltype(log1p(dtype{0}))> returnArray(inArray.shape());
-        algo::transform(inArray.cbegin(),
-                        inArray.cend(),
-                        returnArray.begin(),
-                        [](dtype inValue) noexcept -> auto { return log1p(inValue); });
-
-        return returnArray;
+        return inArray.derived().unaryExpr([](const auto &inValue)
+        {
+            return mc::log1p(inValue);
+        }).eval();
     }
 }

@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,25 +6,19 @@
 
 #pragma once
 
-#include <initializer_list>
-#include <vector>
-
-#include "Functions/column_stack.hpp"
-#include "Matrix.hpp"
+#include "Functions/concatenate.hpp"
 
 namespace mc
 {
-    /// Stack arrays in sequence horizontally (column wise).
-    template<typename dtype>
-    Matrix<dtype> hstack(std::initializer_list<Matrix<dtype>> inArrayList)
+    template <typename Derived>
+    auto hstack(const std::vector<Derived> &arrays)
     {
-        return detail::column_stack<dtype>(inArrayList.begin(), inArrayList.end());
+        return concatenate(arrays, Axis::COL);
     }
 
-    /// Stack arrays in sequence horizontally (column wise).
-    template<typename dtype>
-    Matrix<dtype> hstack(std::vector<Matrix<dtype>> inArrayList)
+    template <typename Derived>
+    auto hstack(const std::initializer_list<Derived> &arrays)
     {
-        return detail::column_stack<dtype>(inArrayList.begin(), inArrayList.end());
+        return concatenate(arrays, Axis::COL);
     }
 }

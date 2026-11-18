@@ -23,9 +23,8 @@ PreisachModel/vendor/boost
 !PreisachModel/vendor/tracy/tracy
 
 # Binaries
-vendor/**/bin/
-vendor/**/bin-int/
-!vendor/bin/premake/
+bin/
+bin-int/
 intermediate/
 obj/
 **/cache/**

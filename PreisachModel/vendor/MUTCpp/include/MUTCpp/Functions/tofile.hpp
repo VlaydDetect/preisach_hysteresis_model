@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,30 +6,29 @@
 
 #pragma once
 
-#include <string>
-
-#include "Matrix.hpp"
+#include "Functions/dump.hpp"
 
 namespace mc
 {
-    /// Write an array to a file as binary.
-    /// The data produced by this method can be recovered
-    /// using the function fromfile().
-    template <typename dtype>
-    void tofile(const Matrix<dtype> &inArray, const std::string &inFilename)
+    template <typename Derived>
+    void tofile(const Eigen::DenseBase<Derived> &input, const std::filesystem::path &path)
     {
-        return inArray.tofile(inFilename);
+        dump(input, path);
     }
 
-    /// Write an array to a file as text.
-    /// The data produced by this method can be recovered
-    /// using the function fromfile().
-    /// @param inArray
-    /// @param inFilename
-    /// @param inSep: Separator between array items for text output.
-    template <typename dtype>
-    void tofile(const Matrix<dtype> &inArray, const std::string &inFilename, const char inSep)
+    template <typename Derived>
+    void tofile(const Eigen::DenseBase<Derived> &input, std::filesystem::path path, char separator)
     {
-        return inArray.tofile(inFilename, inSep);
+        if (!path.has_extension()) path.replace_extension("txt");
+        std::ofstream file(path);
+        if (!file) throw std::runtime_error("Unable to open " + path.string());
+        const auto values = detail::rowMajor(input);
+        for (Eigen::Index i = 0; i < values.size(); ++i)
+        {
+            if (i != 0) file << separator;
+            file << values(i);
+        }
+        file.close();
+        if (!file) throw std::runtime_error("Unable to write " + path.string());
     }
 }

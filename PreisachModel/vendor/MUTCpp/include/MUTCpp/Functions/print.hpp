@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,19 +6,26 @@
 
 #pragma once
 
+#include <Eigen/Core>
 #include <iostream>
-
-#include "Core/StaticAssert.hpp"
-#include "Matrix.hpp"
+#include "Utils/value2str.hpp"
 
 namespace mc
 {
-    /// Prints the matrix to the console.
-    template<typename dtype>
-    void print(const Matrix<dtype>& inArray)
+    template <typename Derived>
+    void print(const Eigen::DenseBase<Derived> &input)
     {
-        STATIC_ASSERT_ARITHMETIC_OR_COMPLEX(dtype);
-
-        std::cout << inArray;
+        std::cout << '[';
+        for (Eigen::Index row = 0; row < input.rows(); ++row)
+        {
+            if (row != 0) std::cout << '\n';
+            std::cout << '[';
+            for (Eigen::Index col = 0; col < input.cols(); ++col)
+            {
+                std::cout << utils::value2str(input(row, col)) << ", ";
+            }
+            std::cout << ']';
+        }
+        std::cout << "]\n";
     }
 }

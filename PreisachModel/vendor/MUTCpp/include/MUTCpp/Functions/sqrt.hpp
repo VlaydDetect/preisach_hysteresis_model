@@ -9,13 +9,15 @@
 #include <cmath>
 #include <complex>
 
-#include "Core/Algorithm.hpp"
-#include "Matrix.hpp"
+#include <Eigen/Core>
+
+#include "Core/StaticAssert.hpp"
 
 namespace mc
 {
     /// Return the positive square-root of a value.
     template <typename dtype>
+        requires (std::is_arithmetic_v<dtype> || mc::is_complex_v<dtype>)
     auto sqrt(dtype inValue) noexcept
     {
         STATIC_ASSERT_ARITHMETIC_OR_COMPLEX(dtype);
@@ -24,15 +26,12 @@ namespace mc
     }
 
     /// Return the positive square-root of an array, element-wise.
-    template <typename dtype>
-    auto sqrt(const Matrix<dtype> &inArray)
+    template <typename Derived>
+    auto sqrt(const Eigen::DenseBase<Derived> &inArray)
     {
-        Matrix<decltype(sqrt(dtype{0}))> returnArray(inArray.shape());
-        algo::transform(inArray.cbegin(),
-                        inArray.cend(),
-                        returnArray.begin(),
-                        [](dtype inValue) noexcept -> auto { return sqrt(inValue); });
-
-        return returnArray;
+        return inArray.derived().unaryExpr([](const auto &inValue)
+        {
+            return mc::sqrt(inValue);
+        }).eval();
     }
 }

@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,31 +6,25 @@
 
 #pragma once
 
+#include "Utils/DenseOperations.hpp"
 #include <cmath>
-
-#include "Core/TypeTraits.hpp"
-#include "Matrix.hpp"
 
 namespace mc
 {
-    /// Return the remainder o the division.
-    template<typename dtype, std::enable_if_t<std::is_integral_v<dtype>, int> = 0>
-    dtype fmod(dtype inValue1, dtype inValue2) noexcept
+    template <typename T>
+        requires std::is_arithmetic_v<T>
+    T fmod(T left, T right)
     {
-        return inValue1 % inValue2;
+        if constexpr (std::is_integral_v<T>) return left % right;
+        else return static_cast<T>(std::fmod(left, right));
     }
 
-    /// Return the remainder of the division.
-    template<typename dtype, std::enable_if_t<std::is_floating_point_v<dtype>, int> = 0>
-    dtype fmod(dtype inValue1, dtype inValue2) noexcept
+    template <typename Left, typename Right>
+    auto fmod(const Eigen::DenseBase<Left> &left, const Eigen::DenseBase<Right> &right)
     {
-        return std::fmod(inValue1, inValue2);
-    }
-
-    /// Return the element-wise remainder of the division.
-    template<typename dtype>
-    Matrix<dtype> fmod(const Matrix<dtype>& inArray1, const Matrix<dtype>& inArray2)
-    {
-        return inArray1 % inArray2;
+        return detail::broadcast(left, right, [](auto a, auto b)
+        {
+            return mc::fmod(a, static_cast<decltype(a)>(b));
+        });
     }
 }

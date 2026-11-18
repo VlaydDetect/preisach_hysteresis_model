@@ -7,8 +7,6 @@
 #pragma once
 
 #include "ModelBase.hpp"
-#include "Functions/nans.hpp"
-#include "Utils/conversions.hpp"
 
 #include <Eigen/Dense>
 

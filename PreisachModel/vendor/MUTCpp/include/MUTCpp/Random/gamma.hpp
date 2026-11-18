@@ -6,13 +6,13 @@
 
 #pragma once
 
+#include <Eigen/Core>
+
 #include <algorithm>
 #include <random>
 
 #include "Core/Error.hpp"
 #include "Core/StaticAssert.hpp"
-#include "Core/Shape.hpp"
-#include "Matrix.hpp"
 #include "Random/generator.hpp"
 
 namespace mc
@@ -45,7 +45,7 @@ namespace mc
             /// Create an array of the given shape and populate it with
             /// random samples from a "gamma" distribution.
             template <typename dtype, typename GeneratorType = std::mt19937>
-            Matrix<dtype> gamma(GeneratorType &generator, const Shape &inShape, dtype inGammaShape,
+            Eigen::MatrixX<dtype> gamma(GeneratorType &generator, Eigen::Index rows, Eigen::Index columns, dtype inGammaShape,
                                 dtype inScaleValue = 1)
             {
                 STATIC_ASSERT_ARITHMETIC(dtype);
@@ -60,12 +60,12 @@ namespace mc
                     THROW_INVALID_ARGUMENT_ERROR("input scale should be greater than zero.");
                 }
 
-                Matrix<dtype> returnArray(inShape);
+                Eigen::Matrix<dtype, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> returnArray(rows, columns);
 
                 std::gamma_distribution<dtype> dist(inGammaShape, inScaleValue);
 
-                std::for_each(returnArray.begin(),
-                              returnArray.end(),
+                std::for_each(returnArray.data(),
+                              returnArray.data() + returnArray.size(),
                               [&generator, &dist](dtype &value) -> void { value = dist(generator); });
 
                 return returnArray;
@@ -82,9 +82,9 @@ namespace mc
         /// Create an array of the given shape and populate it with
         /// random samples from a "gamma" distribution.
         template <typename dtype>
-        Matrix<dtype> gamma(const Shape &inShape, dtype inGammaShape, dtype inScaleValue = 1)
+        Eigen::MatrixX<dtype> gamma(Eigen::Index rows, Eigen::Index columns, dtype inGammaShape, dtype inScaleValue = 1)
         {
-            return detail::gamma(generator_, inShape, inGammaShape, inScaleValue);
+            return detail::gamma(generator_, rows, columns, inGammaShape, inScaleValue);
         }
     }
 }

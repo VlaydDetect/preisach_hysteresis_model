@@ -8,8 +8,9 @@
 #include <iomanip>
 #include <sstream>
 #include <string>
+#include <type_traits>
 
-#include "Matrix/MatrixCore.hpp"
+#include <Eigen/Core>
 
 namespace mc
 {
@@ -20,18 +21,19 @@ namespace mc
         return ss.str();
     }
 
-    inline std::string doubleToString(const Matrix<double>& value, int precision)
+    template <typename Derived>
+        requires std::is_same_v<typename Derived::Scalar, double>
+    std::string doubleToString(const Eigen::DenseBase<Derived> &value, int precision)
     {
-        std::string ret;
-        ret += "{";
-        for (int i = 0; i < value.size(); i++)
+        const auto flat = value.derived().template reshaped<Eigen::RowMajor>();
+        std::string ret = "{";
+        for (Eigen::Index i = 0; i < flat.size(); ++i)
         {
-            ret += doubleToString(value[i], precision);
-
-            if (i != value.size() - 1)
+            if (i != 0)
             {
                 ret += ", ";
             }
+            ret += doubleToString(flat[i], precision);
         }
         ret += "}";
 

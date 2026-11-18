@@ -18,13 +18,6 @@ namespace mc
         COL
     };
 
-    /// Policy for `Matrix` constructor that takes in a pointer to data
-    enum class PointerPolicy
-    {
-        COPY,
-        SHELL
-    };
-
     /// Bias boolean
     enum class Bias : bool
     {

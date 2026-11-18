@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,38 +6,37 @@
 
 #pragma once
 
-#include "DSArgs.hpp"
-#include "DynamicSystem.hpp"
+#include <memory>
 
-#include <Eigen/Dense>
+#include "DynamicSystem.hpp"
 
 namespace mc
 {
     namespace ode
     {
-        inline Ref<ContinuousDS> GetLorenzSystem(double dt, const DSArgs &args, const DSArgs &nextArgs = {},
+        inline std::unique_ptr<ContinuousDS<3>> GetLorenzSystem(double dt, const DSArgs &args, const DSArgs &nextArgs = {},
                                                  const Eigen::Vector3d &x0 = {1.5, -1.5, 20.0})
         {
-            auto func = [](Eigen::VectorXd x, double t, const DSArgs &args) -> Eigen::VectorXd
+            auto func = [](const Eigen::Vector3d &x, double, const DSArgs &args) -> Eigen::Vector3d
             {
                 double sigma = args.at("sigma").toDouble();
                 double rho = args.at("rho").toDouble();
                 double beta = args.at("beta").toDouble();
 
-                Eigen::VectorXd res = Eigen::VectorXd::Zero(x.size());
+                Eigen::Vector3d res;
                 res[0] = sigma * (x[1] - x[0]);
                 res[1] = x[0] * (rho - x[2]) - x[1];
                 res[2] = x[0] * x[1] - beta * x[2];
                 return res;
             };
 
-            auto jac = [](Eigen::VectorXd x, double t, const DSArgs &args) -> Eigen::MatrixXd
+            auto jac = [](const Eigen::Vector3d &x, double, const DSArgs &args) -> Eigen::Matrix3d
             {
                 double sigma = args.at("sigma").toDouble();
                 double rho = args.at("rho").toDouble();
                 double beta = args.at("beta").toDouble();
 
-                Eigen::MatrixXd res = Eigen::MatrixXd::Zero(x.size(), x.size());
+                Eigen::Matrix3d res = Eigen::Matrix3d::Zero();
                 res(0, 0) = -sigma;
                 res(0, 1) = sigma;
                 res(1, 0) = rho - x[2];
@@ -49,8 +48,14 @@ namespace mc
                 return res;
             };
 
-            auto system = Ref<ContinuousDS>::Create(func, jac, dt, args, nextArgs, x0, 0.0);
-            return system;
+            return std::make_unique<ContinuousDS<3>>(func, jac, dt, args, nextArgs, x0);
+        }
+
+        template <typename Derived>
+        std::unique_ptr<ContinuousDS<3>> GetLorenzSystem(double dt, const DSArgs &args, const DSArgs &nextArgs,
+                                                         const Eigen::MatrixBase<Derived> &x0)
+        {
+            return GetLorenzSystem(dt, args, nextArgs, DynamicalSystem<3>::CheckedState(x0));
         }
     }
 }

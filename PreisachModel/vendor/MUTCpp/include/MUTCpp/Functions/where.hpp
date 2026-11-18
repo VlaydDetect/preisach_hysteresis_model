@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,137 +6,40 @@
 
 #pragma once
 
-#include <string>
-
-#include "Core/Error.hpp"
-#include "Core/Shape.hpp"
-#include "Matrix.hpp"
+#include <Eigen/Core>
+#include <stdexcept>
+#include <type_traits>
 
 namespace mc
 {
-    /// Return elements, either from x or y, depending on the input mask.
-    /// The output array contains elements of x where mask is True, and
-    /// elements from y elsewhere.
-    template <typename dtype>
-    Matrix<dtype> where(const Matrix<bool> &inMask, const Matrix<dtype> &inA, const Matrix<dtype> &inB)
+    template <typename Mask, typename Left, typename Right>
+    Eigen::MatrixX<typename Left::Scalar> where(const Eigen::DenseBase<Mask> &mask, const Eigen::DenseBase<Left> &left, const Eigen::DenseBase<Right> &right)
     {
-        const auto shapeMask = inMask.shape();
-        const auto shapeA = inA.shape();
-        if (shapeA != inB.shape())
+        if (mask.rows() != left.rows() || mask.cols() != left.cols() ||
+            mask.rows() != right.rows() || mask.cols() != right.cols())
         {
-            THROW_INVALID_ARGUMENT_ERROR("input inA and inB must be the same shapes.");
+            throw std::invalid_argument("Mask and input shapes must match");
         }
-
-        if (shapeMask != shapeA)
-        {
-            THROW_INVALID_ARGUMENT_ERROR("input inMask must be the same shape as the input arrays.");
-        }
-
-        auto outArray = Matrix<dtype>(shapeMask);
-
-        uint32 idx = 0;
-        for (auto maskValue : inMask)
-        {
-            if (maskValue)
-            {
-                outArray[idx] = inA[idx];
-            }
-            else
-            {
-                outArray[idx] = inB[idx];
-            }
-            ++idx;
-        }
-
-        return outArray;
+        return mask.select(left.derived(), right.derived()).matrix();
     }
 
-    /// Return elements, either from x or y, depending on the input mask.
-    /// The output array contains elements of x where mask is True, and
-    /// elements from y elsewhere.
-    template <typename dtype>
-    Matrix<dtype> where(const Matrix<bool> &inMask, const Matrix<dtype> &inA, dtype inB)
+    template <typename Mask, typename Left>
+    auto where(const Eigen::DenseBase<Mask> &mask, const Eigen::DenseBase<Left> &left, typename Left::Scalar right)
     {
-        const auto shapeMask = inMask.shape();
-        const auto shapeA = inA.shape();
-        if (shapeMask != shapeA)
-        {
-            THROW_INVALID_ARGUMENT_ERROR("input inMask must be the same shape as the input arrays.");
-        }
-
-        auto outArray = Matrix<dtype>(shapeMask);
-
-        uint32 idx = 0;
-        for (auto maskValue : inMask)
-        {
-            if (maskValue)
-            {
-                outArray[idx] = inA[idx];
-            }
-            else
-            {
-                outArray[idx] = inB;
-            }
-            ++idx;
-        }
-
-        return outArray;
+        return where(mask, left, Left::PlainObject::Constant(left.rows(), left.cols(), right));
     }
 
-    /// Return elements, either from x or y, depending on the input mask.
-    /// The output array contains elements of x where mask is True, and
-    /// elements from y elsewhere.
-    template <typename dtype>
-    Matrix<dtype> where(const Matrix<bool> &inMask, dtype inA, const Matrix<dtype> &inB)
+    template <typename Mask, typename Right>
+    auto where(const Eigen::DenseBase<Mask> &mask, typename Right::Scalar left, const Eigen::DenseBase<Right> &right)
     {
-        const auto shapeMask = inMask.shape();
-        const auto shapeB = inB.shape();
-        if (shapeMask != shapeB)
-        {
-            THROW_INVALID_ARGUMENT_ERROR("input inMask must be the same shape as the input arrays.");
-        }
-
-        auto outArray = Matrix<dtype>(shapeMask);
-
-        uint32 idx = 0;
-        for (auto maskValue : inMask)
-        {
-            if (maskValue)
-            {
-                outArray[idx] = inA;
-            }
-            else
-            {
-                outArray[idx] = inB[idx];
-            }
-            ++idx;
-        }
-
-        return outArray;
+        return where(mask, Right::PlainObject::Constant(right.rows(), right.cols(), left), right);
     }
 
-    /// Return elements, either from x or y, depending on the input mask.
-    /// The output array contains elements of x where mask is True, and
-    /// elements from y elsewhere.
-    template <typename dtype>
-    Matrix<dtype> where(const Matrix<bool> &inMask, dtype inA, dtype inB)
+    template <typename Mask, typename T>
+    requires (!std::is_base_of_v<Eigen::EigenBase<T>, T>)
+    Eigen::MatrixX<T> where(const Eigen::DenseBase<Mask> &mask, T left, T right)
     {
-        auto outArray = Matrix<dtype>(inMask.shape());
-
-        uint32 idx = 0;
-        for (auto maskValue : inMask)
-        {
-            if (maskValue)
-            {
-                outArray[idx] = inA;
-            }
-            else
-            {
-                outArray[idx] = inB;
-            }
-            ++idx;
-        }
-
-        return outArray;
+        return where(mask, Eigen::MatrixX<T>::Constant(mask.rows(), mask.cols(), left),
+                           Eigen::MatrixX<T>::Constant(mask.rows(), mask.cols(), right));
     }
 }

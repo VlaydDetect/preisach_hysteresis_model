@@ -5,21 +5,26 @@
 // Copyright (c) 2024 Vlayd Detect.All rights reserved.
 
 #pragma once
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <format>
+#include <optional>
 #include <print>
 #include <tuple>
+#include <vector>
 
+#include "Core/Constants.hpp"
+#include "Core/Error.hpp"
+#include "MUTCpp/Utils/Eigen.hpp"
 #include "Functions/all_comprasions.hpp"
-#include "MUTCpp/Functions/max.hpp"
-#include "MUTCpp/Functions/min.hpp"
-#include "MUTCpp/Functions/ones.hpp"
-#include "MUTCpp/Functions/range.hpp"
-#include "MUTCpp/Vector/StaticVector.hpp"
 
 namespace mc
 {
     using ArrayXd = Eigen::ArrayXd;
     using ArrayXI = Eigen::Array<Eigen::Index, Eigen::Dynamic, 1>;
     using ArrayXb = Eigen::Array<bool, Eigen::Dynamic, 1>;
+    using PeakBounds = std::array<std::optional<double>, 2>;
 
 
     /// @brief Find local maxima in a 1D array.
@@ -83,20 +88,11 @@ namespace mc
     }
 
     /// Parse condition arguments for `find_peaks`.
-    /// @param interval: Either a number or a 2-element sequence of the former. The first value is always
-    ///     interpreted as `imin` and the second, if supplied, as `imax`.
-    /// @return imin, imax: number or ``consts::nan``. Minimal and maximal value in `argument`.
-    inline std::array<double, 2> unpack_condition_args(const StaticVector<double, 2> &interval)
+    /// @param interval: Optional inclusive lower and upper bounds.
+    /// @return The two bounds, using NaN for an open end.
+    inline std::array<double, 2> unpack_condition_args(const PeakBounds &interval)
     {
-        if (interval.empty())
-        {
-            return {consts::nan, consts::nan};
-        }
-
-        double imin = interval[0];
-        double imax = interval.size() == 2 ? interval[1] : consts::nan;
-
-        return {imin, imax};
+        return {interval[0].value_or(consts::nan), interval[1].value_or(consts::nan)};
     }
 
     /// Evaluate where the generic property of peaks confirms to an interval.
@@ -107,11 +103,11 @@ namespace mc
     inline ArrayXb select_by_property(const ArrayXd &peak_properties, const double pmin, const double pmax)
     {
         ArrayXb keep = ArrayXb::Constant(peak_properties.size(), true);
-        if (!isnan(pmin))
+        if (!std::isnan(pmin))
         {
             keep = keep && (peak_properties >= pmin);
         }
-        if (!isnan(pmax))
+        if (!std::isnan(pmax))
         {
             keep = keep && (peak_properties <= pmax);
         }
@@ -136,12 +132,12 @@ namespace mc
 
         ArrayXb keep = ArrayXb::Constant(peaks.size(), true);
         
-        if (!isnan(tmin))
+        if (!std::isnan(tmin))
         {
             // Поэлементный минимум из двух одномерных массивов
             keep = keep && (left_thresholds.min(right_thresholds) >= tmin);
         }
-        if (!isnan(tmax))
+        if (!std::isnan(tmax))
         {
             keep = keep && (left_thresholds.max(right_thresholds) <= tmax);
         }

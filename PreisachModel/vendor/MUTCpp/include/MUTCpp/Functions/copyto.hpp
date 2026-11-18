@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,15 +6,14 @@
 
 #pragma once
 
-#include "Matrix.hpp"
+#include <Eigen/Core>
 
 namespace mc
 {
-    /// Copies values from one array to another
-    template <typename dtype>
-    Matrix<dtype> &copyto(Matrix<dtype> &inDestArray, const Matrix<dtype> &inSrcArray)
+    template <typename Left, typename Right>
+    Left &copyto(Eigen::DenseBase<Left> &destination, const Eigen::DenseBase<Right> &right)
     {
-        inDestArray = inSrcArray;
-        return inDestArray;
+        destination.derived() = right.derived().eval();
+        return destination.derived();
     }
 }

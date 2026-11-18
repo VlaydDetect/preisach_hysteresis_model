@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,15 +6,20 @@
 
 #pragma once
 
-#include "Core/Types.hpp"
-#include "Matrix.hpp"
+#include "Utils/DenseOperations.hpp"
+#include "Utils/essentiallyEqual.hpp"
 
 namespace mc
 {
-    /// returns whether a value is included the array
-    template<typename dtype>
-    Matrix<bool> contains(const Matrix<dtype>& inArray, dtype inValue, Axis inAxis = Axis::NONE)
+    template <typename Derived>
+    auto contains(const Eigen::DenseBase<Derived> &input, typename Derived::Scalar target, Axis axis = Axis::NONE)
     {
-        return inArray.contains(inValue, inAxis);
+        return detail::reduce(input, axis, [target](const auto &values)
+        {
+            return std::any_of(values.begin(), values.end(), [target](const auto &value)
+            {
+                return utils::essentiallyEqual(value, target);
+            });
+        });
     }
 }

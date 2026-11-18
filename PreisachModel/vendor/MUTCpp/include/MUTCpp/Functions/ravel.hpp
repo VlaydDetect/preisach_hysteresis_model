@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,15 +6,13 @@
 
 #pragma once
 
-#include "Matrix.hpp"
+#include "Functions/reshape.hpp"
 
 namespace mc
 {
-    /// Flattens the array but does not make a copy.
-    template<typename dtype>
-    Matrix<dtype>& ravel(Matrix<dtype>& inArray) noexcept
+    template <typename T>
+    Eigen::MatrixX<T> &ravel(Eigen::MatrixX<T> &input)
     {
-        inArray.ravel();
-        return inArray;
+        return reshape(input, input.size());
     }
 }

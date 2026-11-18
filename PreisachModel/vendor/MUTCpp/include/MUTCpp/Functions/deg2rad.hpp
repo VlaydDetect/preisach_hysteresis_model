@@ -8,13 +8,13 @@
 
 #include "Core/Constants.hpp"
 #include "Core/StaticAssert.hpp"
-#include "Core/Algorithm.hpp"
-#include "Matrix.hpp"
+#include <Eigen/Core>
 
 namespace mc
 {
     /// Convert angles from degrees to radians.
     template <typename dtype>
+        requires (std::is_arithmetic_v<dtype> || mc::is_complex_v<dtype>)
     constexpr auto deg2rad(dtype inValue) noexcept
     {
         STATIC_ASSERT_ARITHMETIC(dtype);
@@ -23,15 +23,12 @@ namespace mc
     }
 
     /// Convert angles from degrees to radians.
-    template <typename dtype>
-    auto deg2rad(const Matrix<dtype> &inArray)
+    template <typename Derived>
+    auto deg2rad(const Eigen::DenseBase<Derived> &inArray)
     {
-        Matrix<decltype(deg2rad(dtype{0}))> returnArray(inArray.shape());
-        algo::transform(inArray.cbegin(),
-                        inArray.cend(),
-                        returnArray.begin(),
-                        [](dtype inValue) noexcept -> auto { return deg2rad(inValue); });
-
-        return returnArray;
+        return inArray.derived().unaryExpr([](const auto &inValue)
+        {
+            return mc::deg2rad(inValue);
+        }).eval();
     }
 }

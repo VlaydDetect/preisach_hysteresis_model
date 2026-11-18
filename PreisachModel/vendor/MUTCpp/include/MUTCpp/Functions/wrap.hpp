@@ -11,7 +11,7 @@
 #include "Core/Constants.hpp"
 #include "Core/StaticAssert.hpp"
 #include "Core/Algorithm.hpp"
-#include "Matrix.hpp"
+#include <Eigen/Core>
 
 namespace mc
 {
@@ -22,6 +22,7 @@ namespace mc
      * @return Wrapped angle
      */
     template <typename dtype>
+        requires std::is_arithmetic_v<dtype>
     double wrap(dtype inAngle) noexcept
     {
         STATIC_ASSERT_ARITHMETIC(dtype);
@@ -41,14 +42,12 @@ namespace mc
      * @param inAngles: in radians
      * @return Wrapped angles
      */
-    template <typename dtype>
-    Matrix<double> wrap(const Matrix<dtype> &inAngles) noexcept
+    template <typename Derived>
+    auto wrap(const Eigen::DenseBase<Derived> &input)
     {
-        Matrix<double> returnArray(inAngles.size());
-        algo::transform(inAngles.begin(),
-                        inAngles.end(),
-                        returnArray.begin(),
-                        [](const auto angle) noexcept -> double { return wrap(angle); });
-        return returnArray;
+        return input.derived().unaryExpr([&](const auto &value)
+        {
+            return mc::wrap(value);
+        }).eval();
     }
 }

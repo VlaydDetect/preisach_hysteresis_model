@@ -8,13 +8,13 @@
 
 #include "Core/DtypeInfo.hpp"
 #include "Core/StaticAssert.hpp"
-#include "Core/Algorithm.hpp"
-#include "Matrix.hpp"
+#include <Eigen/Core>
 
 namespace mc
 {
     /// Computes the number of 1-bits in an integer
     template <typename dtype>
+        requires (std::is_arithmetic_v<dtype> || mc::is_complex_v<dtype>)
     constexpr int bit_count(dtype inValue) noexcept
     {
         STATIC_ASSERT_UNSIGNED_INTEGER(dtype);
@@ -29,16 +29,12 @@ namespace mc
     }
 
     /// Computes the number of 1-bits in an integer
-    template <typename dtype>
-    Matrix<int> bit_count(const Matrix<dtype> &inArray)
+    template <typename Derived>
+    auto bit_count(const Eigen::DenseBase<Derived> &inArray)
     {
-        Matrix<int> returnArray(inArray.shape());
-
-        algo::transform(inArray.cbegin(),
-                        inArray.cend(),
-                        returnArray.begin(),
-                        [](dtype inValue) noexcept -> int { return bit_count(inValue); });
-
-        return returnArray;
+        return inArray.derived().unaryExpr([](const auto &inValue)
+        {
+            return mc::bit_count(inValue);
+        }).eval();
     }
 }

@@ -7,13 +7,13 @@
 #pragma once
 
 #include "Core/StaticAssert.hpp"
-#include "Core/Algorithm.hpp"
-#include "Matrix.hpp"
+#include <Eigen/Core>
 
 namespace mc
 {
     /// Returns element-wise True where signbit is set (less than zero).
     template <typename dtype>
+        requires (std::is_arithmetic_v<dtype> || mc::is_complex_v<dtype>)
     bool signbit(dtype inValue) noexcept
     {
         STATIC_ASSERT_ARITHMETIC(dtype);
@@ -22,15 +22,12 @@ namespace mc
     }
 
     /// Returns element-wise True where signbit is set (less than zero).
-    template <typename dtype>
-    Matrix<bool> signbit(const Matrix<dtype> &inArray)
+    template <typename Derived>
+    auto signbit(const Eigen::DenseBase<Derived> &inArray)
     {
-        Matrix<bool> returnArray(inArray.shape());
-        algo::transform(inArray.cbegin(),
-                        inArray.cend(),
-                        returnArray.begin(),
-                        [](dtype inValue) noexcept -> bool { return signbit(inValue); });
-
-        return returnArray;
+        return inArray.derived().unaryExpr([](const auto &inValue)
+        {
+            return mc::signbit(inValue);
+        }).eval();
     }
 }

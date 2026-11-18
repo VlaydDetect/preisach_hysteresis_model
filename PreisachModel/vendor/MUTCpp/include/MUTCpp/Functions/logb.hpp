@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,43 +6,25 @@
 
 #pragma once
 
+#include <Eigen/Core>
 #include <cmath>
-
-#include "Core/StaticAssert.hpp"
-#include "Core/Algorithm.hpp"
-#include "Matrix.hpp"
+#include <algorithm>
 
 namespace mc
 {
-    /// Logarithm of an arbitrary base
-    ///
-    /// @param inValue
-    /// @param inBase: the logarithm base
-    ///
-    /// @return value
-    template <typename dtype>
-    auto logb(dtype inValue, dtype inBase) noexcept
+    template <typename T>
+        requires std::is_arithmetic_v<T>
+    auto logb(T value, T base)
     {
-        STATIC_ASSERT_ARITHMETIC_OR_COMPLEX(dtype);
-
-        return std::log(inValue) / std::log(inBase);
+        return std::log(value) / std::log(base);
     }
 
-    /// Logarithm of an arbitrary base
-    ///
-    /// @param inArray
-    /// @param inBase: the logorithm base
-    ///
-    /// @return Matrix
-    template <typename dtype>
-    auto logb(const Matrix<dtype> &inArray, dtype inBase)
+    template <typename Derived>
+    auto logb(const Eigen::DenseBase<Derived> &input, typename Derived::Scalar base)
     {
-        Matrix<decltype(logb(dtype{0}, dtype{0}))> returnArray(inArray.shape());
-        algo::transform(inArray.cbegin(),
-                        inArray.cend(),
-                        returnArray.begin(),
-                        [inBase](dtype inValue) noexcept -> auto { return logb(inValue, inBase); });
-
-        return returnArray;
+        return input.derived().unaryExpr([&](const auto &value)
+        {
+            return mc::logb(value, base);
+        }).eval();
     }
 }

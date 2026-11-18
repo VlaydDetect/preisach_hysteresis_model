@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,17 +6,26 @@
 
 #pragma once
 
-#include <string>
-
-#include "Matrix.hpp"
+#include "Utils/DenseOperations.hpp"
+#include <filesystem>
+#include <fstream>
 
 namespace mc
 {
-    /// Dump a binary file of the array to the specified file.
-    /// The array can be read back with or mc::load.
-    template<typename dtype>
-    void dump(const Matrix<dtype>& inArray, const std::string& inFilename)
+    template <typename Derived>
+    requires std::is_trivially_copyable_v<typename Derived::Scalar>
+    void dump(const Eigen::DenseBase<Derived> &input, std::filesystem::path path)
     {
-        inArray.dump(inFilename);
+        using T = typename Derived::Scalar;
+        if (!path.has_extension()) path.replace_extension("bin");
+        std::ofstream file(path, std::ios::binary);
+        if (!file) throw std::runtime_error("Unable to open " + path.string());
+        const Eigen::RowVectorX<T> values = detail::rowMajor(input).transpose();
+        if (values.size() != 0)
+        {
+            file.write(reinterpret_cast<const char *>(values.data()), values.size() * sizeof(T));
+        }
+        file.close();
+        if (!file) throw std::runtime_error("Unable to write " + path.string());
     }
 }

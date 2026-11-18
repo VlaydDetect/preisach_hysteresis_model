@@ -9,13 +9,13 @@
 #include <cmath>
 
 #include "Core/StaticAssert.hpp"
-#include "Core/Algorithm.hpp"
-#include "Matrix.hpp"
+#include <Eigen/Core>
 
 namespace mc
 {
     /// Round value to the nearest integer.
     template <typename dtype>
+        requires (std::is_arithmetic_v<dtype> || mc::is_complex_v<dtype>)
     dtype rint(dtype inValue) noexcept
     {
         STATIC_ASSERT_ARITHMETIC(dtype);
@@ -24,15 +24,12 @@ namespace mc
     }
 
     /// Round elements of the array to the nearest integer.
-    template <typename dtype>
-    Matrix<dtype> rint(const Matrix<dtype> &inArray)
+    template <typename Derived>
+    auto rint(const Eigen::DenseBase<Derived> &inArray)
     {
-        Matrix<dtype> returnArray(inArray.shape());
-        algo::transform(inArray.cbegin(),
-                        inArray.cend(),
-                        returnArray.begin(),
-                        [](dtype inValue) noexcept -> dtype { return rint(inValue); });
-
-        return returnArray;
+        return inArray.derived().unaryExpr([](const auto &inValue)
+        {
+            return mc::rint(inValue);
+        }).eval();
     }
 }

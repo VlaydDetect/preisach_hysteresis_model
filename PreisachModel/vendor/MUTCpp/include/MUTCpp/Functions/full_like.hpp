@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,15 +6,13 @@
 
 #pragma once
 
-#include "Functions/full.hpp"
-#include "Matrix.hpp"
+#include <Eigen/Core>
 
 namespace mc
 {
-    /// Return a full array with the same shape and type as a given array.
-    template<typename dtype>
-    Matrix<dtype> full_like(const Matrix<dtype>& inArray, dtype inFillValue)
+    template <typename Derived>
+    Eigen::MatrixX<typename Derived::Scalar> full_like(const Eigen::DenseBase<Derived> &input, const typename Derived::Scalar &value)
     {
-        return full(inArray.shape(), inFillValue);
+        return Eigen::MatrixX<typename Derived::Scalar>::Constant(input.rows(), input.cols(), value);
     }
 }

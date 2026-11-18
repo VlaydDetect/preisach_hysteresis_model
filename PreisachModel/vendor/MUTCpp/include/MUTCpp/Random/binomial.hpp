@@ -6,14 +6,14 @@
 
 #pragma once
 
+#include <Eigen/Core>
+
 #include <algorithm>
 #include <random>
 #include <string>
 
 #include "Core/Error.hpp"
 #include "Core/StaticAssert.hpp"
-#include "Core/Shape.hpp"
-#include "Matrix.hpp"
 #include "Random/generator.hpp"
 
 namespace mc
@@ -49,12 +49,12 @@ namespace mc
             /// Create an array of the given shape and populate it with
             /// random samples from the "binomial" distribution.
             /// @param generator: instance of a random number generator
-            /// @param inShape
+            /// @param rows, columns
             /// @param inN (number of trials)
             /// @param inP (probablity of success [0, 1])
             /// @return Matrix
             template <typename dtype, typename GeneratorType = std::mt19937>
-            Matrix<dtype> binomial(GeneratorType &generator, const Shape &inShape, dtype inN, double inP = 0.5)
+            Eigen::MatrixX<dtype> binomial(GeneratorType &generator, Eigen::Index rows, Eigen::Index columns, dtype inN, double inP = 0.5)
             {
                 STATIC_ASSERT_INTEGER(dtype);
 
@@ -68,12 +68,12 @@ namespace mc
                     THROW_INVALID_ARGUMENT_ERROR("input probability of sucess must be of the range [0, 1].");
                 }
 
-                Matrix<dtype> returnArray(inShape);
+                Eigen::Matrix<dtype, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> returnArray(rows, columns);
 
                 std::binomial_distribution<dtype> dist(inN, inP);
 
-                std::for_each(returnArray.begin(),
-                              returnArray.end(),
+                std::for_each(returnArray.data(),
+                              returnArray.data() + returnArray.size(),
                               [&generator, &dist](dtype &value) -> void { value = dist(generator); });
 
                 return returnArray;
@@ -92,14 +92,14 @@ namespace mc
 
         /// Create an array of the given shape and populate it with
         /// random samples from the "binomial" distribution.
-        /// @param inShape
+        /// @param rows, columns
         /// @param inN (number of trials)
         /// @param inP (probability of success [0, 1])
         /// @return Matrix
         template <typename dtype>
-        Matrix<dtype> binomial(const Shape &inShape, dtype inN, double inP = 0.5)
+        Eigen::MatrixX<dtype> binomial(Eigen::Index rows, Eigen::Index columns, dtype inN, double inP = 0.5)
         {
-            return detail::binomial(generator_, inShape, inN, inP);
+            return detail::binomial(generator_, rows, columns, inN, inP);
         }
     }
 }

@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,22 +6,26 @@
 
 #pragma once
 
+#include <Eigen/Core>
+#include <cmath>
+#include <algorithm>
 #include "Functions/rad2deg.hpp"
-#include "Matrix.hpp"
 
 namespace mc
 {
-    /// Convert angles from degrees to radians.
-    template<typename dtype>
-    constexpr auto degrees(dtype inValue) noexcept
+    template <typename T>
+        requires std::is_arithmetic_v<T>
+    auto degrees(T value)
     {
-        return rad2deg(inValue);
+        return mc::rad2deg(value);
     }
-    
-    /// Convert angles from degrees to radians.
-    template<typename dtype>
-    auto degrees(const Matrix<dtype>& inArray)
+
+    template <typename Derived>
+    auto degrees(const Eigen::DenseBase<Derived> &input)
     {
-        return rad2deg(inArray);
+        return input.derived().unaryExpr([&](const auto &value)
+        {
+            return mc::rad2deg(value);
+        }).eval();
     }
 }

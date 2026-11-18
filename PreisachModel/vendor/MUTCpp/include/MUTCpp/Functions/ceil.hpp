@@ -7,13 +7,13 @@
 #pragma once
 
 #include "Core/StaticAssert.hpp"
-#include "Core/Algorithm.hpp"
-#include "Matrix.hpp"
+#include <Eigen/Core>
 
 namespace mc
 {
     /// Return the ceiling of the input.
     template<typename dtype>
+        requires (std::is_arithmetic_v<dtype> || mc::is_complex_v<dtype>)
     dtype ceil(dtype inValue) noexcept
     {
         STATIC_ASSERT_ARITHMETIC(dtype);
@@ -22,15 +22,12 @@ namespace mc
     }
 
     /// Return the ceiling of the input, element-wise.
-    template<typename dtype>
-    Matrix<dtype> ceil(const Matrix<dtype>& inArray)
+    template <typename Derived>
+    auto ceil(const Eigen::DenseBase<Derived> &inArray)
     {
-        Matrix<dtype> returnArray(inArray.shape());
-        algo::transform(inArray.cbegin(),
-                                  inArray.cend(),
-                                  returnArray.begin(),
-                                  [](dtype inValue) noexcept -> dtype { return ceil(inValue); });
-
-        return returnArray;
+        return inArray.derived().unaryExpr([](const auto &inValue)
+        {
+            return mc::ceil(inValue);
+        }).eval();
     }
 }

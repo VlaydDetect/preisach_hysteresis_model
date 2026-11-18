@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,33 +6,21 @@
 
 #pragma once
 
+#include <Eigen/Core>
 #include <cmath>
-
-#include "Core/StaticAssert.hpp"
-#include "Core/Algorithm.hpp"
-#include "Core/Types.hpp"
+#include <limits>
 #include "Functions/cumsum.hpp"
-#include "Matrix.hpp"
 
 namespace mc
 {
-    /// Return the cumulative sum of the elements along a given axis ignoring NaNs.
-    template <typename dtype>
-    Matrix<dtype> nancumsum(const Matrix<dtype> &inArray, Axis inAxis = Axis::NONE)
+    template <typename Derived>
+    auto nancumsum(const Eigen::DenseBase<Derived> &input, Axis axis = Axis::NONE)
     {
-        STATIC_ASSERT_FLOAT(dtype);
-
-        Matrix<dtype> arrayCopy(inArray);
-        algo::for_each(arrayCopy.begin(),
-                       arrayCopy.end(),
-                       [](dtype &value) noexcept -> void
-                       {
-                           if (std::isnan(value))
-                           {
-                               value = dtype{0};
-                           };
-                       });
-
-        return cumsum(arrayCopy, inAxis);
+        using T = typename Derived::Scalar;
+        const auto cleaned = input.derived().unaryExpr([](T value)
+        {
+            return std::isnan(value) ? T{} : value;
+        }).eval();
+        return mc::cumsum(cleaned, axis);
     }
 }

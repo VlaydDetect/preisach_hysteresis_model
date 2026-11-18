@@ -12,7 +12,7 @@
 #include "Core/TypeTraits.hpp"
 
 #define STATIC_ASSERT_VALID_DTYPE(dtype) \
-static_assert(mc::is_valid_dtype_v<dtype>, "Template type is not a valid dtype for NdArray")
+static_assert(mc::is_valid_dtype_v<dtype>, "Template type is not a valid dtype for Eigen scalar types")
 
 #define STATIC_ASSERT_ARITHMETIC(dtype) \
 static_assert(std::is_arithmetic_v<dtype>, "Can only be used with arithmetic types")

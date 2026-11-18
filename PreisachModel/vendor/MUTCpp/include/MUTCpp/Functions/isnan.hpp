@@ -9,13 +9,15 @@
 #include <cmath>
 
 #include "Core/DtypeInfo.hpp"
-#include "Core/Algorithm.hpp"
-#include "Matrix.hpp"
+#include <Eigen/Core>
+
+#include "Core/StaticAssert.hpp"
 
 namespace mc
 {
     /// Test for NaN and return result as a boolean.
     template <typename dtype>
+        requires (std::is_arithmetic_v<dtype> || mc::is_complex_v<dtype>)
     bool isnan(dtype inValue) noexcept
     {
         STATIC_ASSERT_ARITHMETIC(dtype);
@@ -31,15 +33,12 @@ namespace mc
     //============================================================================
     // Method Description:
     /// Test element-wise for NaN and return result as a boolean array.
-    template <typename dtype>
-    Matrix<bool> isnan(const Matrix<dtype> &inArray)
+    template <typename Derived>
+    auto isnan(const Eigen::DenseBase<Derived> &inArray)
     {
-        Matrix<bool> returnArray(inArray.shape());
-        algo::transform(inArray.cbegin(),
-                        inArray.cend(),
-                        returnArray.begin(),
-                        [](dtype inValue) noexcept -> bool { return isnan(inValue); });
-
-        return returnArray;
+        return inArray.derived().unaryExpr([](const auto &inValue)
+        {
+            return mc::isnan(inValue);
+        }).eval();
     }
 }

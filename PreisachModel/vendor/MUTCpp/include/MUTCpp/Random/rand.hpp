@@ -6,12 +6,14 @@
 
 #pragma once
 
+#include "Core/DtypeInfo.hpp"
+
+#include <Eigen/Core>
+
 #include <algorithm>
 #include <random>
 
 #include "Core/StaticAssert.hpp"
-#include "Core/Shape.hpp"
-#include "Matrix.hpp"
 #include "generator.hpp"
 
 namespace mc
@@ -38,20 +40,20 @@ namespace mc
             /// Create an array of the given shape and populate it with
             /// random samples from a uniform distribution over [0, 1).
             /// @param generator: instance of a random number generator
-            /// @param inShape
+            /// @param rows, columns
             /// @return Matrix
             template <typename dtype, typename GeneratorType = std::mt19937>
-            Matrix<dtype> rand(GeneratorType &generator, const Shape &inShape)
+            Eigen::MatrixX<dtype> rand(GeneratorType &generator, Eigen::Index rows, Eigen::Index columns)
             {
                 STATIC_ASSERT_FLOAT(dtype);
 
-                Matrix<dtype> returnArray(inShape);
+                Eigen::Matrix<dtype, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> returnArray(rows, columns);
 
                 std::uniform_real_distribution<dtype> dist(static_cast<dtype>(0.),
                                                            static_cast<dtype>(1.) - DtypeInfo<dtype>::epsilon());
 
-                std::for_each(returnArray.begin(),
-                              returnArray.end(),
+                std::for_each(returnArray.data(),
+                              returnArray.data() + returnArray.size(),
                               [&generator, &dist](dtype &value) -> void { value = dist(generator); });
 
                 return returnArray;
@@ -68,9 +70,9 @@ namespace mc
         /// Create an array of the given shape and populate it with
         /// random samples from a uniform distribution over [0, 1).
         template <typename dtype>
-        Matrix<dtype> rand(const Shape &inShape)
+        Eigen::MatrixX<dtype> rand(Eigen::Index rows, Eigen::Index columns)
         {
-            return detail::rand<dtype>(generator_, inShape);
+            return detail::rand<dtype>(generator_, rows, columns);
         }
     }
 }

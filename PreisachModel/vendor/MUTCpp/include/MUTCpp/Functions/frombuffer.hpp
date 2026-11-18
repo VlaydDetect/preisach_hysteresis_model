@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,23 +6,23 @@
 
 #pragma once
 
-#include "Core/Error.hpp"
-#include "Core/Types.hpp"
-#include "Matrix.hpp"
-#include "Matrix/MatrixCore.hpp"
+#include <Eigen/Core>
+#include <cstring>
+#include <stdexcept>
+#include <type_traits>
 
 namespace mc
 {
-    /// Interpret a buffer as a 1-dimensional array.
-    template <typename dtype>
-    Matrix<dtype> frombuffer(const char *inBufferPtr, uint32 inNumBytes)
+    template <typename T>
+    requires std::is_trivially_copyable_v<T>
+    Eigen::RowVectorX<T> frombuffer(const char *data, std::size_t bytes)
     {
-        if (inNumBytes % sizeof(dtype) != 0)
+        if (bytes % sizeof(T) != 0 || (bytes != 0 && !data))
         {
-            THROW_INVALID_ARGUMENT_ERROR("inNumBytes % sizeof(dtype) != 0");
+            throw std::invalid_argument("Invalid byte buffer for requested scalar type");
         }
-
-        const auto numElements = static_cast<uint32>(inNumBytes / sizeof(dtype));
-        return NdArray<dtype>(reinterpret_cast<const dtype *>(inBufferPtr), numElements);
+        Eigen::RowVectorX<T> result(static_cast<Eigen::Index>(bytes / sizeof(T)));
+        if (bytes != 0) std::memcpy(result.data(), data, bytes);
+        return result;
     }
 }

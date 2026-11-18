@@ -15,7 +15,7 @@
 
 #include "Core/Constants.hpp"
 
-#include "Eigen/utils.hpp"
+#include "MUTCpp/Utils/Eigen.hpp"
 
 namespace mc
 {
@@ -34,7 +34,7 @@ namespace mc
             if (x.size() != y.size() || x.size() == 0) return 0.0;
 
             Eigen::VectorXd x_centered = x.array() - x.mean();
-            bool a = std::ranges::any_of(y, [](const double v){ return isnan(v); });
+            bool a = std::ranges::any_of(y, [](const double v){ return std::isnan(v); });
             double ys_mean = y.mean();
             Eigen::VectorXd y_centered = y.array() - y.mean();
 

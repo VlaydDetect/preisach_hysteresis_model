@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,22 +6,23 @@
 
 #pragma once
 
-#include "Matrix.hpp"
+#include "Utils/DenseOperations.hpp"
 
 namespace mc
 {
-    //============================================================================
-    // Method Description:
-    /// Return a sorted copy of an array.
-    /// @param inArray
-    /// @param inAxis (Optional, default NONE)
-    /// @return Matrix
-    template<typename dtype>
-    Matrix<dtype> sort(const Matrix<dtype>& inArray, Axis inAxis = Axis::NONE)
+    template <typename Derived>
+    Eigen::MatrixX<typename Derived::Scalar> sort(const Eigen::DenseBase<Derived> &input, Axis axis = Axis::NONE)
     {
-        Matrix<dtype> returnArray(inArray);
-        returnArray.sort(inAxis);
-        return returnArray;
+        auto transformed = detail::mapAxis(input, axis, 0, [&](const auto &slice)
+        {
+            Eigen::RowVectorX<typename Derived::Scalar> values = detail::rowMajor(slice).transpose();
+            std::sort(values.begin(), values.end());
+            return values;
+        });
+        if (axis == Axis::NONE)
+        {
+            return transformed.template reshaped<Eigen::RowMajor>(input.rows(), input.cols()).eval();
+        }
+        return transformed;
     }
 }
-

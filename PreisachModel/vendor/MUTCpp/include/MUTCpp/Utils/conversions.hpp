@@ -5,10 +5,10 @@
 // Copyright (c) 2024 Vlayd Detect.All rights reserved.
 
 #pragma once
+#include <utility>
 #include <vector>
 
 #include "Core/Error.hpp"
-#include "Matrix.hpp"
 
 namespace mc
 {
@@ -22,7 +22,7 @@ namespace mc
         }
 
         std::vector<std::pair<T, U>> result(a.size());
-        for (int i = 0; i < a.size(); i++)
+        for (std::size_t i = 0; i < a.size(); i++)
         {
             result[i] = std::make_pair(a[i], b[i]);
         }

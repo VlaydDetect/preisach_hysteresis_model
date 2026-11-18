@@ -12,33 +12,36 @@ namespace mc
 {
     namespace ode
     {
+        template <int N>
         class PoincareMapGenerator
         {
         public:
+            using State = typename DynamicalSystem<N>::State;
+            using Trajectory = typename DynamicalSystem<N>::Trajectory;
+
             // Структура для определения секущей плоскости
             struct PoincareSection
             {
-                Eigen::VectorXd Normal;
-                Eigen::VectorXd Point;
+                State Normal;
+                State Point;
 
-                PoincareSection(const Eigen::VectorXd &normal, const Eigen::VectorXd &point) :
+                PoincareSection(const State &normal, const State &point) :
                     Normal(normal.normalized()), Point(point)
                 {
                 }
             };
 
             // Основная функция генерации отображения
-            static Eigen::MatrixXd ComputeMap(
-                Eigen::MatrixXd traj,
-                uint32_t dim,
+            static Trajectory ComputeMap(
+                const Trajectory &traj,
                 const PoincareSection &section)
             {
                 const Eigen::Index numSteps = traj.rows();
 
                 if (numSteps < 2)
-                    return Eigen::MatrixXd(0, dim);
+                    return Trajectory(0, N);
 
-                std::vector<Eigen::VectorXd> intersections;
+                std::vector<State> intersections;
                 intersections.reserve(1024);
 
                 // 2. Векторизованное вычисление расстояний до плоскости для всей траектории.
@@ -59,7 +62,7 @@ namespace mc
                         // t - доля шага, на которой происходит пересечение
                         double t = d1 / (d1 - d2);
 
-                        Eigen::VectorXd exactIntersection =
+                        State exactIntersection =
                             traj.row(i).transpose() + t * (traj.row(i + 1) - traj.row(i)).transpose();
 
                         intersections.push_back(exactIntersection);
@@ -67,7 +70,7 @@ namespace mc
                 }
 
                 // 4. Формирование результирующей матрицы
-                Eigen::MatrixXd poincareMap(intersections.size(), dim);
+                Trajectory poincareMap(intersections.size(), N);
                 for (size_t i = 0; i < intersections.size(); ++i)
                 {
                     poincareMap.row(i) = intersections[i].transpose();
@@ -76,50 +79,50 @@ namespace mc
                 return poincareMap;
             }
 
-            static Eigen::MatrixXd ComputeStroboscopicMap(Eigen::MatrixXd traj, uint32_t dim, double period, double dt)
+            static Trajectory ComputeStroboscopicMap(const Trajectory &traj, double period, double dt)
             {
                 const uint32_t stepsPerPeriod = period / dt;
                 
                 Eigen::Index totalPoints = traj.rows();
                 Eigen::Index numIntersections = totalPoints / stepsPerPeriod;
     
-                Eigen::MatrixXd poincareMap(numIntersections, dim); 
+                Trajectory poincareMap(numIntersections, N);
     
                 for (Eigen::Index i = 0; i < numIntersections; ++i)
                 {
                     // Выборка строк с шагом, равным периоду
-                    poincareMap.row(i) = traj.row(i * stepsPerPeriod).head(dim); 
+                    poincareMap.row(i) = traj.row(i * stepsPerPeriod);
                 }
     
                 return poincareMap;
             }
         };
 
-        inline Eigen::MatrixXd PoincareMapping(mc::Ref<mc::ode::DynamicalSystem> system, double time, uint32_t dim,
-                                               const Eigen::VectorXd &PlaneNormal, const Eigen::VectorXd &PlanePoint)
+        template <int N, typename Normal, typename Point>
+        typename DynamicalSystem<N>::Trajectory PoincareMapping(
+            DynamicalSystem<N> &system, double time, const Eigen::MatrixBase<Normal> &normal,
+            const Eigen::MatrixBase<Point> &point)
         {
-            system->ResetArgs();
+            const typename PoincareMapGenerator<N>::PoincareSection section(
+                DynamicalSystem<N>::CheckedState(normal), DynamicalSystem<N>::CheckedState(point));
+            system.ResetArgs();
             system.Reset();
-            
-            const auto traj = system->Forward(time);
-            
-            system->ResetArgs();
+            const auto traj = system.Forward(time);
+            system.ResetArgs();
             system.Reset();
-            
-            return PoincareMapGenerator::ComputeMap(traj, dim, PoincareMapGenerator::PoincareSection(PlaneNormal, PlanePoint));
+            return PoincareMapGenerator<N>::ComputeMap(traj, section);
         }
-        
-        inline Eigen::MatrixXd PoincareStroboscopicMapping(mc::Ref<mc::ode::DynamicalSystem> system, double periodMultiplier, uint32_t dim, double period, double dt)
+
+        template <int N>
+        typename DynamicalSystem<N>::Trajectory PoincareStroboscopicMapping(
+            DynamicalSystem<N> &system, double periodMultiplier, double period, double dt)
         {
-            system->ResetArgs();
+            system.ResetArgs();
             system.Reset();
-            
-            const auto traj = system->Forward(periodMultiplier * period);
-            
-            system->ResetArgs();
+            const auto traj = system.Forward(periodMultiplier * period);
+            system.ResetArgs();
             system.Reset();
-            
-            return PoincareMapGenerator::ComputeStroboscopicMap(traj, dim, period, dt);
+            return PoincareMapGenerator<N>::ComputeStroboscopicMap(traj, period, dt);
         }
     }
 }

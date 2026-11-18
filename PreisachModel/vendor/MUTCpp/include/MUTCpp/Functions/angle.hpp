@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,33 +6,23 @@
 
 #pragma once
 
+#include <Eigen/Core>
 #include <complex>
-
-#include "Core/StaticAssert.hpp"
-#include "Core/Algorithm.hpp"
-#include "Matrix.hpp"
 
 namespace mc
 {
-    /// Return the angle of the complex argument.
-    template <typename dtype>
-    auto angle(const std::complex<dtype> &inValue)
+    template <typename T>
+    auto angle(const std::complex<T> &value)
     {
-        STATIC_ASSERT_ARITHMETIC(dtype);
-
-        return std::arg(inValue);
+        return std::arg(value);
     }
 
-    /// Return the angle of the complex argument.
-    template <typename dtype>
-    auto angle(const Matrix<std::complex<dtype>> &inArray)
+    template <typename Derived>
+    auto angle(const Eigen::DenseBase<Derived> &input)
     {
-        Matrix<decltype(angle(std::complex<dtype>{0}))> returnArray(inArray.shape());
-        algo::transform(inArray.cbegin(),
-                        inArray.cend(),
-                        returnArray.begin(),
-                        [](auto &inValue) -> auto { return angle(inValue); });
-
-        return returnArray;
+        return input.derived().unaryExpr([&](const auto &value)
+        {
+            return std::arg(value);
+        }).eval();
     }
 }

@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,14 +6,13 @@
 
 #pragma once
 
-#include "Matrix.hpp"
+#include <Eigen/Core>
 
 namespace mc
 {
-    /// Return a new array with the same shape as a given array.
-    template<typename dtype>
-    Matrix<dtype> empty_like(const Matrix<dtype>& inArray)
+    template <typename Derived>
+    Eigen::MatrixX<typename Derived::Scalar> empty_like(const Eigen::DenseBase<Derived> &input)
     {
-        return Matrix<dtype>(inArray.shape());
+        return {input.rows(), input.cols()};
     }
 }

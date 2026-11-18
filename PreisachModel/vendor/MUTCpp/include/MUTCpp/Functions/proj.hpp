@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,33 +6,23 @@
 
 #pragma once
 
+#include <Eigen/Core>
 #include <complex>
-
-#include "Core/StaticAssert.hpp"
-#include "Core/Algorithm.hpp"
-#include "Matrix.hpp"
 
 namespace mc
 {
-    /// Returns the projection of the complex number z onto the Riemann sphere.
-    template <typename dtype>
-    auto proj(const std::complex<dtype> &inValue)
+    template <typename T>
+    auto proj(const std::complex<T> &value)
     {
-        STATIC_ASSERT_ARITHMETIC(dtype);
-
-        return std::proj(inValue);
+        return std::proj(value);
     }
 
-    /// Returns the projection of the complex number z onto the Riemann sphere.
-    template <typename dtype>
-    auto proj(const Matrix<std::complex<dtype>> &inArray)
+    template <typename Derived>
+    auto proj(const Eigen::DenseBase<Derived> &input)
     {
-        Matrix<decltype(mc::proj(std::complex<dtype>{0}))> returnArray(inArray.shape());
-        algo::transform(inArray.cbegin(),
-                        inArray.cend(),
-                        returnArray.begin(),
-                        [](auto &inValue) -> auto { return mc::proj(inValue); });
-
-        return returnArray;
+        return input.derived().unaryExpr([&](const auto &value)
+        {
+            return std::proj(value);
+        }).eval();
     }
 }

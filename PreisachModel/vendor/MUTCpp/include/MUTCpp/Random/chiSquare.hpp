@@ -6,14 +6,14 @@
 
 #pragma once
 
+#include <Eigen/Core>
+
 #include <algorithm>
 #include <random>
 #include <string>
 
 #include "Core/Error.hpp"
 #include "Core/StaticAssert.hpp"
-#include "Core/Shape.hpp"
-#include "Matrix.hpp"
 #include "Random/generator.hpp"
 
 namespace mc
@@ -43,11 +43,11 @@ namespace mc
             /// Create an array of the given shape and populate it with
             /// random samples from the "chi square" distribution.
             /// @param generator: instance of a random number generator
-            /// @param inShape
+            /// @param rows, columns
             /// @param inDof (independent random variables)
             /// @return Matrix
             template<typename dtype, typename GeneratorType = std::mt19937>
-            Matrix<dtype> chiSquare(GeneratorType& generator, const Shape& inShape, dtype inDof)
+            Eigen::MatrixX<dtype> chiSquare(GeneratorType& generator, Eigen::Index rows, Eigen::Index columns, dtype inDof)
             {
                 STATIC_ASSERT_ARITHMETIC(dtype);
 
@@ -56,12 +56,12 @@ namespace mc
                     THROW_INVALID_ARGUMENT_ERROR("numerator degrees of freedom must be greater than zero.");
                 }
 
-                Matrix<dtype> returnArray(inShape);
+                Eigen::Matrix<dtype, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> returnArray(rows, columns);
 
                 std::chi_squared_distribution<dtype> dist(inDof);
 
-                std::for_each(returnArray.begin(),
-                              returnArray.end(),
+                std::for_each(returnArray.data(),
+                              returnArray.data() + returnArray.size(),
                               [&generator, &dist](dtype& value) -> void { value = dist(generator); });
 
                 return returnArray;
@@ -79,13 +79,13 @@ namespace mc
 
         /// Create an array of the given shape and populate it with
         /// random samples from the "chi square" distribution.
-        /// @param inShape
+        /// @param rows, columns
         /// @param inDof (independent random variables)
         /// @return Matrix
         template<typename dtype>
-        Matrix<dtype> chiSquare(const Shape& inShape, dtype inDof)
+        Eigen::MatrixX<dtype> chiSquare(Eigen::Index rows, Eigen::Index columns, dtype inDof)
         {
-            return detail::chiSquare(generator_, inShape, inDof);
+            return detail::chiSquare(generator_, rows, columns, inDof);
         }
     }
 }

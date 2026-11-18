@@ -9,13 +9,13 @@
 #include <cmath>
 
 #include "Core/StaticAssert.hpp"
-#include "Core/Algorithm.hpp"
-#include "Matrix.hpp"
+#include <Eigen/Core>
 
 namespace mc
 {
     /// Base-10 logarithm of x.
     template <typename dtype>
+        requires (std::is_arithmetic_v<dtype> || mc::is_complex_v<dtype>)
     auto log10(dtype inValue) noexcept
     {
         STATIC_ASSERT_ARITHMETIC(dtype);
@@ -24,15 +24,12 @@ namespace mc
     }
 
     /// Base-10 logarithm of x.
-    template <typename dtype>
-    auto log10(const Matrix<dtype> &inArray)
+    template <typename Derived>
+    auto log10(const Eigen::DenseBase<Derived> &inArray)
     {
-        Matrix<decltype(log1p(dtype{0}))> returnArray(inArray.shape());
-        algo::transform(inArray.cbegin(),
-                        inArray.cend(),
-                        returnArray.begin(),
-                        [](dtype inValue) noexcept -> auto { return log10(inValue); });
-
-        return returnArray;
+        return inArray.derived().unaryExpr([](const auto &inValue)
+        {
+            return mc::log10(inValue);
+        }).eval();
     }
 }

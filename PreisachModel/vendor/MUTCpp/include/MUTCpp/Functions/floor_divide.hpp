@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,27 +6,24 @@
 
 #pragma once
 
+#include "Utils/DenseOperations.hpp"
 #include <cmath>
-
-#include "Core/StaticAssert.hpp"
-#include "Functions/floor.hpp"
-#include "Matrix.hpp"
 
 namespace mc
 {
-    /// Return the largest integer smaller or equal to the division of the inputs.
-    template <typename dtype>
-    dtype floor_divide(dtype inValue1, dtype inValue2) noexcept
+    template <typename T>
+        requires std::is_arithmetic_v<T>
+    T floor_divide(T left, T right)
     {
-        STATIC_ASSERT_ARITHMETIC(dtype);
-
-        return std::floor(inValue1 / inValue2);
+        return static_cast<T>(std::floor(static_cast<double>(left) / right));
     }
 
-    /// Return the largest integer smaller or equal to the division of the inputs.
-    template <typename dtype>
-    Matrix<dtype> floor_divide(const Matrix<dtype> &inArray1, const Matrix<dtype> &inArray2)
+    template <typename Left, typename Right>
+    auto floor_divide(const Eigen::DenseBase<Left> &left, const Eigen::DenseBase<Right> &right)
     {
-        return floor(inArray1 / inArray2);
+        return detail::broadcast(left, right, [](auto a, auto b)
+        {
+            return mc::floor_divide(a, static_cast<decltype(a)>(b));
+        });
     }
 }

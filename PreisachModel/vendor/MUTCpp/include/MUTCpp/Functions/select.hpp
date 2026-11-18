@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,118 +6,37 @@
 
 #pragma once
 
-#include <cstdlib>
-#include <initializer_list>
-#include <limits>
+#include "Functions/where.hpp"
 #include <vector>
-
-#include "Core/Error.hpp"
-#include "Core/Algorithm.hpp"
-#include "Core/Shape.hpp"
-#include "Matrix.hpp"
 
 namespace mc
 {
-    /// Return an array drawn from elements in choiceVec, depending on conditions.
-    /// @param condVec The vector of conditions which determine from which array in choiceVec
-    /// the output elements are taken. When multiple conditions are satisfied,
-    /// the first one encountered in choiceVec is used.
-    /// @param choiceVec The vector of array pointers from which the output elements are taken.
-    /// It has to be of the same length as condVec.
-    /// @param defaultValue The element inserted in output when all conditions evaluate to False
-    /// @return Matrix
-    template <typename dtype>
-    Matrix<dtype> select(const std::vector<const Matrix<bool> *> &condVec,
-                         const std::vector<const Matrix<dtype> *> &choiceVec,
-                         dtype defaultValue = dtype{0})
+    template <typename Mask, typename Choice>
+    Eigen::MatrixX<typename Choice::Scalar> select(const std::vector<const Mask *> &conditions,
+        const std::vector<const Choice *> &choices, typename Choice::Scalar defaultValue = {})
     {
-        if (choiceVec.size() != condVec.size())
+        if (choices.empty() || choices.size() != conditions.size() || !conditions.front())
         {
-            THROW_INVALID_ARGUMENT_ERROR("condVec and choiceVec need to be the same size");
+            throw std::invalid_argument("Select requires the same nonzero number of conditions and choices");
         }
-
-        if (choiceVec.size() == 0)
+        using T = typename Choice::Scalar;
+        Eigen::MatrixX<T> result = Eigen::MatrixX<T>::Constant(conditions.front()->rows(), conditions.front()->cols(), defaultValue);
+        for (std::size_t i = choices.size(); i-- > 0;)
         {
-            THROW_INVALID_ARGUMENT_ERROR("choiceVec is size 0");
+            if (!conditions[i] || !choices[i]) throw std::invalid_argument("Select received a null condition or choice");
+            result = where(*conditions[i], choices[i]->matrix(), result);
         }
-
-        auto theShape = condVec.front()->shape();
-        for (const auto cond : condVec)
-        {
-            const auto &theCond = *cond;
-            if (theCond.shape() != theShape)
-            {
-                THROW_INVALID_ARGUMENT_ERROR("all Matrixs of the condVec must be the same shape");
-            }
-        }
-
-        for (const auto choice : choiceVec)
-        {
-            const auto &theChoice = *choice;
-            if (theChoice.shape() != theShape)
-            {
-                THROW_INVALID_ARGUMENT_ERROR(
-                    "all Matrixs of the choiceVec must be the same shape, and the same as condVec");
-            }
-        }
-
-        using size_type = typename Matrix<dtype>::size_type;
-        constexpr auto nullChoice = std::numeric_limits<size_type>::max();
-
-        Matrix<size_type> choiceIndices(theShape);
-        choiceIndices.fill(nullChoice);
-        for (size_type condIdx = 0; condIdx < condVec.size(); ++condIdx)
-        {
-            const auto &theCond = *condVec[condIdx];
-            for (size_type i = 0; i < theCond.size(); ++i)
-            {
-                if (theCond[i] && choiceIndices[i] == nullChoice)
-                {
-                    choiceIndices[i] = condIdx;
-                }
-            }
-        }
-
-        Matrix<dtype> result(theShape);
-        result.fill(defaultValue);
-        for (size_type i = 0; i < choiceIndices.size(); ++i)
-        {
-            const auto choiceIndex = choiceIndices[i];
-            if (choiceIndex != nullChoice)
-            {
-                const auto &theChoice = *choiceVec[choiceIndex];
-                result[i] = theChoice[i];
-            }
-        }
-
         return result;
     }
 
-    /// Return an array drawn from elements in choiceList, depending on conditions.
-    /// @param condList The list of conditions which determine from which array in choiceList
-    /// the output elements are taken. When multiple conditions are satisfied,
-    /// the first one encountered in choiceList is used.
-    /// @param choiceList The list of array pointers from which the output elements are taken.
-    /// It has to be of the same length as condVec.
-    /// @param defaultValue The element inserted in output when all conditions evaluate to False
-    /// @return Matrix
-    template <typename dtype>
-    Matrix<dtype> select(const std::vector<Matrix<bool>> &condList,
-                         const std::vector<Matrix<dtype>> &choiceList,
-                         dtype defaultValue = dtype{0})
+    template <typename Mask, typename Choice>
+    auto select(const std::vector<Mask> &conditions, const std::vector<Choice> &choices,
+        typename Choice::Scalar defaultValue = {})
     {
-        std::vector<const Matrix<bool> *> condVec(condList.size());
-        algo::transform(condList.begin(),
-                        condList.end(),
-                        condVec.begin(),
-                        [](auto &cond) noexcept -> const Matrix<bool> *{ return &cond; });
-
-        std::vector<const Matrix<dtype> *> choiceVec(choiceList.size());
-        algo::transform(choiceList.begin(),
-                        choiceList.end(),
-                        choiceVec.begin(),
-                        [](auto &choice) noexcept -> const Matrix<dtype> *{ return &choice; });
-
-        return select(condVec, choiceVec, defaultValue);
+        std::vector<const Mask *> masks;
+        std::vector<const Choice *> values;
+        for (const auto &condition : conditions) masks.push_back(&condition);
+        for (const auto &choice : choices) values.push_back(&choice);
+        return select(masks, values, defaultValue);
     }
 }

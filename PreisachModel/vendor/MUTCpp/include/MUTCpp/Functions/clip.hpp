@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,42 +6,25 @@
 
 #pragma once
 
+#include <Eigen/Core>
+#include <cmath>
 #include <algorithm>
-
-#include "Core/StaticAssert.hpp"
-#include "Core/ComplexOperators.hpp"
-#include "Matrix.hpp"
 
 namespace mc
 {
-    /// Clip (limit) the value.
-    template<typename dtype>
-    dtype clip(dtype inValue, dtype inMinValue, dtype inMaxValue)
+    template <typename T>
+        requires std::is_arithmetic_v<T>
+    auto clip(T value, T low, T high)
     {
-        STATIC_ASSERT_ARITHMETIC_OR_COMPLEX(dtype);
-
-#ifdef __cpp_lib_clamp
-        const auto comparitor = [](dtype lhs, dtype rhs) noexcept -> bool { return lhs < rhs; };
-
-        return std::clamp(inValue, inMinValue, inMaxValue, comparitor);
-#else
-        if (inValue < inMinValue)
-        {
-            return inMinValue;
-        }
-        else if (inValue > inMaxValue)
-        {
-            return inMaxValue;
-        }
-
-        return inValue;
-#endif
+        return std::clamp(value, low, high);
     }
-    
-    /// Clip (limit) the values in an array.
-    template<typename dtype>
-    Matrix<dtype> clip(const Matrix<dtype>& inArray, dtype inMinValue, dtype inMaxValue)
+
+    template <typename Derived>
+    auto clip(const Eigen::DenseBase<Derived> &input, typename Derived::Scalar low, typename Derived::Scalar high)
     {
-        return inArray.clip(inMinValue, inMaxValue);
+        return input.derived().unaryExpr([&](const auto &value)
+        {
+            return std::clamp(value, low, high);
+        }).eval();
     }
 }

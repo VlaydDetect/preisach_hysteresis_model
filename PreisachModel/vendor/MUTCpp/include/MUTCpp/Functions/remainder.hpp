@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,35 +6,24 @@
 
 #pragma once
 
+#include "Utils/DenseOperations.hpp"
 #include <cmath>
-#include <string>
-
-#include "Core/Error.hpp"
-#include "Core/StaticAssert.hpp"
-#include "Core/Algorithm.hpp"
-#include "Core/Types.hpp"
-#include "Matrix.hpp"
 
 namespace mc
 {
-    /// Return a remainder of division.
-    template <typename dtype>
-    double remainder(dtype inValue1, dtype inValue2) noexcept
+    template <typename T>
+        requires std::is_arithmetic_v<T>
+    double remainder(T left, T right)
     {
-        STATIC_ASSERT_ARITHMETIC(dtype);
-
-        return static_cast<double>(std::remainder(inValue1, inValue2));
+        return std::remainder(left, right);
     }
 
-    /// Return element-wise remainder of the division.
-    template <typename dtype>
-    Matrix<double> remainder(const Matrix<dtype> &inArray1, const Matrix<dtype> &inArray2)
+    template <typename Left, typename Right>
+    auto remainder(const Eigen::DenseBase<Left> &left, const Eigen::DenseBase<Right> &right)
     {
-        return broadcast::broadcaster<double>(inArray1,
-                                              inArray2,
-                                              [](dtype inValue1, dtype inValue2) noexcept -> double
-                                              {
-                                                  return remainder(inValue1, inValue2);
-                                              });
+        return detail::broadcast(left, right, [](auto a, auto b)
+        {
+            return mc::remainder(a, static_cast<decltype(a)>(b));
+        });
     }
 }

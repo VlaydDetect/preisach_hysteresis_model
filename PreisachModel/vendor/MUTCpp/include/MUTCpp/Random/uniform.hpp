@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include <Eigen/Core>
+
 #include "Core/DtypeInfo.hpp"
 #include "Core/StaticAssert.hpp"
 #include "Random/randFloat.hpp"
@@ -33,11 +35,11 @@ namespace mc
             /// Samples are uniformly distributed over the half -
             /// open interval[low, high) (includes low, but excludes high)
             template <typename dtype, typename GeneratorType = std::mt19937>
-            Matrix<dtype> uniform(GeneratorType &generator, const Shape &inShape, dtype inLow, dtype inHigh)
+            Eigen::MatrixX<dtype> uniform(GeneratorType &generator, Eigen::Index rows, Eigen::Index columns, dtype inLow, dtype inHigh)
             {
                 STATIC_ASSERT_FLOAT(dtype);
 
-                return detail::randFloat(generator, inShape, inLow, inHigh);
+                return detail::randFloat(generator, rows, columns, inLow, inHigh);
             }
         }
 
@@ -56,9 +58,9 @@ namespace mc
         /// Samples are uniformly distributed over the half -
         /// open interval[low, high) (includes low, but excludes high)
         template <typename dtype>
-        Matrix<dtype> uniform(const Shape &inShape, dtype inLow, dtype inHigh)
+        Eigen::MatrixX<dtype> uniform(Eigen::Index rows, Eigen::Index columns, dtype inLow, dtype inHigh)
         {
-            return detail::uniform(generator_, inShape, inLow, inHigh);
+            return detail::uniform(generator_, rows, columns, inLow, inHigh);
         }
     }
 }

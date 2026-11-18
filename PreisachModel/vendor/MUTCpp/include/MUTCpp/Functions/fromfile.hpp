@@ -1,4 +1,4 @@
-﻿// @file
+// @file
 // @author Vlayd Detect <gingema62@gmail.com>
 // [GitHub Repository](https://github.com/VlaydDetect/MUTCpp)
 // License
@@ -6,70 +6,40 @@
 
 #pragma once
 
+#include "Functions/fromstring.hpp"
 #include <filesystem>
 #include <fstream>
-#include <memory>
-#include <sstream>
-#include <string>
-
-#include "Core/Error.hpp"
-#include "Core/StaticAssert.hpp"
-#include "Core/Types.hpp"
-#include "Functions/fromstring.hpp"
-#include "Matrix.hpp"
+#include <stdexcept>
+#include <type_traits>
 
 namespace mc
 {
-    /// Construct an array from data in a binary file.
-    template<typename dtype>
-    Matrix<dtype> fromfile(const std::string& inFilename)
+    template <typename T>
+    requires std::is_trivially_copyable_v<T>
+    Eigen::RowVectorX<T> fromfile(const std::filesystem::path &path)
     {
-        if (!std::filesystem::exists(inFilename))
+        std::ifstream file(path, std::ios::binary | std::ios::ate);
+        if (!file) throw std::runtime_error("Unable to open " + path.string());
+        const auto bytes = static_cast<std::streamoff>(file.tellg());
+        if (bytes < 0 || bytes % sizeof(T) != 0)
         {
-            THROW_INVALID_ARGUMENT_ERROR("input filename does not exist.\n\t" + inFilename);
+            throw std::runtime_error("Invalid binary file size for " + path.string());
         }
-
-        // read in as binary file
-        std::ifstream file(inFilename.c_str(), std::ios::in | std::ios::binary);
-        if (!file.is_open())
-        {
-            THROW_INVALID_ARGUMENT_ERROR("unable to open file\n\t" + inFilename);
-        }
-
-        file.seekg(0, std::ifstream::end);
-        const uint32 fileSize = static_cast<uint32>(file.tellg());
-        file.seekg(0, std::ifstream::beg);
-
-        std::vector<char> fileBuffer;
-        fileBuffer.reserve(fileSize);
-        file.read(fileBuffer.data(), fileSize);
-
-        if (file.bad() || file.fail())
-        {
-            THROW_INVALID_ARGUMENT_ERROR("error occured while reading the file");
-        }
-
-        file.close();
-
-        Matrix<dtype> returnArray(reinterpret_cast<dtype*>(fileBuffer.data()), fileSize / sizeof(dtype));
-
-        return returnArray;
+        Eigen::RowVectorX<T> result(static_cast<Eigen::Index>(bytes / sizeof(T)));
+        file.seekg(0);
+        if (bytes != 0) file.read(reinterpret_cast<char *>(result.data()), bytes);
+        if (!file) throw std::runtime_error("Unable to read " + path.string());
+        return result;
     }
 
-    /// Construct an array from data in a text file.
-    template<typename dtype>
-    Matrix<dtype> fromfile(const std::string& inFilename, const char inSep)
+    template <typename T>
+    Eigen::RowVectorX<T> fromfile(const std::filesystem::path &path, char separator)
     {
-        std::ifstream file(inFilename.c_str());
-        if (!file.is_open())
-        {
-            THROW_INVALID_ARGUMENT_ERROR("unable to open file\n\t" + inFilename);
-        }
-
-        std::stringstream buffer;
-        buffer << file.rdbuf();
-        file.close();
-
-        return fromstring<dtype>(buffer.str(), inSep);
+        std::ifstream file(path);
+        if (!file) throw std::runtime_error("Unable to open " + path.string());
+        std::ostringstream text;
+        text << file.rdbuf();
+        if (file.bad()) throw std::runtime_error("Unable to read " + path.string());
+        return fromstring<T>(text.str(), separator);
     }
 }
