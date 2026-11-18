@@ -631,16 +631,30 @@ if __name__ == "__main__":
     X = cr[:, 1:3]
 
     plt.figure(figsize=(10, 10))
-    plt.plot(X[:, 0], X[:, 1], '-k', label='curve')
+    plt.plot(X[:, 0], X[:, 1], '-k', label='Cone Forming Curve')
     L = np.max(np.linalg.norm(rays, axis=1))
+
+    M = 10
+    x_polygon = [0, rays[0, 0] * M, rays[1, 0] * M]
+    y_polygon = [0, rays[0, 1] * M, rays[1, 1] * M]
+
+    # Добавление штриховки (полигона)
+    # Параметр hatch='///' задает тип штриховки (другие варианты: '//', '\\', 'xx', '.')
+    # zorder=0 гарантирует, что штриховка будет отрисована под векторами и кривой
+    plt.fill(x_polygon, y_polygon, fill=False, hatch='///', edgecolor='gray', zorder=0, alpha=0.7, label='Cone')
+    
     for i in range(len(rays)):
-        plt.plot([0, rays[i, 0] * L], [0, rays[i, 1] * L], '--', lw=2, label=f'ray{i}')
+        plt.plot([0, rays[i, 0] * L], [0, rays[i, 1] * L], '--', color='green', lw=2, label='Cone Forming Vector')
     plt.gca().set_aspect('equal', 'box')
     plt.grid(True)
-    plt.legend()
+    handles, labels = plt.gca().get_legend_handles_labels()
+    by_label = dict(zip(labels, handles))
+    plt.legend(by_label.values(), by_label.keys())
+    plt.xlim([-0.25, 0.75])
+    plt.ylim([-0.75, 1.25])
     # plt.show()
 
-    plot_traced_shuttle_points()
+    # plot_traced_shuttle_points()
     plt.show()
     
     # A2 = np.array([

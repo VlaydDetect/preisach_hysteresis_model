@@ -254,10 +254,13 @@ if __name__ == "__main__":
     A = np.array([[0.0, 1.0],
                   [-0.1, -0.7]])
     b = np.array([0.0, 1.5])
+    
+    print(is_hurwitz_matrix(A))
 
-    X = generate_curve_iter(A, b, T=80.0, dt=0.05, tol=1e-9)
+    X = generate_curve_iter(A, b, T=1000.0, dt=0.01, tol=1e-9)
 
     rays = pick_two_support_rays_2d(A, X)
+    
     # print("Selected sample indices:", idxs)
     # print("Arc length (rad):", arc_len)
     # print("Selection info:", info)
@@ -268,4 +271,9 @@ if __name__ == "__main__":
     # print("Start sample point:", X[idxs[0]])
     # print("End sample point:  ", X[idxs[1]])
 
+    plot_2d_with_rays(X, rays, A=A, show_eigvecs=False)
+
+    c = A @ (-expm(A * 80.0)) @ b
+    rays[0, :] = b / np.linalg.norm(b)
+    rays[1, :] = c / np.linalg.norm(c)
     plot_2d_with_rays(X, rays, A=A, show_eigvecs=False)

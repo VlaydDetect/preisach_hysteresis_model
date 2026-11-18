@@ -197,6 +197,7 @@ def plot_hysteresis_loop(inputs, outputs, title="", save=None):
     plt.grid()
     plt.xlabel("x(t)")
     plt.ylabel("P[x(t)]")
+    # plt.xlim([-2, 2])
     plt.legend()
     if save is not None:
         plt.savefig(save, dpi=300)

@@ -8,8 +8,7 @@
 
 #include "DynamicSystem.hpp"
 #include "Json.hpp"
-#include "Functions/find_peaks.hpp"
-#include "Functions/range.hpp"
+#include "Functions/find_extrema.hpp"
 
 #include <Eigen/Dense>
 #include "Eigen/utils.hpp"
@@ -31,6 +30,7 @@ namespace mc
         {
             AL_PROFILE_FUNC("AFC");
             
+            system->ResetArgs();
             system->Reset();
 
             const int dim = system->GetDimension();
@@ -58,20 +58,33 @@ namespace mc
                     
                     const auto xi = traj.col(0); 
 
-                    auto [peaks, _] = find_peaks(xi.array());
+                    const auto extrema = find_extrema_1d(xi.array());
+                    const auto& peaks_max = extrema.maxima;
+                    const auto& peaks_min = extrema.minima;
 
-                    double amplitude = consts::nan;
-                    const size_t num_peaks = peaks.size();
-                    // Установившийся режим (Steady State) проверяется только по последним пикам.
-                    if (num_peaks >= 2)
+                    double amplitude = std::numeric_limits<double>::quiet_NaN();
+                    const size_t num_max = peaks_max.size();
+                    const size_t num_min = peaks_min.size();
+                    if (num_max >= 2 && num_min >= 2)
                     {
+                        // Установившийся режим (Steady State) проверяется только по последним пикам.
                         // Проверяем разницу между двумя последними пиками симуляции
-                        if (std::abs(xi[peaks[num_peaks - 1]] - xi[peaks[num_peaks - 2]]) < eps)
+                        const double last_max = xi[peaks_max[num_max - 1]];
+                        const double prev_max = xi[peaks_max[num_max - 2]];
+                        const double last_min = xi[peaks_min[num_min - 1]];
+                        const double prev_min = xi[peaks_min[num_min - 2]];
+                        
+                        // Установившийся режим требует стабилизации как верхней, так и нижней границы аттрактора
+                        bool max_stable = std::abs(last_max - prev_max) < eps;
+                        bool min_stable = std::abs(last_min - prev_min) < eps;
+                        
+                        if (max_stable && min_stable)
                         {
-                            amplitude = xi[peaks[num_peaks - 1]];
+                            // Peak-to-Peak амплитуда: устойчива к дрейфу и асимметрии
+                            amplitude = (last_max - last_min) / 2.0;
                         }
                     }
-
+                    
                     amplitudes[k] = amplitude;
                     // Использование bottomRows<1>() избегает промежуточных объектов при транспонировании
                     x0 = traj.bottomRows<1>().transpose();
@@ -91,6 +104,9 @@ namespace mc
             doc.AddSubField({"forward", "frequencies"}, freqs_inc);
             doc.AddSubField({"backward", "amplitudes"}, amplitudes_dec);
             doc.AddSubField({"backward", "frequencies"}, freqs_dec);
+            
+            system->ResetArgs();
+            system->Reset();
             
             
             // system->Reset();

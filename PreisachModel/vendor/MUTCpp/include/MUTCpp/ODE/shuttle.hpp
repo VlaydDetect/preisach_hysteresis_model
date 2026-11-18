@@ -154,8 +154,8 @@ namespace mc
                     ++small_count;
                     if (small_count >= s.patience)
                     {
-                        std::cout << "[INFO] Early stop at t=" << t << " after " << small_count <<
-                            " small steps (delta=" << delta << ").\n";
+                        // std::cout << "[INFO] Early stop at t=" << t << " after " << small_count <<
+                        //     " small steps (delta=" << delta << ").\n";
                         break;
                     }
                 }
@@ -425,7 +425,7 @@ namespace mc
             ofs << cr.t[i] << "," << cr.pts[i](0) << "," << cr.pts[i](1) << "\n";
         }
         ofs.close();
-        std::cout << "[INFO] Curve written to: " << fname << " (" << cr.t.size() << " samples)\n";
+        // std::cout << "[INFO] Curve written to: " << fname << " (" << cr.t.size() << " samples)\n";
     }
 
 
@@ -438,7 +438,7 @@ namespace mc
         ofs << rays(0, 0) << "," << rays(1, 0) << "\n";
         ofs << rays(0, 1) << "," << rays(1, 1) << "\n";
         ofs.close();
-        std::cout << "[INFO] Rays written to: " << fname << "\n";
+        // std::cout << "[INFO] Rays written to: " << fname << "\n";
     }
 
     inline void run_example_2d()
@@ -562,7 +562,6 @@ namespace mc
          * @param A Гурвицева матрица.
          * @param b вектор
          * @param s настройки генерации конуса
-         * @param t "Большое" время для матричной экспоненты.
          */
         static Ref<SolidCone2d> fromCurve(const Eigen::Matrix2d &A, const Eigen::Vector2d &b, const detail::Settings &s)
         {
@@ -702,12 +701,18 @@ namespace mc
             file << step << "," << v.x() << "," << v.y() << "\n";
         }
     };
+    
+    enum class ShuttlePointCoverageStatus : uint8_t
+    {
+        ConvergedTwoLimits = 0,
+        ConvergedSingleLimit,
+    };
 
     struct ShuttlePointResult
     {
-        bool converged = false;
-        std::vector<Eigen::Vector2d> limits = {}; // либо {A}, либо {A,B}
-        mc::json::JsonDocument doc;
+        std::expected<ShuttlePointCoverageStatus, std::string> status = std::unexpected("none");
+        std::array<std::optional<Eigen::Vector2d>, 2> limits = {};
+        mc::json::JsonDocument doc{};
     };
 
     inline ShuttlePointResult ShuttlePoint(Ref<ode::DynamicalSystem> system, const Ref<SolidCone2d> &cone,
@@ -716,39 +721,32 @@ namespace mc
     {
         AL_PROFILE_FUNC("ShuttlePoint");
 
+        ShuttlePointResult result;
+        
         // Настройки итераций
-        constexpr int maxIter = 20;
-        constexpr int maxYIter = 150;
+        constexpr int maxIter = 50;
+        constexpr int maxYIter = 100;
+        
+        CSVWriter trace("trace.csv");
+        std::unordered_map<std::string, Eigen::MatrixXd> sequences_log;
+        std::unordered_map<std::string, Eigen::Vector2d> initial_points_log;
+        std::unordered_map<std::string, Eigen::Vector2d> cond_points_log;
 
-        CSVWriter trace_even("trace_even.csv");
-        CSVWriter trace_odd("trace_odd.csv");
-        CSVWriter trace_all("trace_all.csv");
-
-        mc::json::JsonDocument message({"name", "iters", "cone", "traj_z-", "traj_z+", "new_z-", "new_z+",
-                                        "odd_sequences", "odd_initial_points", "odd_cond_points", "even_sequences",
-                                        "even_initial_points", "even_cond_points"});
-        message.AddField("name", "ShuttlePoint");
-        message.AddField("iters", maxIter * maxYIter);
-        message.GetDoc()["cone"] = cone->ToJson();
-        std::vector<Eigen::MatrixXd> odd_sequences_log;
-        std::vector<Eigen::Vector2d> odd_initial_points_log;
-        std::vector<Eigen::Vector2d> odd_cond_points_log;
-
-        std::vector<Eigen::MatrixXd> even_sequences_log;
-        std::vector<Eigen::Vector2d> even_initial_points_log;
-        std::vector<Eigen::Vector2d> even_cond_points_log;
-
-        std::println("z-: {}, z+: {}", z_minus, z_plus);
+        // std::println("z-: {}, z+: {}", z_minus, z_plus);
 
         const Eigen::MatrixXd z_minus_traj = system->ShiftTraj(z_minus, period);
         const Eigen::MatrixXd z_plus_traj = system->ShiftTraj(z_plus, period);
-        message.AddField("traj_z-", z_minus_traj);
-        message.AddField("traj_z+", z_plus_traj);
+        
+        // Последовательность sigma_n
+        auto sigma_n = [](int n)
+        {
+            double v = 1.0 / mc::power(2.0, n + 3);
+            // std::println("sigma_{}: {}", n, v);
+            return v;
+        };
 
-        const Eigen::Vector2d z_minus_new = z_minus_traj.col(z_minus_traj.cols() - 1) - z_minus - u0;
-        const Eigen::Vector2d z_plus_new = z_plus - z_plus_traj.col(z_plus_traj.cols() - 1) - u0;
-        message.AddField("new_z-", z_minus_new);
-        message.AddField("new_z+", z_plus_new);
+        const Eigen::Vector2d z_minus_new = z_minus_traj.col(z_minus_traj.cols() - 1) - z_minus - sigma_n(0) * u0;
+        const Eigen::Vector2d z_plus_new = z_plus - z_plus_traj.col(z_plus_traj.cols() - 1) - sigma_n(0) * u0;
 
         bool cond_z_minus = cone->contains(z_minus_new);
         bool cond_z_plus = cone->contains(z_plus_new);
@@ -756,59 +754,72 @@ namespace mc
         // Проверка условий для z- и z+
         if (!cond_z_minus)
         {
-            THROW_RUNTIME_ERROR("[ERROR] z- does not satisfy cone condition.");
+            result.status = std::unexpected("[ERROR] z- does not satisfy cone condition.");
+            return result;
         }
         if (!cond_z_plus)
         {
-            THROW_RUNTIME_ERROR("[WARN] z+ does not satisfy cone condition.");
+            result.status = std::unexpected("[ERROR] z+ does not satisfy cone condition.");
+            return result;
         }
-
-        // 3) Последовательность sigma_n
-        auto sigma_n = [](int n)
+        
+        mc::json::JsonDocument message({"name", "iters", "cone", "traj_z-", "traj_z+", "new_z-", "new_z+",
+                                   "limits", "sequences", "initial_points", "cond_points"});
+        message.AddField("name", "ShuttlePoint");
+        message.AddField("iters", maxIter * maxYIter);
+        message.GetDoc()["cone"] = cone->ToJson();
+        message.AddField("traj_z-", z_minus_traj);
+        message.AddField("traj_z+", z_plus_traj);
+        message.AddField("new_z-", z_minus_new);
+        message.AddField("new_z+", z_plus_new);
+        
+        std::vector<Eigen::Vector2d> zs;
+        zs.push_back(z_minus);
+        
+        auto build_new_subseq_point = [sigma_n, u0](const Eigen::Vector2d &shifted, int idx)
         {
-            double v = 1.0 / mc::power(2.0, n + 3);
-            std::println("sigma_{}: {}", n, v);
-            return v;
+            return shifted + (idx % 2 == 1 ? (sigma_n(idx) * u0) : (-sigma_n(idx) * u0));
         };
 
-        std::vector<Eigen::Vector2d> z_odd;
-        z_odd.push_back(z_minus);
-        std::vector<Eigen::Vector2d> z_even;
-        z_even.push_back(z_plus);
-
         // Вспомогательные последовательности
-        auto build_sequence = [maxYIter, period, sigma_n, u0, &cone](
-            const Eigen::Vector2d &y0, Ref<ode::DynamicalSystem> &system, bool add, int sig_idx, CSVWriter &trace,
-            std::vector<Eigen::MatrixXd> &sequences_log, std::vector<Eigen::Vector2d> &initial_points_log,
-            std::vector<Eigen::Vector2d> &cond_points_log) -> std::optional<Eigen::Vector2d>
+        auto build_sequence = [maxYIter, period, sigma_n, u0, &cone, build_new_subseq_point](
+            const Eigen::Vector2d &y0, Ref<ode::DynamicalSystem> &system, int sig_idx, CSVWriter &trace,
+            std::unordered_map<std::string, Eigen::MatrixXd> &sequences_log, std::unordered_map<std::string, Eigen::Vector2d> &initial_points_log,
+            std::unordered_map<std::string, Eigen::Vector2d> &cond_points_log) -> std::optional<Eigen::Vector2d>
         {
+            const bool add = sig_idx % 2 == 1;
+            
             AL_PROFILE_FUNC("ShuttlePoint::build_sequence");
-            Eigen::Vector2d y_current = y0;
-            std::println("y{}_0: {}", sig_idx, y_current);
+            Eigen::Vector2d y_current = build_new_subseq_point(system->Shift(y0, period), sig_idx);
+            // Eigen::Vector2d y_current = system->Shift(y0, period) + (add ? (sigma_n(sig_idx) * u0) : (-sigma_n(sig_idx) * u0));
+            // std::println("y{}_1: {}", sig_idx, y_current);
+            initial_points_log.emplace(std::format("y{}_1", sig_idx), y_current);
             for (int n = 1; n < maxYIter; ++n)
             {
+                const std::string seq_name = std::format("y_{{{},{}}}", sig_idx, n);
+                
                 system->ResetTo(y_current);
                 const Eigen::MatrixXd newSol = system->Forward(period);
                 Eigen::Vector2d y_shifted = newSol.row(newSol.rows() - 1).transpose();
 
-                initial_points_log.push_back(y_current);
-                sequences_log.push_back(newSol);
+                initial_points_log.emplace(seq_name, y_current);
+                sequences_log.emplace(seq_name, newSol);
 
                 // проверка условий выбора z для ТЕКУЩЕГО элемента
 
                 const Eigen::Vector2d cond_point = add
                     ? (y_current - y_shifted - sigma_n(sig_idx + 2) * u0)
                     : (y_shifted - y_current - sigma_n(sig_idx + 2) * u0);
-                cond_points_log.push_back(cond_point);
+                cond_points_log.emplace(seq_name, cond_point);
                 if (cone->contains(cond_point))
                 {
-                    std::println("y{}_{} that satisfies condition: {}", sig_idx, n, y_current);
+                    // std::println("{} that satisfies condition: {}", seq_name, y_current);
                     return y_current;
                 }
 
-                y_current = y_shifted + (add ? (sigma_n(sig_idx) * u0) : (-sigma_n(sig_idx) * u0)); 
+                y_current = build_new_subseq_point(y_shifted, sig_idx); 
 
-                std::println("y{}_{}: {}", sig_idx, n, y_current);
+                // std::println("{}: {}", seq_name, y_current);
 
                 trace.writePoint(n, y_current);
             }
@@ -818,79 +829,88 @@ namespace mc
         // Основной цикл построения z_n
         {
             AL_PROFILE_FUNC("ShuttlePoint::<z_odd, z_event search>");
-            bool stop = false;
-            for (int iter = 1; iter < maxIter + 1 && !stop; ++iter)
+            constexpr double subseq_tol = 1e-6;
+            constexpr double limits_tol = 1e-3;
+            std::optional<double> even_delta = std::nullopt;
+            std::optional<double> odd_delta = std::nullopt;
+            for (int iter = 1; iter < maxIter + 1; ++iter)
             {
-                if (iter % 2 == 1) // нечётный шаг, строим "возрастающую"
+                auto z = build_sequence(zs.back(), system, iter, trace, sequences_log, initial_points_log, cond_points_log);
+                if (z.has_value())
                 {
-                    std::println("z_odd back: {}", z_odd.back());
-                    auto z1 = build_sequence(z_odd.back(), system, true, iter, trace_odd, odd_sequences_log,
-                                             odd_initial_points_log, odd_cond_points_log);
-                    if (z1.has_value())
+                    // std::println("z new: {}", *z);
+                    zs.push_back(z.value());
+                }
+                else
+                {
+                    result.status = std::unexpected(std::format("[ERROR]: the sequence y{}_n has no z element", iter));
+                    return result;
+                }
+                
+                const std::size_t n = zs.size() - 1;
+                
+                if (n >= 2)
+                {
+                    const double delta = (zs[n] - zs[n - 2]).norm();
+                    
+                    if (n % 2 == 0)
                     {
-                        std::println("z_odd new: {}", *z1);
-                        z_odd.push_back(z1.value());
-                        trace_all.writePoint(iter, *z1);
+                        even_delta = delta;
                     }
                     else
                     {
-                        std::cerr << std::format("[WARN]: the odd sequence y{}_n has no z element", iter);
-                        break;
+                        odd_delta = delta;
                     }
                 }
-                else // чётный шаг, строим "убывающую"
+                
+                if (even_delta && odd_delta && *even_delta < subseq_tol && *odd_delta < subseq_tol)
                 {
-                    std::println("z_even back: {}", z_even.back());
-                    auto z2 = build_sequence(z_even.back(), system, false, iter, trace_even, even_sequences_log,
-                                             even_initial_points_log, even_cond_points_log);
-                    if (z2.has_value())
+                    Eigen::Vector2d z_even_limit, z_odd_limit;
+                    if (n % 2 == 0)
                     {
-                        std::println("z_even new: {}", *z2);
-                        z_even.push_back(z2.value());
-                        trace_all.writePoint(iter, *z2);
-                    }
-                    else
-                    {
-                        std::cerr << std::format("[WARN]: the even sequence y{}_n has no z element", iter);
-                        break;
-                    }
-                }
-
-                if (iter > 2)
-                {
-                    const auto z1 = z_odd.back();
-                    const auto z11 = z_odd[z_odd.size() - 2];
-
-                    const auto z2 = z_even.back();
-                    const auto z22 = z_even[z_even.size() - 2];
-
-                    if (z1.isApprox(z2, 0.001) || (z1.isApprox(z11, 0.001) && z2.isApprox(z22, 0.001)))
-                    {
-                        stop = true;
-                        z_odd.erase(z_odd.end() - 1);
-                        z_even.erase(z_even.end() - 1);
+                        z_even_limit = zs[n];
+                        z_odd_limit = zs[n - 1];
                     } 
+                    else
+                    {
+                        z_odd_limit = zs[n];
+                        z_even_limit = zs[n - 1];   
+                    }
+                    
+                    const double gap = (z_even_limit - z_odd_limit).norm();
+                    if (gap < limits_tol)
+                        result.status = ShuttlePointCoverageStatus::ConvergedSingleLimit;
+                    else
+                        result.status = ShuttlePointCoverageStatus::ConvergedTwoLimits;
+                    
+                    break;
                 }
             }
         }
 
-        message.AddField("odd_sequences", odd_sequences_log);
-        message.AddField("odd_initial_points", odd_initial_points_log);
-        message.AddField("odd_cond_points", odd_cond_points_log);
-        message.AddField("even_sequences", even_sequences_log);
-        message.AddField("even_initial_points", even_initial_points_log);
-        message.AddField("even_cond_points", even_cond_points_log);
-        message.AddField("z_odd", z_odd);
-        message.AddField("z_even", z_even);
+        message.AddField("sequences", sequences_log);
+        message.AddField("initial_points", initial_points_log);
+        message.AddField("cond_points", cond_points_log);
+        message.AddField("zs", zs);
+        
+        std::optional<Eigen::Vector2d> last_even;
+        std::optional<Eigen::Vector2d> last_odd;
 
-        ShuttlePointResult result = {
-            .converged = true,
-            .limits = {z_odd.back(), z_even.back()},
-            .doc = std::move(message),
-        };
+        for (std::size_t i = 0; i < zs.size(); ++i)
+        {
+            if (i % 2 == 0)
+                last_even = zs[i];
+            else
+                last_odd = zs[i];
+        }
+        
+        message.AddField("limits", std::vector{*last_odd, *last_even});
+        
+        result.limits = {last_even, last_odd};
+        result.doc = std::move(message);
 
-        if (!result.converged)
-            std::cerr << "[WARN] ShuttlePoint did not converge.\n";
+        if (!result.status.has_value())
+            std::cerr << "[ERROR] ShuttlePoint did not converge.\n";
 
         return result;
     }

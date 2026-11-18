@@ -37,6 +37,11 @@ namespace mc
         struct JsonDocument
         {
         public:
+            JsonDocument(nlohmann::json &&doc)
+            {
+                m_Doc = std::move(doc);
+            }
+
             JsonDocument(std::initializer_list<std::string> header) :
                 m_Header(header)
             {
@@ -54,13 +59,13 @@ namespace mc
             {
                 m_Doc["header"] = header;
             }
-            
+
             void Clear()
             {
                 m_Header.clear();
                 m_Doc.clear();
             }
-            
+
             void ClearDoc()
             {
                 m_Doc.clear();
@@ -71,21 +76,21 @@ namespace mc
                 m_Header.emplace(field);
                 m_Doc["header"] = m_Header;
             }
-            
+
             void AddField(const std::string &name, JsonDocument &data)
             {
-                assert(m_Header.contains(name));
+                //assert(m_Header.contains(name));
                 m_Doc[name] = data.GetDoc();
             }
-            
+
             void AddSubField(const std::initializer_list<std::string> &fields, const JsonDocument &data)
             {
                 ASSIGN_FIELDS(fields, data.GetDoc());
             }
-            
+
             // void AddField(const std::string &name, const ode::DSArgs &data)
             // {
-            //     assert(m_Header.contains(name));
+            //     //assert(m_Header.contains(name));
             //     AddField(name, ode::dsArgsToJsonDoc(data));
             // }
             //
@@ -99,7 +104,7 @@ namespace mc
                 std::is_same_v<T, const char *>
             void AddField(const std::string &name, T data)
             {
-                assert(m_Header.contains(name));
+                //assert(m_Header.contains(name));
                 m_Doc[name] = data;
             }
 
@@ -108,14 +113,14 @@ namespace mc
                 std::is_same_v<T, const char *>
             void AddField(const std::string &name, std::vector<T> data)
             {
-                assert(m_Header.contains(name));
+                //assert(m_Header.contains(name));
                 m_Doc[name] = data;
             }
 
             template <typename Scalar, int R, int C>
             void AddField(const std::string &name, const Eigen::Matrix<Scalar, R, C> &data)
             {
-                assert(m_Header.contains(name));
+                //assert(m_Header.contains(name));
                 if (Eigen::isFlat(data))
                 {
                     std::vector<Scalar> vec(data.size());
@@ -126,18 +131,18 @@ namespace mc
                     m_Doc[name] = Eigen::toVector2D(data);
                 }
             }
-            
+
             template <typename Scalar>
             void AddField(const std::string &name, const Eigen::ArrayX<Scalar> &data)
             {
-                assert(m_Header.contains(name));
+                //assert(m_Header.contains(name));
                 std::vector<double> vec(data.data(), data.data() + data.size());
                 m_Doc[name] = vec;
             }
 
             void AddField(const std::string &name, const std::vector<std::unordered_map<std::string, double>> &data)
             {
-                assert(m_Header.contains(name));
+                //assert(m_Header.contains(name));
                 m_Doc[name] = data;
             }
 
@@ -145,7 +150,7 @@ namespace mc
             void AddField(const std::string &name,
                           const std::vector<Eigen::Matrix<Scalar, R, C>> &data)
             {
-                assert(m_Header.contains(name));
+                //assert(m_Header.contains(name));
 
                 // Все плоские
                 if (std::all_of(data.begin(), data.end(),
@@ -176,9 +181,41 @@ namespace mc
 
             template <typename T, typename Scalar, int R, int C>
             void AddField(const std::string &name,
+                          const std::unordered_map<T, Eigen::Matrix<Scalar, R, C>> &data)
+            {
+                const auto allFlat = [](const std::unordered_map<T, Eigen::Matrix<Scalar, R, C>> &map_data)
+                {
+                    return std::all_of(map_data.begin(), map_data.end(),
+                                       [](const auto &kv) { return Eigen::isFlat(kv.second); });
+                };
+
+                if (allFlat(data))
+                {
+                    // Преобразование одиночных векторов Eigen в std::vector
+                    std::unordered_map<T, std::vector<Scalar>> vecs;
+                    for (const auto &[key, mat] : data)
+                    {
+                        vecs.insert({key, Eigen::to_std(mat)});
+                    }
+                    m_Doc[name] = vecs;
+                }
+                else
+                {
+                    // Преобразование одиночных матриц Eigen в 2D std::vector
+                    std::unordered_map<T, std::vector<std::vector<Scalar>>> vecs;
+                    for (const auto &[key, mat] : data)
+                    {
+                        vecs.insert({key, Eigen::toVector2D(mat)});
+                    }
+                    m_Doc[name] = vecs;
+                }
+            }
+
+            template <typename T, typename Scalar, int R, int C>
+            void AddField(const std::string &name,
                           const std::unordered_map<T, std::vector<Eigen::Matrix<Scalar, R, C>>> &data)
             {
-                assert(m_Header.contains(name));
+                //assert(m_Header.contains(name));
 
                 const auto allFlat = [](const std::vector<Eigen::Matrix<Scalar, R, C>> &vec)
                 {
@@ -392,7 +429,7 @@ namespace mc
             {
                 return m_Doc;
             }
-            
+
             const nlohmann::json &GetDoc() const
             {
                 return m_Doc;

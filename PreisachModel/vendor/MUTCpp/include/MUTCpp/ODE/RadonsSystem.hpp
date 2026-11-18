@@ -26,11 +26,12 @@ namespace mc
                 double w0 = args.at("w0").toDouble();
                 double w = args.at("w").toDouble();
                 double E = args.at("E").toDouble();
+                double phi = args.at("phi").toDouble();
                 auto &model = args.at("model").toPreisachModel();
                 
                 Eigen::VectorXd res = Eigen::VectorXd::Zero(x.size());
 
-                const double a = A * sin(w * t);
+                const double a = A * sin(w * t + phi);
                 const double g = gamma * x[1];
                 const double ww = w0 * x[0];
                 const double atan = use_atan ? args.at("eps").toDouble() * std::atan(x[0]) : 0.0;
@@ -43,7 +44,7 @@ namespace mc
                 return res;
             };
 
-            auto jac = [](Eigen::VectorXd x, double t, DSArgs &args) -> Eigen::MatrixXd
+            auto jac = [use_atan](Eigen::VectorXd x, double t, DSArgs &args) -> Eigen::MatrixXd
             {
                 double w0 = args.at("w0").toDouble();
                 double gamma = args.at("gamma").toDouble();
@@ -57,6 +58,11 @@ namespace mc
                 res(0, 1) = 1.0;
 
                 res(1, 0) = -w0 + E * model->DerivativeOperator(t, dt);
+                if (use_atan)
+                {
+                    res(1, 0) += args.at("eps").toDouble() / (1.0 + x[0] * x[0]);
+                }
+                
                 res(1, 1) = -gamma;
                 // TODO: make DynamicSystem compile-time dimention
                 // res(1, 2) = A * cos(x[2]);

@@ -16,6 +16,9 @@ namespace mc
     class ArealPreisachModel : public SinglePreisachModel
     {
     public:
+        using EverettFunction = std::function<double(double, double)>;
+
+    public:
         ArealPreisachModel(const double L, bool keepDerivative = false, bool keepAnimation = false,
                            bool isDownZero = false) :
             SinglePreisachModel(L, keepDerivative, keepAnimation), m_IsDownZero(isDownZero)
@@ -25,18 +28,26 @@ namespace mc
         ArealPreisachModel(const ArealPreisachModel &) = delete;
         ArealPreisachModel &operator=(const ArealPreisachModel &) = delete;
 
-        void SetEverettFunction(std::function<double(double, double)> func)
+        void SetEverettFunction(EverettFunction func)
         {
-            m_EverettFunction = func;
+            m_EverettFunction = std::move(func);
         }
 
         virtual double GetMaxArea() const override
         {
+            const double lo = m_Bounds[0];
+            const double hi = m_Bounds[1];
+
             if (m_EverettFunction.has_value())
             {
-                return integrate::monteCarloTriangle(m_EverettFunction.value(), {-1., -1.}, {-1., 1.}, {1., 1.});
+                // Total weighted mass of the Preisach support.
+                return m_EverettFunction.value()(lo, hi);
             }
-            return 2 * utils::power(m_L, 2);
+
+            // Geometric area of beta <= alpha,
+            // beta,alpha in [lo,hi].
+            const double width = hi - lo;
+            return 0.5 * width * width;
         }
 
     protected:
@@ -44,63 +55,156 @@ namespace mc
         {
             AL_PROFILE_FUNC("ArealPreisachModel::P_Impl");
 
-            auto points = MakePoints();
-
-            if (!m_EverettFunction.has_value())
+            if (m_EverettFunction.has_value())
             {
-                const auto O = Eigen::Vector2d(m_Bounds[0], m_Bounds[0]);
-                auto res = gauss_area(points, O);
-                const double ret = CalcS(res.total_area);
-                m_PreviousArea = res.total_area;
-                return ret;
-            }
+                const double positive = EverettPositiveMass();
+                
+                /*
+                 * For elementary relays {-1,+1}:
+                 *
+                 * output =
+                 *     positiveWeight - negativeWeight
+                 *
+                 * and
+                 *
+                 * negativeWeight =
+                 *     totalWeight - positiveWeight.
+                 *
+                 * Therefore
+                 *
+                 * output = 2*positiveWeight - totalWeight.
+                 */
+                
+                const double result = 2.0 * positive - GetMaxArea();
 
-            return IntegrateEverett();
+                m_PreviousArea = positive;
+                return result;
+            }
+            
+            auto points = MakePoints();
+            const auto O = Eigen::Vector2d(m_Bounds[0], m_Bounds[0]);
+            auto res = gauss_area(points, O);
+            const double ret = CalcS(res.total_area);
+            m_PreviousArea = res.total_area;
+            return ret;
+        }
+
+        virtual void ResetImpl() override
+        {
+            SinglePreisachModel::ResetImpl();
+            m_PreviousArea = 0.0;
         }
 
     private:
-        double IntegrateEverett() const
+        double EverettPositiveMass() const
         {
-            double positive = 0.0;
+            assert(m_EverettFunction.has_value());
+
+            const auto &E = m_EverettFunction.value();
+            const double lo = m_Bounds[0];
+
+            auto eval = [&E](double x, double y) -> ddouble
             {
-                auto points = MakePoints();
-                const auto pivot = Eigen::Vector2d(m_Bounds[0], m_Bounds[0]);
+                // Degenerate Everett triangle.
+                if (!(y > x))
+                    return 0.0L;
 
-                auto res = gauss_area(points, pivot);
+                const double value = E(x, y);
 
-                algo::for_each(res.areas_n_triangles.begin(), res.areas_n_triangles.end(),
-                               [&positive, this](
-                               std::tuple<double, std::array<Eigen::Vector2d, 3>> elem)
-                               {
-                                   const auto &[area, triangle] = elem;
+                assert(std::isfinite(value));
 
-                                   positive += integrate::monteCarloTriangle(
-                                       m_EverettFunction.value(), triangle, m_PrevIndex);
-                               });
+                // E must be non-negative.
+                // Allow microscopic negative roundoff from a user function.
+                return std::max(0.0, value);
+            };
+
+            ddouble positive = 0.0L;
+
+            if (m_FirstElemType == ElementType::Max)
+            {
+                /*
+                 * State:
+                 *
+                 * + E(lo, M0)
+                 * - E(m0, M0)
+                 * + E(m0, M1)
+                 * - E(m1, M1)
+                 * + ...
+                 */
+
+                double left = lo;
+
+                for (std::size_t i = 0; i < m_InterfaceMax.size(); ++i)
+                {
+                    const double upper = m_InterfaceMax[i];
+
+                    positive += eval(left, upper);
+
+                    if (i < m_InterfaceMin.size())
+                    {
+                        const double lower = m_InterfaceMin[i];
+
+                        positive -= eval(lower, upper);
+                        left = lower;
+                    }
+                }
+            }
+            else
+            {
+                /*
+                 * After lower saturation the first minimum
+                 * is the lower-bound sentinel:
+                 *
+                 * m_InterfaceMin[0] == lo.
+                 *
+                 * Then:
+                 *
+                 * + E(lo, M0)
+                 * - E(m1, M0)
+                 * + E(m1, M1)
+                 * ...
+                 */
+
+                if (m_InterfaceMin.empty())
+                    return 0.0;
+
+                double left = m_InterfaceMin.front();
+
+                std::size_t minIndex = 1;
+
+                for (std::size_t i = 0; i < m_InterfaceMax.size(); ++i)
+                {
+                    const double upper = m_InterfaceMax[i];
+
+                    positive += eval(left, upper);
+
+                    if (minIndex < m_InterfaceMin.size())
+                    {
+                        const double lower = m_InterfaceMin[minIndex++];
+
+                        positive -= eval(lower, upper);
+                        left = lower;
+                    }
+                }
             }
 
-            double negative = 0.0;
+            /*
+             * Alternating Everett sums may accumulate a tiny
+             * negative roundoff near saturation.
+             */
+            if (positive < 0.0L)
             {
-                auto points = MakePoints();
-                points.insert(points.begin(), Eigen::Vector2d(m_Bounds[0], m_Bounds[1]));
+                const ddouble tolerance = 128.0L * std::numeric_limits<double>::epsilon() * std::max(1.0L, std::abs(positive));
 
-                const auto pivot = Eigen::Vector2d(m_Bounds[1], m_Bounds[1]);
-
-                auto res = gauss_area(points, pivot);
-
-                algo::for_each(res.areas_n_triangles.begin(), res.areas_n_triangles.end(),
-                               [&negative, this](
-                               std::tuple<double, std::array<Eigen::Vector2d, 3>> elem)
-                               {
-                                   const auto &[area, triangle] = elem;
-                                   negative += integrate::monteCarloTriangle(
-                                       m_EverettFunction.value(), triangle, m_PrevIndex);
-                               });
+                if (positive >= -tolerance)
+                    positive = 0.0L;
             }
 
-            return positive - negative;
+            assert(positive >= 0.0L);
+
+            return static_cast<double>(positive);
         }
-
+        
         double CalcS(double p) const
         {
             if (m_IsDownZero)
@@ -163,8 +267,8 @@ namespace mc
         double m_PreviousArea = 0.0;
         bool m_IsDownZero = false;
         Matrix<double> m_D = {0.0, 0.0};
-        
-        std::optional<std::function<double(double, double)>> m_EverettFunction = std::nullopt;
+
+        std::optional<EverettFunction> m_EverettFunction = std::nullopt;
     };
 
     class DoubleArealPreisachModel : public DoublePreisachModel

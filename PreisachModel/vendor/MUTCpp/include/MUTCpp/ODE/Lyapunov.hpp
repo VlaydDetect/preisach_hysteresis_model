@@ -177,7 +177,7 @@ namespace mc
                     system->Next();
                     max_steps++;
                     
-                    // Защита от зависания, если траектория застряла в аттракторе внутри зоны
+                    // Защита от зависания, если траектория застряла в аттракторе
                     if (max_steps > static_cast<uint32_t>(200. / dt)) break; 
                     
                     bool in_bounds = std::abs(system->GetX()(0)) <= L;
@@ -188,19 +188,6 @@ namespace mc
                     prev_dist = dist;
 
                     if (!in_bounds && !is_diverging) break;
-                }
-                
-                bool simulate = true;
-                while (simulate)
-                {
-                    pert_x = system->NextTM(pert_x);
-                    system->Next();
-                    max_steps++;
-        
-                    // Защита от зависания, если траектория застряла в аттракторе внутри зоны
-                    if (max_steps > static_cast<uint32_t>(200. / dt)) break; 
-                    
-                    simulate = std::abs(system->GetX()(0)) <= L && std::abs(pert_x(0)) <= L;
                 }
                 
                 max_steps += static_cast<uint32_t>(additional_time / dt);
@@ -222,7 +209,7 @@ namespace mc
                     const uint32_t T_steps = static_cast<uint32_t>(T / dt);
                     const int M = max_steps / T_steps;
                     
-                    // Если T слишком велико и не влезает даже 1 раз в окно пролета - пропускаем
+                    // Если T слишком велико и не помещается даже 1 раз в окно - пропускаем
                     if (M < 1) continue;
                     
                     system->ResetArgs();

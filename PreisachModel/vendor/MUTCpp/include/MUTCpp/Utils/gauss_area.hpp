@@ -31,8 +31,7 @@ namespace mc
         
         result.areas_n_triangles.reserve(n - 1);
         
-        // 2. СОВРЕМЕННЫЙ C++23: std::views::adjacent<2> элегантно выдает пары (p1, p2)
-        // по ссылкам, исключая ручное управление индексами массива
+        // std::views::adjacent<2> выдает пары (p1, p2) по ссылкам, исключая ручное управление индексами массива
         for (const auto& [p1, p2] : points | std::views::adjacent<2>)
         {
             // 3. ОПТИМИЗАЦИЯ МАТЕМАТИКИ: Вместо инстанцирования Eigen::Matrix2d и вызова .determinant(),
@@ -42,11 +41,9 @@ namespace mc
             
             const double area = std::abs(cross_product) * 0.5;
             result.total_area += area;
-            // 4. Используем emplace_back для создания tuple и array in-place
             result.areas_n_triangles.emplace_back(area, std::array{pivot, p1, p2});
         }
 
-        // NRVO (Named Return Value Optimization), копирования структуры не будет
         return result;
     }
 }

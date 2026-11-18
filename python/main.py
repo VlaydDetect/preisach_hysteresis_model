@@ -1,16 +1,23 @@
 import json
 import os
+import re
 import shutil
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+from matplotlib.colors import Normalize
+from matplotlib.ticker import ScalarFormatter
 import scienceplots
 
 from utils import TrajectoryAnalyzer, ConstrainedTrajectoryAnalyzer
 
+# plt.rcParams.update({
+#     "text.usetex": True,
+#     "font.family": "Helvetica"
+# })
 # plt.style.use(['science', 'ieee', 'grid'])
-# plt.rcParams.update({'figure.dpi': '100'})
-# plt.rcParams.update({'font.size': 18})
+# plt.rcParams.update({'figure.dpi': '500'})
+# plt.rcParams.update({'font.size': 5})
 
 import numpy as np
 import polars as pl
@@ -76,11 +83,94 @@ def just_solve_rodos():
         # fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(12, 8))
 
         path = "./article_plots"
-        # plot_x(x, t)
-        # plot_v(v, t)
+        plot_x(x, t)
+        plot_v(v, t)
         plot_phase_portrait(x, v)
-        # plot_hysteresis_loop(inputs, loop)
+        plot_hysteresis_loop(inputs, loop)
         plot_fourier_transform(x, dt=0.01)
+        
+        # everett_data = data["everett"]
+        # x = np.asarray(everett_data["x"], dtype=np.float64)
+        # y = np.asarray(everett_data["y"], dtype=np.float64)
+        # n = len(x)
+        # # JSON null -> Python None.
+        # # Explicit conversion below restores null as np.nan.
+        # z_flat = np.asarray(
+        #     [
+        #         np.nan if value is None else value
+        #         for value in everett_data["z"]
+        #     ],
+        #     dtype=np.float64,
+        # )
+        # z = z_flat.reshape(n, n)
+        # 
+        # X, Y = np.meshgrid(x, y)
+        # fig = plt.figure(figsize=(10, 8))
+        # ax = fig.add_subplot(
+        #     111,
+        #     projection="3d"
+        # )
+        # 
+        # z_min = np.nanmin(z)
+        # z_max = np.nanmax(z)
+        # norm = Normalize(
+        #     vmin=z_min,
+        #     vmax=z_max
+        # )
+        # 
+        # 
+        # surface = ax.plot_surface(
+        #     X,
+        #     Y,
+        #     z,
+        #     cmap="viridis",
+        #     norm=norm,
+        #     rstride=1,
+        #     cstride=1,
+        #     linewidth=0,
+        #     antialiased=True
+        # )
+        # 
+        # ax.set_xlabel("x")
+        # ax.set_ylabel("y")
+        # ax.set_zlabel("E(x, y)")
+        # 
+        # ax.set_title("Everett function")
+        # 
+        # fig.colorbar(
+        #     surface,
+        #     ax=ax,
+        #     shrink=0.65,
+        #     pad=0.1,
+        #     label="E(x, y)"
+        # )
+        # 
+        # plt.tight_layout()
+        # plt.show()
+        # 
+        # fig, ax = plt.subplots(figsize=(8, 7))
+        # 
+        # contour = ax.contourf(
+        #     X,
+        #     Y,
+        #     z,
+        #     levels=40
+        # )
+        # 
+        # ax.set_xlabel("x")
+        # ax.set_ylabel("y")
+        # ax.set_title("Everett function E(x, y)")
+        # 
+        # ax.set_aspect("equal")
+        # 
+        # fig.colorbar(
+        #     contour,
+        #     ax=ax,
+        #     label="E(x, y)"
+        # )
+        # 
+        # plt.tight_layout()
+        # plt.show()
 
         # scientific_plot(x, v, alpha=1, linewidth=.5, xlabel="x(t)", ylabel="v(t)")
         # scientific_plot(inputs, loop, alpha=1, linewidth=.5, xlabel="x(t)", ylabel="P[x(t)]")
@@ -93,9 +183,9 @@ def just_solve_rodos():
 
         plt.scatter(Ts, ns, marker='.')
         plt.plot(Ts, slope * Ts + intercept, 'r')
-        plt.title(f"Slope ($\\nu$): {slope:.4f}, Intercept (C): {intercept:.4f}.")
-        plt.xlabel("$\\log(T)$")
-        plt.ylabel("$\\log(\\nu)$")
+        plt.title(f"Slope ($\\nu$): {slope:.4f}, Intercept (C): {intercept:.4f}, $R^2$: {power_law["r2"]:.2f}.")
+        plt.xlabel("$\\ln(T)$")
+        plt.ylabel("$\\ln(\\delta x(t))$")
         plt.show()
         print()
         # 
@@ -567,20 +657,36 @@ def PoincareMapping():
 def BifurcationDiagram():
     with open(f"../PreisachModel/BifurcationDiagram.json") as f:
         data = json.load(f)
-        trajs = data["trajs"]
-        params = np.asarray(data["rho"])
-        n = len(trajs)
-        m = len(trajs[0])
 
-        matrix = np.zeros((n, m))
-        for i in range(n):
-            x = np.asarray(trajs[i])[:, 2]
-            if 25 <= params[i] <= 30:
-                plt.plot(x[:10000])
-                plt.show()
-            matrix[i, :] = x
+        # param_name = data["param_name"]
+        max_params = data["max_params"]
+        min_params = data["min_params"]
 
-        plot_bifurcation_diagram(params, matrix)
+        max_values = data["max_values"]
+        min_values = data["min_values"]
+        
+        plt.scatter(max_params, max_values, c='red', s=0.2, alpha=0.6, label='Local Maxima', marker='.')
+        plt.scatter(min_params, min_values, c='blue', s=0.2, alpha=0.6, label='Local Minima', marker='.')
+        
+        plt.xlabel('A')
+        plt.ylabel('$x_{min}, x_{max}$')
+        plt.legend(markerscale=10)
+        plt.show()
+        
+        # trajs = data["trajs"]
+        # params = np.asarray(data["A"])
+        # n = len(trajs)
+        # m = len(trajs[0])
+        # 
+        # matrix = np.zeros((n, m))
+        # for i in range(n):
+        #     x = np.asarray(trajs[i])[:, 2]
+        #     # if 25 <= params[i] <= 30:
+        #     #     plt.plot(x[:10000])
+        #     #     plt.show()
+        #     matrix[i, :] = x
+        # 
+        # plot_bifurcation_diagram(params, matrix)
 
         # bifurcation_param = []
         # bifurcation_x = []
@@ -674,124 +780,377 @@ def ShiftTest():
 
 
 def ShuttlePointLog():
+    from matplotlib.lines import Line2D
+
+    _SEQ_RE = re.compile(r"y_\{(\d+),(\d+)\}")
+    annotate_aux = True
+
+    def parse_seq_name(name):
+        m = _SEQ_RE.fullmatch(name)
+        if m is None:
+            raise ValueError(f"Unknown sequence name: {name}")
+
+        return int(m.group(1)), int(m.group(2))
+
+    def as_trajectory(a):
+        """
+        Возвращает траекторию в форме (N, 2).
+
+        В логах ShiftTraj и Forward у вас, судя по коду,
+        могут иметь разную ориентацию матриц.
+        """
+        a = np.asarray(a)
+
+        if a.ndim != 2:
+            raise ValueError(f"Trajectory has shape {a.shape}")
+
+        if a.shape[1] == 2:
+            return a
+
+        if a.shape[0] == 2:
+            return a.T
+
+        raise ValueError(f"Cannot interpret trajectory shape {a.shape}")
+
     with open(f"../PreisachModel/ShuttlePointLog.json") as f:
         data = json.load(f)
 
         shuttle = data['shuttle_logs']
-        iters = shuttle["iters"]
 
         cone = shuttle["cone"]
-        ray1 = np.asarray(cone["rays"][0])
-        ray2 = np.asarray(cone["rays"][1])
+        ray1 = np.asarray(cone["rays"][0], dtype=float)
+        ray2 = np.asarray(cone["rays"][1], dtype=float)
 
-        traj_z_minus = np.asarray(shuttle["traj_z-"])
-        traj_z_plus = np.asarray(shuttle["traj_z+"])
-        new_z_minus = np.asarray(shuttle["new_z-"])
-        new_z_plus = np.asarray(shuttle["new_z+"])
+        traj_z_minus = as_trajectory(shuttle["traj_z-"])
+        traj_z_plus = as_trajectory(shuttle["traj_z+"])
+        
+        limits = shuttle["limits"]
+        lim_even = np.asarray(limits[0], dtype=float)
+        lim_odd = np.asarray(limits[1], dtype=float)
 
-        odd_sequences = []
-        for seq in list(shuttle["odd_sequences"]):
-            odd_sequences.append(np.asarray(seq))
+        sequences = {
+            k: as_trajectory(v)
+            for k, v in shuttle["sequences"].items()
+        }
 
-        odd_initial_points = []
-        for seq in list(shuttle["odd_initial_points"]):
-            odd_initial_points.append(np.asarray(seq))
+        initial_points = {
+            k: np.asarray(v, dtype=float)
+            for k, v in shuttle["initial_points"].items()
+        }
 
-        odd_cond_points = []
-        for seq in list(shuttle["odd_cond_points"]):
-            odd_cond_points.append(np.asarray(seq))
+        cond_points = {
+            k: np.asarray(v, dtype=float)
+            for k, v in shuttle["cond_points"].items()
+        }
 
-        even_sequences = []
-        for seq in list(shuttle["even_sequences"]):
-            even_sequences.append(np.asarray(seq))
+        zs = [
+            np.asarray(v, dtype=float)
+            for v in shuttle["zs"]
+        ]
 
-        even_initial_points = []
-        for seq in list(shuttle["even_initial_points"]):
-            even_initial_points.append(np.asarray(seq))
+        # ----------------------------------------------------------
+        # Сортируем вспомогательные последовательности
+        # по номеру z_n и внутренней итерации i.
+        # ----------------------------------------------------------
+        sequence_names = sorted(
+            sequences.keys(),
+            key=parse_seq_name,
+        )
 
-        even_cond_points = []
-        for seq in list(shuttle["even_cond_points"]):
-            even_cond_points.append(np.asarray(seq))
+        fig, ax = plt.subplots(figsize=(13, 10))
 
+        ax.axhline(0.0, linewidth=0.8, alpha=0.25)
+        ax.axvline(0.0, linewidth=0.8, alpha=0.25)
 
-        z_odd = []
-        for seq in list(shuttle["z_odd"]):
-            z_odd.append(np.asarray(seq))
+        # ==========================================================
+        # Сначала собираем диапазон, чтобы красиво продлить конус.
+        # ==========================================================
+        all_points = []
 
-        z_even = []
-        for seq in list(shuttle["z_even"]):
-            z_even.append(np.asarray(seq))
+        for trajectory in sequences.values():
+            all_points.append(trajectory)
 
-        plt.figure(figsize=(12, 12))
+        all_points.append(traj_z_minus)
+        all_points.append(traj_z_plus)
 
-        # Conus rays
-        plt.plot([0, ray1[0]], [0, ray1[1]], color='black', label='Ray1')
-        plt.plot([0, ray2[0]], [0, ray2[1]], color='black', label='Ray2')
+        all_points.append(lim_odd)
+        all_points.append(lim_even)
 
-        # z-
-        plt.plot(traj_z_minus[0, 0], traj_z_minus[1, 0], 'o', color='green')
-        plt.plot(traj_z_minus[0], traj_z_minus[1], color='brown', alpha=0.3)
-        plt.plot(new_z_minus[0], new_z_minus[1], 'x', color='red')
-        plt.annotate("z-", xy=(traj_z_minus[0, 0] - 0.05, traj_z_minus[1, 0] - 0.05))
-        plt.annotate("new z-", xy=(new_z_minus[0] - 0.05, new_z_minus[1] - 0.05))
+        if zs:
+            all_points.append(np.asarray(zs))
 
-        # z+
-        plt.plot(traj_z_plus[0, 0], traj_z_plus[1, 0], 'o', color='green')
-        plt.plot(traj_z_plus[0], traj_z_plus[1], color='brown', alpha=0.3)
-        plt.plot(new_z_plus[0], new_z_plus[1], 'x', color='red')
-        plt.annotate("z+", xy=(traj_z_plus[0, 0] + 0.05, traj_z_plus[1, 0] + 0.05))
-        plt.annotate("new z+", xy=(new_z_plus[0] - 0.05, new_z_plus[1] - 0.05))
+        xy = np.vstack(all_points)
 
-        for j in range(len(odd_sequences)):
-            plt.plot(odd_sequences[j][:, 0], odd_sequences[j][:, 1], color='purple', label='Odd Sequence', alpha=0.5)
-            plt.plot(odd_initial_points[j][0], odd_initial_points[j][1], 'o', color='coral',
-                     label='Odd New Initial Point')
-            # plt.plot(odd_cond_points[j][0], odd_cond_points[j][1], 'o', color='lime',
-            #          label='Odd Cond Initial Point')
-            plt.annotate(f"{2 * j + 1}", xy=(odd_initial_points[j][0], odd_initial_points[j][1]))
-            # plt.annotate(f"{2 * j + 1}", xy=(odd_cond_points[j][0], odd_cond_points[j][1]))
-            
-        for j in range(len(even_sequences)):
-            plt.plot(even_sequences[j][:, 0], even_sequences[j][:, 1], color='pink', label='Even Sequence', alpha=0.5)
-            plt.plot(even_initial_points[j][0], even_initial_points[j][1], 'o', color='crimson',
-                     label='Even New Initial Point')
-            # plt.plot(even_cond_points[j][0], even_cond_points[j][1], 'o', color='yellowgreen',
-            #          label='Even Cond Initial Point')
-            plt.annotate(f"{2 * j + 2}", xy=(even_initial_points[j][0], even_initial_points[j][1]))
-            # plt.annotate(f"{2 * j + 2}", xy=(even_cond_points[j][0], even_cond_points[j][1]))
+        xmin, ymin = xy.min(axis=0)
+        xmax, ymax = xy.max(axis=0)
 
-        for j in range(1, len(z_odd)):
-            plt.plot(z_odd[j][0], z_odd[j][1], 'o', color="yellow", label='z Odd')
-            plt.annotate(f"z{2 * j - 1}", xy=(z_odd[j][0], z_odd[j][1]))
-            plt.plot(z_even[j][0], z_even[j][1], 'o', color="red", label='z Even')
-            plt.annotate(f"z{2 * j}", xy=(z_even[j][0], z_even[j][1]))
+        span = max(xmax - xmin, ymax - ymin)
 
-        plt.grid()
-        handles, labels = plt.gca().get_legend_handles_labels()
-        by_label = dict(zip(labels, handles))
-        plt.legend(by_label.values(), by_label.keys())
+        if span == 0:
+            span = 1.0
+
+        # ==========================================================
+        # Конус
+        # ==========================================================
+        def normalized(v):
+            n = np.linalg.norm(v)
+            if n == 0:
+                return v
+            return v / n
+
+        cone_length = 0.55 * span
+
+        r1 = normalized(ray1) * cone_length
+        r2 = normalized(ray2) * cone_length
+
+        ax.plot([0, r1[0]], [0, r1[1]], linestyle="--", linewidth=1.4, alpha=0.7)
+
+        ax.plot([0, r2[0]], [0, r2[1]], linestyle="--", linewidth=1.4, alpha=0.7)
+
+        ax.fill([0, r1[0], r2[0]], [0, r1[1], r2[1]], alpha=0.06, label=r"$K$")
+
+        # ==========================================================
+        # Исходные z- и z+
+        # ==========================================================
+        z_minus = traj_z_minus[0]
+        z_plus = traj_z_plus[0]
+
+        ax.scatter(*z_minus, marker="s", s=75, zorder=7)
+        ax.annotate(r"$z_-$", z_minus, xytext=(-18, 12), textcoords="offset points", fontsize=13, fontweight="bold",
+            bbox=dict(
+                boxstyle="round,pad=0.2",
+                fc="white",
+                alpha=0.85,
+                ec="none",
+            ),
+        )
+
+        ax.scatter(*z_plus, marker="s", s=75, zorder=7)
+        ax.annotate(r"$z_+$", z_plus, xytext=(10, 12), textcoords="offset points", fontsize=13, fontweight="bold",
+            bbox=dict(
+                boxstyle="round,pad=0.2",
+                fc="white",
+                alpha=0.85,
+                ec="none",
+            ),
+        )
+
+        # ==========================================================
+        # Вспомогательные последовательности y_i^(n)
+        # ==========================================================
+        odd_label_used = False
+        even_label_used = False
+
+        for name in sequence_names:
+            v_index, inner_index = parse_seq_name(name)
+
+            trajectory = sequences[name]
+            p = initial_points[name]
+
+            is_odd = (v_index % 2 == 1)
+
+            if is_odd:
+                line_color = "tab:orange"
+                point_color = "tab:red"
+
+                line_label = (
+                    r"вспомогательная последовательность для $z_{2k+1}$"
+                    if not odd_label_used
+                    else None
+                )
+
+                odd_label_used = True
+            else:
+                line_color = "tab:blue"
+                point_color = "tab:cyan"
+
+                line_label = (
+                    r"вспомогательная последовательность для $z_{2k}$"
+                    if not even_label_used
+                    else None
+                )
+
+                even_label_used = True
+
+            ax.plot(
+                trajectory[:, 0],
+                trajectory[:, 1],
+                color=line_color,
+                linewidth=1.0,
+                alpha=0.22,
+                zorder=1,
+                label=line_label,
+            )
+
+            ax.scatter(
+                p[0],
+                p[1],
+                s=22,
+                color=point_color,
+                alpha=0.65,
+                zorder=3,
+            )
+
+            # Подписываем не каждый элемент, иначе график
+            # быстро становится нечитаемым.
+            # первые два + затем каждый пятый
+            should_annotate = (
+                inner_index <= 2
+                or inner_index % 5 == 0
+            ) if annotate_aux else True
+
+            if should_annotate:
+                # Смещаем подпись в разные стороны,
+                # чтобы соседние подписи не лежали друг на друге.
+                sign = 1 if inner_index % 2 else -1
+
+                dx = 7 + 3 * (inner_index % 3)
+                dy = sign * (7 + 2 * (v_index % 3))
+
+                ax.annotate(
+                    rf"$y_{{{v_index}, {inner_index}}}$",
+                    p,
+                    xytext=(dx, dy),
+                    textcoords="offset points",
+                    fontsize=8,
+                    alpha=0.7,
+                    bbox=dict(
+                        boxstyle="round,pad=0.15",
+                        fc="white",
+                        ec="none",
+                        alpha=0.65,
+                    ),
+                )
+
+        # ==========================================================
+        # Челночная последовательность z_n
+        # ==========================================================
+
+        for j, z in enumerate(zs):
+            if j == 0:
+                marker = "D"
+                size = 65
+            elif j % 2 == 0:
+                marker = "o"
+                size = 65
+            else:
+                marker = "^"
+                size = 70
+
+            ax.scatter(
+                z[0],
+                z[1],
+                marker=marker,
+                s=size,
+                edgecolor="black",
+                linewidth=0.7,
+                zorder=10,
+            )
+
+            # Разносим подписи чётной и нечётной ветвей
+            if j == 0:
+                offset = (-15, -22)
+            elif j % 2 == 0:
+                offset = (-25, -20)
+            else:
+                offset = (10, 12)
+
+            ax.annotate(
+                rf"$z_{{{j}}}$",
+                z,
+                xytext=offset,
+                textcoords="offset points",
+                fontsize=11,
+                fontweight="bold",
+                zorder=11,
+                arrowprops=dict(
+                    arrowstyle="-",
+                    linewidth=0.6,
+                    alpha=0.6,
+                ),
+                bbox=dict(
+                    boxstyle="round,pad=0.22",
+                    fc="white",
+                    ec="0.75",
+                    alpha=0.5,
+                ),
+            )
+
+        # Соединяем только элементы одной подпоследовательности:
+        # z0 -> z2 -> z4 -> ...
+        # z1 -> z3 -> z5 -> ...
+
+        even_zs = np.asarray(zs[0::2])
+        if len(even_zs) > 1:
+            ax.plot(
+                even_zs[:, 0],
+                even_zs[:, 1],
+                linestyle="-",
+                linewidth=2.0,
+                alpha=0.75,
+                label=r"$z_{2k}$",
+                zorder=6,
+            )
+
+        odd_zs = np.asarray(zs[1::2])
+        if len(odd_zs) > 1:
+            ax.plot(
+                odd_zs[:, 0],
+                odd_zs[:, 1],
+                linestyle="-",
+                linewidth=2.0,
+                alpha=0.75,
+                label=r"$z_{2k+1}$",
+                zorder=6,
+            )
+
+        # ==========================================================
+        # Предельные точки
+        # ==========================================================
+        ax.scatter(*lim_odd, color='red', marker="*", s=75, zorder=20)
+        ax.annotate(r"$L_{-}$", lim_odd, color='red', zorder=20, xytext=(-18, 8), textcoords="offset points", fontsize=11, fontweight="bold")
+
+        ax.scatter(*lim_even, color='red', marker="*", s=75, zorder=20)
+        ax.annotate(r"$L_{+}$", lim_even, color='red', zorder=20, xytext=(10, 8), textcoords="offset points", fontsize=11, fontweight="bold")
+
+        # ==========================================================
+        # Оформление
+        # ==========================================================
+
+        margin = 0.08 * span
+
+        ax.set_xlim(xmin - margin, xmax + margin)
+        ax.set_ylim(ymin - margin, ymax + margin)
+
+        ax.set_xlabel(r"$x$", fontsize=13)
+        ax.set_ylabel(r"$\dot{x}$", fontsize=13)
+
+        ax.set_title(
+            "Челночный алгоритм: вспомогательные и челночные последовательности",
+            fontsize=15,
+            pad=14,
+        )
+
+        ax.grid(
+            True,
+            linewidth=0.6,
+            alpha=0.25,
+        )
+
+        # Для фазового портрета часто удобнее одинаковый масштаб.
+        # Если x и dx/dt физически сильно различаются по масштабу,
+        # эту строку можно убрать.
+        ax.set_aspect("equal", adjustable="datalim")
+
+        ax.legend(
+            loc="best",
+            framealpha=0.92,
+            fontsize=10,
+        )
+
+        fig.tight_layout()
+
         plt.show()
-        
-        results = data["results"]
-        
-        for sol in [results["limit1"], results["limit2"]]:
-            x = np.asarray(sol["x"])
-            v = np.asarray(sol["v"])
-            loop_in = np.asarray(sol["loop"]["in"])
-            loop_out = np.asarray(sol["loop"]["out"])
-
-            plt.plot(x)
-            plt.xlabel('t')
-            plt.ylabel('x')
-            plt.show()
-            plt.plot(x, v)
-            plt.xlabel('x')
-            plt.ylabel('v')
-            plt.show()
-            plt.plot(loop_in, loop_out)
-            plt.xlabel('in')
-            plt.ylabel('out')
-            plt.show()
 
 
 def article_plots():
@@ -1024,8 +1383,9 @@ def parse_shuttle_point_initial_values():
     result = result.with_columns(
         pl.concat_list([pl.col("u0").struct.field("u0_x"), pl.col("u0").struct.field("u0_y")]).alias("u0")
     )
-    
+
     print(result)
+
 
 if __name__ == '__main__':
     # TwoTrajsOnPhaseTrajectory()
@@ -1036,7 +1396,7 @@ if __name__ == '__main__':
 
     # article_plots()
     # parse_shuttle_point_initial_values()
-    ShuttlePointLog()
+    # ShuttlePointLog()
 
     # BifurcationDiagram()
     # OperatorDerivativeTest()
@@ -1045,7 +1405,7 @@ if __name__ == '__main__':
 
     # ShiftTest()
 
-    # just_solve_rodos()
+    just_solve_rodos()
 
     # eps = 0.5
     # TF = 50.0

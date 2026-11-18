@@ -16,7 +16,7 @@
 namespace mc
 {
     using Vec = Eigen::VectorXd;
-    
+
     class PreisachModelBase : public RefCounted
     {
     public:
@@ -40,7 +40,7 @@ namespace mc
 
         PreisachModelBase(const PreisachModelBase &) = delete;
         PreisachModelBase &operator=(const PreisachModelBase &) = delete;
-        
+
         std::tuple<std::vector<double>, std::vector<double>> HysteresisLoop() const
         {
             return {m_HistoryU, m_HistoryOutput};
@@ -90,6 +90,11 @@ namespace mc
             m_Bounds = bounds;
         }
 
+        std::array<double, 2> GetBounds() const
+        {
+            return m_Bounds;
+        }
+
         virtual double GetMaxArea() const override
         {
             return 2 * utils::power(m_L, 2);
@@ -100,7 +105,6 @@ namespace mc
             AL_PROFILE_FUNC("PreisachModelBase::P");
             if (i == m_PrevIndex)
             {
-                // return m_HistoryOutput.back();
                 return m_PreviousOutput;
             }
             m_PrevIndex = i;
@@ -174,7 +178,7 @@ namespace mc
             {
                 AL_PROFILE_SCOPE("PreisachModelBase::P::Max");
                 CleanupInterfacesByMax(u);
-                
+
                 m_HistoryInterfaceMax.push_back(u);
                 m_HistoryInterfaceMin.push_back(consts::nan);
                 m_LastElemType = ElementType::Max;
@@ -183,7 +187,7 @@ namespace mc
             {
                 AL_PROFILE_SCOPE("PreisachModelBase::P::Min");
                 CleanupInterfacesByMin(u);
-                
+
                 m_HistoryInterfaceMin.push_back(u);
                 m_HistoryInterfaceMax.push_back(consts::nan);
                 m_LastElemType = ElementType::Min;
@@ -228,16 +232,16 @@ namespace mc
             {
                 return 0.0;
             }
-            
+
             double x_i = m_HistoryU[i];
 
             if (x_i < m_Bounds[0] || x_i > m_Bounds[1])
                 return 0.0;
 
             if (m_InterfaceMax.empty())
-                return x_i + m_Bounds[0];
+                return x_i - m_Bounds[1];
             if (m_InterfaceMin.empty())
-                return x_i + m_Bounds[1];
+                return x_i - m_Bounds[0];
 
             double u = isnan(m_HistoryInterfaceMax[i]) ? m_InterfaceMax.back() : m_InterfaceMin.back();
             return x_i - u;
@@ -324,7 +328,7 @@ namespace mc
         {
             m_InterfaceMin = {};
             m_InterfaceMax = {u};
-            
+
             m_HistoryInterfaceMax.push_back(u);
             m_HistoryInterfaceMin.push_back(consts::nan);
             m_FirstElemType = ElementType::Max;
@@ -336,7 +340,6 @@ namespace mc
             m_InterfaceMin = {u};
             m_InterfaceMax = {};
 
-            m_InterfaceMin.push_back(u);
             m_HistoryInterfaceMin.push_back(u);
             m_HistoryInterfaceMax.push_back(consts::nan);
             m_FirstElemType = ElementType::Min;
@@ -374,14 +377,13 @@ namespace mc
 
             m_HistoryU = {};
             m_HistoryOutput = {};
-            m_WhatRegionAt = {};
         }
-        
+
         double GetD() const
         {
             return m_D[0];
         }
-        
+
         void SetD(double d)
         {
             m_D = {d, -d};
@@ -389,11 +391,15 @@ namespace mc
 
         virtual double P(double u, double v, int i = -1) override
         {
-            if (i == m_PrevIndex)
+            if (i >= 0 && i == m_PrevIndex)
             {
                 return m_PreviousOutput;
             }
-            m_PrevIndex = i;
+
+            if (i >= 0)
+            {
+                m_PrevIndex = i;
+            }
 
             m_HistoryU.push_back(u);
             double p;
@@ -402,11 +408,6 @@ namespace mc
                 double p1 = m_UpperModel->P(u, 0.0, i);
                 double p2 = m_LowerModel->P(u, 0.0, i);
                 p = p1 + p2 + m_D[0] * m_K;
-                
-                if (i >= 0)
-                {
-                    m_WhatRegionAt.emplace_back(WorkingRegion::UpperModel);
-                }
             }
             // m_D[1] is negative
             else if (u <= m_D[1])
@@ -414,62 +415,51 @@ namespace mc
                 double p1 = m_UpperModel->P(u, 0.0, i);
                 double p2 = m_LowerModel->P(u, 0.0, i);
                 p = p1 + p2 + m_D[1] * m_K;
-                
-                if (i >= 0)
-                {
-                    m_WhatRegionAt.emplace_back(WorkingRegion::LowerModel);
-                }
             }
             else
             {
                 m_UpperModel->P(u, 0.0, i);
                 m_LowerModel->P(u, 0.0, i);
-                
+
                 p = m_K * u;
-                m_WhatRegionAt.emplace_back(WorkingRegion::Linear);
             }
-            
+
             if (m_KeepDerivative)
             {
                 m_InputDerivativeHistory.push_back(v);
                 m_HistoryDerivative.push_back(DerivativeOperator(i));
             }
-            
+
             m_HistoryOutput.push_back(p);
             m_PreviousOutput = p;
             return p;
         }
-    
+
         virtual double DerivativeOperator(double t, double dt) override
         {
             auto i = static_cast<uint32_t>(t / dt);
-            
+
             if (i == m_PrevIndex && m_KeepDerivative)
             {
                 return m_HistoryDerivative.back();
             }
-            
+
             if (m_KeepDerivative)
             {
                 return m_HistoryDerivative[i];
             }
-            
+
             return DerivativeOperator(i);
         }
-        
+
         double DerivativeOperator(int32_t i)
         {
             if (i < 0)
             {
                 return 0.0;
             }
-            
-            switch (m_WhatRegionAt[i])
-            {
-                case WorkingRegion::UpperModel: return m_UpperModel->DerivativeOperator(i);
-                case WorkingRegion::LowerModel: return m_LowerModel->DerivativeOperator(i);
-                case WorkingRegion::Linear: return m_InputDerivativeHistory[i];
-            }
+
+            return m_UpperModel->DerivativeOperator(i) + m_LowerModel->DerivativeOperator(i) + m_K;
         }
 
     protected:
@@ -479,7 +469,6 @@ namespace mc
             m_LowerModel->ResetState();
             m_PrevIndex = INT_MIN;
             m_PreviousOutput = consts::nan;
-            m_WhatRegionAt = {};
         }
 
     protected:
@@ -491,17 +480,7 @@ namespace mc
 
         int32 m_PrevIndex = INT_MIN;
         double m_PreviousOutput = consts::nan;
-        
+
         bool m_KeepDerivative;
-        
-        enum class WorkingRegion
-        {
-            UpperModel = 0,
-            Linear = 1,
-            LowerModel = 2,
-        };
-        
-        // Says what region returns value of Preisach model at index
-        std::vector<WorkingRegion> m_WhatRegionAt;
     };
 }

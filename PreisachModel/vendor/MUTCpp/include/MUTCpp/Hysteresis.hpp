@@ -9,3 +9,4 @@
 #include "Hysteresis/ModelBase.hpp"
 #include "Hysteresis/DiscreteModel.hpp"
 #include "Hysteresis/ArealModel.hpp"
+#include "Hysteresis/SzaboEverett.hpp"
