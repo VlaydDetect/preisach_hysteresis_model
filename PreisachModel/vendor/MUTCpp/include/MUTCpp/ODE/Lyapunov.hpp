@@ -8,13 +8,18 @@
 
 #include "DynamicSystem.hpp"
 #include "RadonsSystem.hpp"
+#include <array>
 #include <cmath>
+#include <cstdint>
 #include <format>
+#include <limits>
 #include <print>
+#include <random>
 #include <ranges>
 #include <unordered_map>
 #include <utility>
 #include <variant>
+#include <vector>
 
 #include "Hysteresis/ArealModel.hpp"
 #include "Core/Error.hpp"
@@ -75,27 +80,6 @@ namespace mc
                 return {n / M, std::log(T)};
             }
 
-            /**
-             * Детектор сингулярных точек производной оператора Прейзаха.
-             * В данном случае - это смена монотонности входа x, или смена знака производной v.
-             * @param curr_x Текущее состояние системы.
-             * @param next_x Следующее состояние системы.
-             * @return bool  True, если следующая точка сингулярная.
-             */
-            template <int N>
-            bool PreisachInputSingularityDetector(const Eigen::Vector<double, N> &curr_x,
-                                                   const Eigen::Vector<double, N> &next_x)
-            {
-                if constexpr (N < 2)
-                {
-                    return false;
-                }
-                else
-                {
-                    constexpr double eps = 0.001;
-                    return !(std::abs(curr_x[1]) < eps) && (curr_x[1] * next_x[1] < 0.0 || std::abs(next_x[1]) < eps);
-                }
-            }
         }
         
         namespace power_law
@@ -293,14 +277,21 @@ namespace mc
 
             for (int i = 1; i < M + 1; ++i)
             {
-                v = system.GetX() + v.normalized() * e;
+                v = v.normalized() * e;
+                if (!linearize)
+                {
+                    v += system.GetX();
+                }
                 auto count = static_cast<uint32>(T / system.GetDeltaTime());
                 while (count--)
                 {
                     v = linearize ? system.NextLTM(v) : system.NextTM(v);
                     system.Forward(1);
                 }
-                v -= system.GetX();
+                if (!linearize)
+                {
+                    v -= system.GetX();
+                }
 
                 mLCE += std::log(v.norm() / e);
                 history[i - 1] = mLCE / (i * T);
@@ -353,8 +344,7 @@ namespace mc
                 auto model2 = std::make_shared<mc::ArealPreisachModel>(L, false, false);
                 if (!std::isnan(areaCoeff))
                 {
-                    model2->P(L, 0.0, -2);
-                    model2->P(areaCoeff * L, 0.0, -1);
+                    model2->InitializeMemory(std::array{L, areaCoeff * L});
                 }
 
                  args.model = std::move(model1);
@@ -407,137 +397,212 @@ namespace mc
         struct LCEResult
         {
             Eigen::VectorXd spectrum; // Итоговые показатели Ляпунова
-            Eigen::MatrixXd history; // История: строки - шаги (время), столбцы - показатели
+            Eigen::MatrixXd history; // Строки соответствуют моментам QR, столбцы — показателям
+            std::vector<double> history_times; // Абсолютное время каждой строки истории
+            std::uint64_t singularity_count = 0;
         };
 
+        namespace detail
+        {
+            class LCEHistory
+            {
+            public:
+                LCEHistory(double start, int columns) : m_Start(start), m_Sums(Eigen::VectorXd::Zero(columns)) {}
+
+                void Record(double time, bool event, const Eigen::VectorXd &norms)
+                {
+                    const double previous = m_Result.history_times.empty() ? m_Start : m_Result.history_times.back();
+                    if (!std::isfinite(time) || !(time > previous))
+                    {
+                        throw std::runtime_error("LCE observation time did not advance");
+                    }
+                    if (!norms.allFinite() || (norms.array() <= 0.0).any())
+                    {
+                        throw std::runtime_error("Invalid QR diagonal in LCE calculation");
+                    }
+                    m_Sums.array() += norms.array().log();
+                    m_Estimates.emplace_back(m_Sums / (time - m_Start));
+                    m_Result.history_times.push_back(time);
+                    m_Result.singularity_count += event;
+                }
+
+                LCEResult Finish()
+                {
+                    m_Result.spectrum = m_Estimates.back();
+                    m_Result.history.resize(static_cast<Eigen::Index>(m_Estimates.size()), m_Sums.size());
+                    for (Eigen::Index row = 0; row < m_Result.history.rows(); ++row)
+                    {
+                        m_Result.history.row(row) = m_Estimates[row].transpose();
+                    }
+                    return std::move(m_Result);
+                }
+
+            private:
+                double m_Start;
+                Eigen::VectorXd m_Sums;
+                std::vector<Eigen::VectorXd> m_Estimates;
+                LCEResult m_Result;
+            };
+
+            inline LCEResult ComputeRadonsLCEs(
+                RadonsSystem &system, int warmup, int steps, std::uint32_t period,
+                const RadonsSystem::TangentBasis &basis,
+                const std::function<bool(const Eigen::Vector2d &, const Eigen::Vector2d &)> &additional_qr)
+            {
+                const auto snapshot = CaptureRadonsSnapshot(system);
+                auto args = ForkRadonsContext(snapshot, snapshot.x);
+                auto x = snapshot.x;
+                double time = snapshot.time;
+                for (int step = 0; step < warmup; ++step)
+                {
+                    system.VisitEventStep(x, time, args, [](const auto &, double, const auto &, const auto &, bool) {});
+                }
+                LCEHistory history(time, static_cast<int>(basis.cols()));
+                auto tangent = RadonsSystem::InitialTangents(*args.model, basis);
+                for (int step = 1; step <= steps; ++step)
+                {
+                    const auto initial_x = x;
+                    const bool scheduled = step % period == 0 || step == steps;
+                    system.VisitEventStep(x, time, args, [&](const auto &before, double t, const auto &context,
+                                                             const auto &point, bool last)
+                    {
+                        system.DifferentiateSubstep(before, t, context, point, tangent);
+                        if (point.event || (last && (scheduled || (additional_qr && additional_qr(initial_x, point.x)))))
+                        {
+                            const auto fixed = system.FixedTimeBasis(point, context.params, tangent);
+                            history.Record(point.time, point.event.has_value(), RadonsSystem::NormalizeTangents(fixed, tangent));
+                        }
+                        if (last && point.event)
+                        {
+                            tangent.physical = system.FixedTimeBasis(point, context.params, tangent);
+                            tangent.extrema = point.memory->TransferExtrema(
+                                *point.memory, tangent.extrema, tangent.physical.row(0));
+                            tangent.time.setZero();
+                        }
+                    });
+                }
+                return history.Finish();
+            }
+        }
+
         /**
-         * @brief Вычисление спектра показателей Ляпунова (LCEs) модифицированным алгоритмом Бенеттина.
-         * Адаптировано для негладких систем.
-         * @param system             Система.
-         * @param timeForward        Пропускаемое время (время выхода на аттрактор).
-         * @param total_time         Общее время интегрирования.
-         * @param ortho_steps        Период (в шагах) классической регулярной ортогонализации (например, 10-100).
-         * @param singularity_check  Предикат-детектор пересечения поверхности сингулярности 
-         * между текущим состоянием и состоянием на следующем шаге.
-         * @param num_lce             Количество показателей Ляпунова для вычисления 
-         * (если не задано, используется размерность системы) 
-         * @return [Eigen::VectorXd, Eigen::MatrixXd]   Спектр из N показателей Ляпунова (где N - размерность системы)
-         * и вектор истории каждого из них (построчно).
+         * @brief Вычисляет конечновременную оценку спектра методом Бенеттина.
+         * @param system Система. Для Радонса с непрерывным Прейзахом локально используется событийный интегратор.
+         * @param timeForward Длительность прогрева.
+         * @param total_time Длительность наблюдения после прогрева.
+         * @param ortho_steps Период регулярной ортогонализации в основных шагах.
+         * @param num_lce Количество показателей, по умолчанию размерность системы.
+         * @param singularity_check Необязательный предикат дополнительного QR в конце основного шага.
+         * @return Спектр, оценки на каждом QR, соответствующие времена и число событий.
          */
         template <int N, typename Context>
         LCEResult ComputeLCEs(
             DynamicalSystem<N, Context> &system,
             double timeForward,
             double total_time,
-            uint32_t ortho_steps,
+            std::uint32_t ortho_steps,
             std::optional<int> num_lce = std::nullopt,
             const std::type_identity_t<std::function<bool(const Eigen::Vector<double, N> &,
-                                                        const Eigen::Vector<double, N> &)>> &singularity_check =
-                detail::PreisachInputSingularityDetector<N>)
+                                                         const Eigen::Vector<double, N> &)>> &singularity_check = {})
         {
             const int n_lce = num_lce.value_or(N);
             if (n_lce < 1 || n_lce > N)
             {
                 THROW_INVALID_ARGUMENT_ERROR("Number of exponents must be between one and the system dimension");
             }
+            const double dt = system.GetDeltaTime();
+            if (!std::isfinite(dt) || dt <= 0.0 || ortho_steps == 0 ||
+                !std::isfinite(timeForward) || timeForward < 0.0 ||
+                !std::isfinite(total_time) || total_time <= 0.0)
+            {
+                THROW_INVALID_ARGUMENT_ERROR("LCE step, observation time, and QR period must be positive; warmup must be nonnegative");
+            }
+            const double warmup_steps = std::floor(timeForward / dt);
+            const double observation_steps = std::floor(total_time / dt);
+            constexpr auto step_limit = std::numeric_limits<int>::max();
+            if (warmup_steps >= step_limit || observation_steps < 1.0 || observation_steps >= step_limit)
+            {
+                THROW_INVALID_ARGUMENT_ERROR("LCE warmup or observation step count is out of range");
+            }
+            const auto initial = system.GetState();
+            const double initial_time = initial.m_T0;
+            const double end_time = initial_time + (warmup_steps + observation_steps) * dt;
+            if (!std::isfinite(end_time) || !(initial_time + dt > initial_time) || !(end_time - dt < end_time))
+            {
+                THROW_INVALID_ARGUMENT_ERROR("LCE time grid is not representable");
+            }
+            const int num_iterations = static_cast<int>(observation_steps);
 
             AL_PROFILE_FUNC("mc::ode::ComputeLCEs");
 
-            system.ResetArgs();
-            system.Reset();
-            system.Forward(timeForward);
-
-            const double dt = system.GetDeltaTime();
-            const int num_iterations = static_cast<int>(total_time / dt);
-
-            LCEResult result;
-            result.spectrum = Eigen::VectorXd::Zero(n_lce);
-            result.history = Eigen::MatrixXd::Zero(ortho_steps, n_lce);
-
-            // Инициализация матрицы возмущений единичной матрицей
             using PerturbationBasis = Eigen::Matrix<double, N, Eigen::Dynamic>;
             PerturbationBasis W = PerturbationBasis::Identity(N, n_lce);
-
-            Eigen::VectorXd lce_sums = Eigen::VectorXd::Zero(n_lce);
-            Eigen::VectorXd current_norms = Eigen::VectorXd::Zero(n_lce);
-
-            const uint32_t orto_step = num_iterations / ortho_steps;
-            int32_t hist_idx = -1;
-            bool is_next_singularity = false;
-            bool is_singularity_now = false;
-            for (int step = 1; step <= num_iterations; ++step)
+            Eigen::VectorXd norms(n_lce);
+            if (n_lce < N)
             {
-                const auto current_x = system.GetX();
-                // memoize = true, потому что мы предсказываем следующую точку
-                const auto next_x = system.ShiftTrajNext(current_x, system.GetT(), true);
+                std::mt19937 generator(0);
+                std::normal_distribution<double> normal;
+                W = PerturbationBasis::NullaryExpr(N, n_lce, [&]() { return normal(generator); });
+                Eigen::OrthogonalizeQR(W, norms, n_lce);
+            }
 
-                if (is_next_singularity)
+            if constexpr (N == 2 && std::same_as<Context, RadonsContext>)
+            {
+                if (auto *radons = dynamic_cast<RadonsSystem *>(&system))
                 {
-                    is_singularity_now = true;
-                }
-
-                is_next_singularity = singularity_check(current_x, next_x);
-
-                // Детекция возможного пересечения сингулярности в пределах [current_t, current_t + dt]
-                // "Заглядываем" на шаг вперёд (без изменения состояния системы), 
-                // чтобы понять, пересечем ли мы поверхность потери гладкости.
-                // Интегрирование касательного пространства (уравнений в вариациях)
-                PerturbationBasis W_next(N, n_lce);
-                for (int i = 0; i < n_lce; ++i)
-                {
-                    W_next.col(i) = system.NextLTM(W.col(i));
-                }
-
-                // Делаем физический шаг системы (обновляет внутренние m_X и m_T)
-                system.Next();
-
-                // Если попали на точку сингулярности ИЛИ подошло время плановой ортогонализации
-                if (is_next_singularity || (!is_singularity_now && (step > 0 && step % orto_step == 0)))
-                {
-                    ++hist_idx;
-                    // Вызов QR-ортогонализации
-                    Eigen::OrthogonalizeQR(W_next, current_norms, n_lce);
-
-                    for (int i = 0; i < n_lce; ++i)
+                    if (!initial.m_DefaultArgs.model->SupportsContinuousEvents())
                     {
-                        if (current_norms(i) > 1e-15)
-                        {
-                            lce_sums(i) += std::log(current_norms(i));
-                        }
+                        throw std::invalid_argument("The model does not support event-aware LCE calculation");
                     }
-                    W = W_next;
-                }
-                else
-                {
-                    W = W_next;
-                    is_singularity_now = false;
-                    continue;
-                }
-
-                if (hist_idx >= result.history.rows())
-                {
-                    result.history.conservativeResize(static_cast<Eigen::Index>(1.5 * result.history.rows()),
-                                                      Eigen::NoChange);
-                }
-
-                // Запись в историю. LCE = (Сумма логарифмов) / Время
-                // Для первого шага предотвращаем деление на ноль
-                double time_divisor = (system.GetT() > 0.0) ? system.GetT() : dt;
-                for (int i = 0; i < n_lce; ++i)
-                {
-                    result.history(hist_idx, i) = lce_sums(i) / time_divisor;
+                    system.ResetArgs();
+                    system.Reset();
+                    auto result = detail::ComputeRadonsLCEs(*radons, static_cast<int>(warmup_steps), num_iterations,
+                                                           ortho_steps, W, singularity_check);
+                    system.ResetArgs();
+                    system.Reset();
+                    return result;
                 }
             }
 
-            result.history.conservativeResize(hist_idx, Eigen::NoChange);
-
-            // Вычисляем итоговые показатели как предел усредненной суммы
-            result.spectrum = lce_sums / system.GetT();
+            system.ResetArgs();
+            system.Reset();
+            system.ForwardWithoutHistory(static_cast<int>(warmup_steps));
+            detail::LCEHistory history(system.GetT(), n_lce);
+            PerturbationBasis next(N, n_lce);
+            for (int step = 1; step <= num_iterations; ++step)
+            {
+                const auto previous_time = system.GetT();
+                bool event = false;
+                if (singularity_check)
+                {
+                    const auto x = system.GetX();
+                    event = singularity_check(x, system.ShiftTrajNext(x, previous_time, true));
+                }
+                for (int i = 0; i < n_lce; ++i)
+                {
+                    next.col(i) = system.NextLTM(W.col(i));
+                }
+                system.Next();
+                const double current_time = system.GetT();
+                if (!std::isfinite(current_time) || !(current_time > previous_time))
+                {
+                    throw std::runtime_error("LCE observation time did not advance");
+                }
+                if (event || step % ortho_steps == 0 || step == num_iterations)
+                {
+                    if (!next.allFinite())
+                    {
+                        throw std::runtime_error("Non-finite tangent basis in LCE calculation");
+                    }
+                    Eigen::OrthogonalizeQR(next, norms, n_lce);
+                    history.Record(current_time, event, norms);
+                }
+                W.swap(next);
+            }
 
             system.ResetArgs();
             system.Reset();
-
-            return result;
+            return history.Finish();
         }
 
         //#region ------------------------------------------ Find Best Params ------------------------------------------

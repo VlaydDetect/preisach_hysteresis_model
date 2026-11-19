@@ -20,13 +20,12 @@
 #include "Functions/expm1.hpp"
 #include "Utils/essentiallyEqual.hpp"
 #include "Core/Types.hpp"
-#include "Json/Eigen.hpp"
-#include "Json/JsonDocument.hpp"
+#include "PreisachMeasure.hpp"
 
 namespace mc
 {
     // See: https://www.researchgate.net/publication/279530104_Preisach_Type_Hysteresis_Models_with_Everett_Function_in_Closed_Form
-    class SzaboEverett
+    class SzaboEverett : public PreisachMeasure
     {
     private:
         struct Component
@@ -48,36 +47,6 @@ namespace mc
             ddouble s = 0.0L;
         };
 
-        struct EverettSurfaceData
-        {
-            Eigen::VectorXd x; // coordinates along x axis
-            Eigen::VectorXd y; // coordinates along y axis
-
-            // z(row, col) = E(x[col], y[row])
-            //
-            // Region x > y is outside the Preisach triangle
-            // and is filled with NaN.
-            Eigen::MatrixXd z;
-
-            mc::json::JsonDocument toJSON() const
-            {
-                if (z.rows() != y.size() || z.cols() != x.size())
-                {
-                    throw std::invalid_argument(
-                        "EverettSurfaceData: z dimensions do not match x/y");
-                }
-
-                return nlohmann::json{
-                    {"type", "everett_surface"},
-                    {"rows", z.rows()},
-                    {"cols", z.cols()},
-                    {"x", json::EncodeVector(x)},
-                    {"y", json::EncodeVector(y)},
-                    {"z", json::EncodeVector(z.reshaped<Eigen::RowMajor>(), json::NonFinite::AsNull)}
-                };
-            }
-        };
-
     public:
         template <typename DerivedA, typename DerivedB, typename DerivedC>
         SzaboEverett(const Eigen::DenseBase<DerivedA> &a,
@@ -97,7 +66,7 @@ namespace mc
                 const ddouble bi = static_cast<ddouble>(b.derived().coeff(i));
                 ddouble ci = static_cast<ddouble>(c.derived().coeff(i));
 
-                if (std::isinf(ai) || std::isinf(bi) || std::isinf(ci))
+                if (!std::isfinite(ai) || !std::isfinite(bi) || !std::isfinite(ci))
                 {
                     THROW_INVALID_ARGUMENT_ERROR("SzaboEverett: parameters must be finite");
                 }
@@ -132,6 +101,11 @@ namespace mc
 
         [[nodiscard]] double operator()(double x, double y) const noexcept
         {
+            return TriangleMass(x, y);
+        }
+
+        [[nodiscard]] double TriangleMass(double x, double y) const noexcept override
+        {
             // Everett triangle is defined for x <= y.
             assert(x <= y);
 
@@ -151,6 +125,26 @@ namespace mc
                 result = 0.0L;
 
             return static_cast<double>(result);
+        }
+
+        std::array<double, 2> BoundaryDerivatives(double lower, double upper) const override
+        {
+            if (!(upper > lower))
+            {
+                return {};
+            }
+            ddouble left = 0.0L;
+            ddouble right = 0.0L;
+            for (const auto &p : m_Components)
+            {
+                const auto integral = [&p](ddouble a, ddouble b)
+                {
+                    return p.a * p.c * SigmoidDifference((a - p.b) * p.inv_c, (b - p.b) * p.inv_c);
+                };
+                left -= EvaluatePhi(lower, p) * integral(-upper, -lower);
+                right += EvaluatePhi(-upper, p) * integral(lower, upper);
+            }
+            return {static_cast<double>(left), static_cast<double>(right)};
         }
 
         [[nodiscard]] EverettSurfaceData GetoOutputSurfaceData(double low, double high,
@@ -258,13 +252,9 @@ namespace mc
         }
 
         [[nodiscard]] EverettSurfaceData GetoMeasureSurfaceData(double minBound, double maxBound, Eigen::Index resolution = 101,
-                                                                double densityScale = 1.0) const
+                                                               double densityScale = 1.0) const override
         {
-            if (resolution < 2 || !(minBound < maxBound))
-                throw std::invalid_argument("Invalid surface parameters");
-
-            if (!std::isfinite(densityScale) || densityScale < 0.0)
-                throw std::invalid_argument("Invalid density scale");
+            ValidateSurfaceParameters(minBound, maxBound, resolution, densityScale);
 
             EverettSurfaceData data;
 
@@ -356,8 +346,9 @@ namespace mc
             );
         }
 
+    public:
         [[nodiscard]]
-        double EvaluateDensity(double beta, double alpha) const noexcept
+        double Density(double beta, double alpha) const noexcept override
         {
             // Носитель: beta <= alpha.
             if (beta > alpha)
@@ -376,6 +367,7 @@ namespace mc
             return static_cast<double>(result);
         }
 
+    private:
         static ddouble Sigmoid(ddouble x) noexcept
         {
             // Never evaluates exp(+large_number).

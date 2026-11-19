@@ -44,6 +44,22 @@ namespace mc
                 result.noalias() += dt / 6. * (k1 + 2. * k2 + 2. * k3 + k4);
                 return result;
             }
+
+            template <typename State, typename Context, typename Jacobian, typename Basis>
+            Basis rk4Tangent(const std::function<State(const State &, double, const Context &)> &fn,
+                             const Jacobian &jac, const State &x, double t, double dt, const Context &args,
+                             const Basis &basis, const Basis &forcing)
+            {
+                const double half = dt / 2.0;
+                const State x2 = x + half * fn(x, t, args);
+                const State x3 = x + half * fn(x2, t + half, args);
+                const State x4 = x + dt * fn(x3, t + half, args);
+                const Basis k1 = jac(x, t, args) * basis + forcing;
+                const Basis k2 = jac(x2, t + half, args) * (basis + half * k1) + forcing;
+                const Basis k3 = jac(x3, t + half, args) * (basis + half * k2) + forcing;
+                const Basis k4 = jac(x4, t + dt, args) * (basis + dt * k3) + forcing;
+                return basis + (dt / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4);
+            }
         }
 
         template <int N, typename Context = NoContext>
@@ -560,12 +576,9 @@ namespace mc
             State NextLTM(const State &w) override
             {
                 AL_PROFILE_FUNC("ContinuousDS::NextLTM");
-                const Jacobian jac = m_Jacobian(m_State.m_X, m_State.m_T, m_State.m_Args);
-                const State k1 = jac * w;
-                const State k2 = jac * (w + (m_DeltaTime * 0.5) * k1);
-                const State k3 = jac * (w + (m_DeltaTime * 0.5) * k2);
-                const State k4 = jac * (w + m_DeltaTime * k3);
-                return w + (m_DeltaTime / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4);
+                const State forcing = State::Zero();
+                return detail::rk4Tangent(m_Function, m_Jacobian, m_State.m_X, m_State.m_T, m_DeltaTime,
+                                          m_State.m_Args, w, forcing);
             }
 
             State NextTM(const State &w) override

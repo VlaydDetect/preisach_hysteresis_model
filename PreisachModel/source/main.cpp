@@ -42,7 +42,8 @@ static void PublishResult(Experiment::Archive &archive)
         }
         catch (const std::exception &error)
         {
-            throw std::runtime_error(std::format("Delivery failed for saved archive {}: {}", path.string(), error.what()));
+            throw std::runtime_error(std::format("Delivery failed for saved archive {}: {}", path.string(),
+                                                 error.what()));
         }
     }
 }
@@ -128,13 +129,15 @@ void OperatorDerivativeTest()
     // auto model = std::make_shared<mc::DiscretePreisachModel>(L, h, true);
     auto model = std::make_shared<mc::ArealPreisachModel>(L, true);
 
+    std::vector<double> derivatives;
+    derivatives.reserve(u.size());
     for (int i = 0; i < t.size(); i++)
     {
         model->P(u[i], 0.0, i);
+        derivatives.push_back(model->CurrentSignedSlope());
     }
 
     auto [inputs1, outputs] = model->HysteresisLoop();
-    auto [inputs2, derivatives] = model->DerivativeHistory();
     // auto [inHist, xHist, yHist, outHist] = model->GetAnimationData();
 
     Experiment::Archive archive("results", "operator_derivative_test");
@@ -247,16 +250,17 @@ void JustSolveRodos()
 
     auto system = mc::ode::GetRadonsSystem(dt, args, nextArgs, x0, false);
     auto traj = system->Forward(time);
-    
+
     system->Reset();
     uint32_t steps_in_bounds = 0;
     for (int i = 0; i < static_cast<uint32_t>(time / dt); ++i)
     {
         system->Next();
-        
+
         bool in_bounds = std::abs(system->GetX()(0)) <= L;
-        if (!in_bounds) break;
-        
+        if (!in_bounds)
+            break;
+
         steps_in_bounds++;
     }
     std::println("in bounds: {}", steps_in_bounds * dt);
@@ -265,7 +269,7 @@ void JustSolveRodos()
     auto [inputs2, derivatives] = model->DerivativeHistory();
     // auto [inHist, xHist, yHist, outHist] = model->GetAnimationData();
 
-    // const auto [LCEs, LCEs_history] = mc::ode::ComputeLCEs(*system, 50.0, time, 500);
+    // const auto lce = mc::ode::ComputeLCEs(*system, 50.0, time, 500);
     // Eigen::VectorXd Ts = Eigen::arange(1.0, 5.0, 0.25);
     // const auto doc = mc::ode::power_law::ComputePowerLawExponent(*system, 50.0, Eigen::Vector2d{1.0, 0.0}, 1.0, Ts, 500,
     //                                                              -0.9);
@@ -322,24 +326,26 @@ void TestTrajsCircle()
     double E = 1.35;
 
     mc::ode::RadonsContext args{
-        {.dt = dt, .gamma = gamma, .A = A, .w0 = w0, .w = w, .E = E}, std::make_shared<mc::ArealPreisachModel>(L, false, false)
+        {.dt = dt, .gamma = gamma, .A = A, .w0 = w0, .w = w, .E = E},
+        std::make_shared<mc::ArealPreisachModel>(L, false, false)
     };
     mc::ode::RadonsContext args2{
-        {.dt = dt, .gamma = gamma, .A = A, .w0 = w0, .w = w, .E = E}, std::make_shared<mc::ArealPreisachModel>(L, false, false)
+        {.dt = dt, .gamma = gamma, .A = A, .w0 = w0, .w = w, .E = E},
+        std::make_shared<mc::ArealPreisachModel>(L, false, false)
     };
 
     double areaCoeff = -0.9;
     double time = 3.0;
 
     auto system = std::make_unique<mc::ode::ContinuousDS<3, mc::ode::RadonsContext>>(func, jac, dt, args, args2);
-    system->SetResetFn([areaCoeff, L](mc::ode::RadonsContext &args, std::optional<mc::ode::RadonsContext> &nextArgs, uint32_t)
+    system->SetResetFn([areaCoeff, L](mc::ode::RadonsContext &args, std::optional<mc::ode::RadonsContext> &nextArgs,
+                                      uint32_t)
     {
         auto model1 = std::make_shared<mc::ArealPreisachModel>(L, false, false);
         auto model2 = std::make_shared<mc::ArealPreisachModel>(L, false, false);
         if (!std::isnan(areaCoeff))
         {
-            model2->P(L, 0.0, -2);
-            model2->P(areaCoeff * L, 0.0, -1);
+            model2->InitializeMemory(std::array{L, areaCoeff * L});
         }
 
         args.model = std::move(model1);
@@ -392,7 +398,10 @@ void TestTrajsCircle()
 
     std::vector<mc::ode::CandidateValue> x0s;
     std::ranges::transform(points, std::back_inserter(x0s),
-                           [](const Eigen::VectorXd &point) { return mc::ode::CandidateValue(Eigen::MatrixXd(point)); });
+                           [](const Eigen::VectorXd &point)
+                           {
+                               return mc::ode::CandidateValue(Eigen::MatrixXd(point));
+                           });
 
     auto div_solution_fn = [time](mc::ode::DynamicalSystem<3, mc::ode::RadonsContext> &system,
                                   const mc::ode::DivergenceCandidate<3> &candidate)
@@ -535,19 +544,8 @@ void TestEverettFunction()
     // from 0.67+ (maybe 0.63) to 1.918- 
     double E = 1.1;
 
-    // measure-function mu(alpha, beta) = 1
-    auto uniformEverett = [](double x, double y)
-    {
-        if (y <= x)
-            return 0.0;
-
-        const double d = y - x;
-        return 0.5 * d * d;
-    };
-
     auto model = std::make_shared<mc::ArealPreisachModel>(L, false, false);
-    // auto surface = Everett.GetoOutputSurfaceData(model->GetBounds()[0], model->GetBounds()[1], 501).toJSON();
-    
+
     constexpr int K = 1;
     Eigen::VectorXd a(K);
     Eigen::VectorXd b(K);
@@ -555,13 +553,9 @@ void TestEverettFunction()
     a << 4299.43437;
     b << 1.5;
     c << 0.2;
-    mc::SzaboEverett Everett(a, b, c);
-    const auto surface = Everett.GetoMeasureSurfaceData(model->GetBounds()[0], model->GetBounds()[1], 501);
-    model->SetEverettFunction([Everett = std::move(Everett)](double x, double y) -> double
-    {
-        return Everett(x, y);
-    });
-    // model->SetEverettFunction(uniformEverett);
+    auto measure = std::make_shared<mc::SzaboEverett>(a, b, c);
+    const auto surface = measure->GetoMeasureSurfaceData(model->GetBounds()[0], model->GetBounds()[1], 501);
+    model->SetMeasure(std::move(measure));
 
     mc::ode::RadonsContext args{
         {.dt = dt, .gamma = gamma, .A = A, .w0 = w0, .w = w, .E = E, .phi = 0.0}, model
@@ -606,10 +600,9 @@ void TwoTrajsOnCircle()
         {.dt = dt, .gamma = gamma, .A = A, .w0 = w0, .w = w, .E = E}, model
     };
 
-    auto args2 = args;
-    args2.model = std::make_shared<mc::ArealPreisachModel>(L, false, false);
-    auto system = mc::ode::GetRadonsSystem(dt, args, args2);
-    constexpr double areaCoeff = -0.9;
+    auto warmup = mc::ode::GetRadonsSystem(dt, args);
+    warmup->ForwardWithoutHistory(10. * mc::consts::twoPi / w);
+    const auto snapshot = mc::ode::CaptureRadonsSnapshot(*warmup);
 
     Experiment::Archive archive("results", "two_trajs_on_circle");
     archive.Parameters() = {{"dt", dt}, {"duration", time}, {"e", 0.01}};
@@ -635,39 +628,11 @@ void TwoTrajsOnCircle()
 
     for (const auto v : coords)
     {
-        system->Reset();
-        system->Forward(10. * mc::consts::twoPi / w);
-
-        Eigen::Vector2d v1 = system->GetX() + v.head<2>().normalized() * 0.01;
-
-        system->SetResetFn([v1, L](mc::ode::RadonsContext &args, std::optional<mc::ode::RadonsContext> &nextArgs, uint32_t)
-        {
-            auto model1 = std::make_shared<mc::ArealPreisachModel>(L, false, false);
-            auto model2 = std::make_shared<mc::ArealPreisachModel>(L, false, false);
-            if (!std::isnan(areaCoeff))
-            {
-                // model2->P(L, -2);
-                model2->P(v1[0], 0.0, -1);
-            }
-
-            args.model = std::move(model1);
-            nextArgs->model = std::move(model2);
-        });
-        system->CallResetFn();
-
-        std::vector<Eigen::Vector2d> mainTraj{system->GetX()};
-
-        std::vector<Eigen::Vector2d> secondTraj{v1};
-
-        auto count = static_cast<mc::uint32>(time / system->GetDeltaTime());
-        while (count--)
-        {
-            auto traj = system->Forward(1);
-            mainTraj.push_back(system->GetX());
-
-            v1 = system->NextTM(v1);
-            secondTraj.push_back(v1);
-        }
+        const Eigen::Vector2d v1 = snapshot.x + v.head<2>().normalized() * 0.01;
+        const auto primary = mc::ode::ForkRadonsContext(snapshot, snapshot.x);
+        const auto perturbed = mc::ode::ForkRadonsContext(snapshot, v1);
+        auto system = mc::ode::GetRadonsSystem(dt, primary, perturbed, snapshot.x, false, snapshot.time);
+        const auto [mainTraj, secondTraj] = system->ForwardTwoTrajs(time, v1);
 
         auto [in1, out1] = system->GetArgs().model->HysteresisLoop();
         auto [in2, out2] = system->GetNextArgs().model->HysteresisLoop();
@@ -676,11 +641,11 @@ void TwoTrajsOnCircle()
         const auto id = std::to_string(results["trajs"].size());
         if (!results.contains("sample_times"))
         {
-            results["sample_times"] = StoreTimes(archive, mainTraj.size(), dt);
+            results["sample_times"] = StoreTimes(archive, mainTraj.rows(), dt);
         }
         results["trajs"][key] = json::array({
-            StoreTrajectory(archive, "primary_" + id, mainTraj),
-            StoreTrajectory(archive, "perturbed_" + id, secondTraj)
+            archive.AddArray("primary_" + id, mainTraj, {"sample", "coordinate"}),
+            archive.AddArray("perturbed_" + id, secondTraj, {"sample", "coordinate"})
         });
         results["loops"][key] = json::array({
             archive.AddSeries("in_primary_" + id, in1, "sample"),
@@ -850,7 +815,7 @@ void BifurcationDiagram()
 
     constexpr double L = 1.0;
     auto model = std::make_shared<mc::ArealPreisachModel>(L);
-    
+
     constexpr int K = 1;
     Eigen::VectorXd a(K);
     Eigen::VectorXd b(K);
@@ -858,12 +823,9 @@ void BifurcationDiagram()
     a << 4299.43437;
     b << 1.5;
     c << 0.2;
-    mc::SzaboEverett Everett(a, b, c);
-    auto surface = Everett.GetoMeasureSurfaceData(model->GetBounds()[0], model->GetBounds()[1], 501).toJSON();
-    model->SetEverettFunction([Everett = std::move(Everett)](double x, double y) -> double
-    {
-        return Everett(x, y);
-    });
+    auto measure = std::make_shared<mc::SzaboEverett>(a, b, c);
+    auto surface = measure->GetoMeasureSurfaceData(model->GetBounds()[0], model->GetBounds()[1], 501).toJSON();
+    model->SetMeasure(std::move(measure));
 
     mc::ode::RadonsContext args{
         {.dt = dt, .gamma = gamma, .A = A, .w0 = w0, .w = w, .E = E, .phi = 0.0, .eps = 0.05}, model
@@ -872,8 +834,11 @@ void BifurcationDiagram()
     const Eigen::VectorXd Es = Eigen::arange(0., 3., 0.01);
     // auto epss = mc::ode::utils::VoteRange(0., 3.0, 0.005);
     auto d = mc::ode::BifurcationDiagram(*system, "E", std::span(Es.data(), static_cast<std::size_t>(Es.size())),
-        [](mc::ode::RadonsContext &context, double value) { context.params.E = value; },
-        30. * mc::consts::twoPi / w, 5. * mc::consts::twoPi / w);
+                                         [](mc::ode::RadonsContext &context, double value)
+                                         {
+                                             context.params.E = value;
+                                         },
+                                         30. * mc::consts::twoPi / w, 5. * mc::consts::twoPi / w);
 
     // double sigma = 10.0;
     // double rho = 28.0;
@@ -1539,9 +1504,9 @@ void ComplexRadonsResearch()
                 // message.AddSubField({"results", "biff", "w"}, biff_w);
                 //
                 // // const auto [mLCE, mLCE_history] = mc::ode::Benettin_mLCE(*system, timeForward, e, T, M);
-                // const auto [LCEs, LCEs_history] = mc::ode::ComputeLCEs(*system, timeForward, solve_time, M, 2);
-                // message.AddSubField({"results", "LCEs", "LCEs"}, LCEs);
-                // message.AddSubField({"results", "LCEs", "history"}, LCEs_history);
+                // const auto lce = mc::ode::ComputeLCEs(*system, timeForward, solve_time, M, 2);
+                // message.AddSubField({"results", "LCEs", "LCEs"}, lce.spectrum);
+                // message.AddSubField({"results", "LCEs", "history"}, lce.history);
 
                 // const auto div_doc = mc::ode::DivergenceDegreeRegressionData(*system, timeForward, e, v, Ts, M);
                 // message.AddSubField({"results", "mLCE", "div_reg_data"}, div_doc);

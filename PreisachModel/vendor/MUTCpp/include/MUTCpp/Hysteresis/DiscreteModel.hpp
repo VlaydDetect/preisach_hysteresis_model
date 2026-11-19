@@ -21,7 +21,21 @@ namespace mc
             Init();
         }
 
+        std::unique_ptr<SinglePreisachModel> CloneSingleWorkingState() const override
+        {
+            auto copy = std::make_unique<DiscretePreisachModel>(m_L, m_H);
+            CopyWorkingStateTo(*copy);
+            copy->m_R = m_R;
+            return copy;
+        }
+
     private:
+        void SwapWorkingMemory(PreisachModelBase &other) noexcept override
+        {
+            SinglePreisachModel::SwapWorkingMemory(other);
+            m_R.swap(static_cast<DiscretePreisachModel &>(other).m_R);
+        }
+
         virtual double P_Impl(const double u) override
         {
             double p = 0.0;
